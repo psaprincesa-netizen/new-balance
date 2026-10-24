@@ -17,11 +17,11 @@ Jornada: criar um arquivo, editar, salvar, reabrir, transformar em outro tipo, c
 | P003 Acesso | Cadastro, login/logout, expiração, isolamento de conta/arquivo, compartilhamento e revogação testados | Recuperação de senha, MFA, auditoria |
 | P004 Integrações | Quatro conversões internas sem envio externo | OAuth, serviços externos, retry e sincronização |
 | P005 Navegação | Interface responsiva e jornada no Chromium; teclado em apresentações | Auditoria completa WCAG, testes com usuários |
-| P006 Estrutura | API, domínio, contratos e persistência separados; testes automatizados | Empacotamento e pipeline de produção |
+| P006 Estrutura | API, domínio, contratos e persistência separados; testes automatizados | Monitoramento contínuo e processo operacional de releases |
 | P007 Compatibilidade | JSON próprio, texto Markdown, CSV, DOCX, XLSX, PPTX e ICS com limites documentados | Fidelidade integral de layout Office, PDF nativo; sem execução AppX/App-V |
 | P008 Diferencial | Integração de editores via biblioteca e conversões | Comparação medida com alternativas reais |
-| P009 Qualidade | 30 testes Python, 4 JS e jornada de navegador aprovados | Meta de produto “100%” precisa de denominador e medição com usuários |
-| P010 Recuperação | Backup SQLite, verificação de integridade e restauração testada | Deploy, monitoramento, ensaio de rollback em produção |
+| P009 Qualidade | 35 testes Python, 5 JS e jornada de navegador aprovados | Meta de produto “100%” precisa de denominador e medição com usuários |
+| P010 Recuperação | Backup SQLite, verificação de integridade e restauração testada | Monitoramento e ensaio de rollback em produção |
 
 ## Limites da evidência
 

@@ -1103,14 +1103,14 @@ async function shareDialog() {
     },
   );
 }
-function pickFile(accept, callback) {
+function pickFile(accept, callback, maxBytes=5_000_000) {
   const input = document.createElement("input");
   input.type = "file";
   input.accept = accept;
   input.onchange = async () => {
     try {
-      if (input.files[0].size > 5000000)
-        throw Error("Limite de importação: 5 MB.");
+      if (input.files[0].size > maxBytes)
+        throw Error(`Limite de importação: ${maxBytes/1_000_000} MB.`);
       await callback(await input.files[0].text());
     } catch (e) {
       notify(e.message);
@@ -1132,6 +1132,12 @@ function validImport(item) {
     case "note":
       return str(c.text);
     case "sheet":
+      if(c.workbook) {
+        const w=c.workbook;
+        return typeof w==='object' && !Array.isArray(w) && str(w.id)
+          && Array.isArray(w.sheetOrder) && w.sheetOrder.length>0 && w.sheetOrder.length<=20
+          && w.sheets && typeof w.sheets==='object' && w.sheetOrder.every(id=>str(id)&&w.sheets[id]);
+      }
       return (
         matrix(c.cells) &&
         c.cells.length > 0 &&
@@ -1231,7 +1237,7 @@ function importBackup() {
         `${count} arquivos importados como novas cópias privadas. Links de portais precisam ser refeitos.`,
       );
     }
-  });
+  },64_000_000);
 }
 function analytics() {
   const active = items.filter((i) => !i.deleted),

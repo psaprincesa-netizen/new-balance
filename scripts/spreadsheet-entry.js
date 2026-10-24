@@ -39,7 +39,7 @@ export async function mountSpreadsheet(container,content,{id,name,readOnly,onCha
   }
   let disposed=false,timer;
   const sync=()=>{
-    if(disposed) return;
+    if(disposed||readOnly) return;
     content.workbook=book.save();
     // Remove the redundant legacy matrices after migrating; old server versions
     // remain in history and are still understood by toWorkbook.

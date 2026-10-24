@@ -24,4 +24,4 @@ Foi consultado https://vercel.com/get-started.md.
 
 A publicação é feita a partir do workspace com a CLI autenticada; o workflow `.github/workflows/verify.yml` valida alterações de código e as três jornadas de navegador. O ZIP é uma distribuição do código-fonte, sem dados de contas ou credenciais. Recursos ainda não implementados estão em `recursos.md`; riscos operacionais estão em `auditoria-vercel.md`.
 
-A planilha Univer foi verificada também em produção: edição nativa, fórmulas, estilos, mesclagem, filtros, ordenação, validação, formatação condicional, persistência e XLSX. A revisão seguinte acrescenta gráficos vinculados (SVG/XLSX editável), importação de regras e teste de acesso somente leitura.
+A planilha Univer foi verificada também em produção: edição nativa, fórmulas, estilos, mesclagem, filtros, ordenação, validação, formatação condicional, persistência e XLSX. A revisão atual inclui gráficos vinculados (SVG/XLSX editável), importação de regras, backup JSON e teste de acesso somente leitura. O código está na branch `main` do repositório informado; a verificação automatizada no GitHub Actions passou.

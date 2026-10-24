@@ -68,3 +68,5 @@ Limites persistidos: 20 abas, 50 mil células preenchidas, 2 MB de conteúdo JSO
 O editor usa canvas: o campo auxiliar permite selecionar intervalos e inserir conteúdo por teclado, mas isso não constitui conformidade integral com leitores de tela. O CSS requer estilos inline; a política continua bloqueando scripts inline e `unsafe-eval`.
 
 Gráficos: até dez definições por pasta, cada uma com rótulos e uma série numérica (duas colunas com cabeçalho e até 200 linhas). A vinculação usa endereços literais; inserir/excluir linhas não ajusta automaticamente esses endereços. Gráficos de pizza exigem dados não negativos.
+
+Backups JSON reconhecem o formato nativo novo da planilha e o formato antigo. A importação aceita até 100 arquivos em um JSON de até 64 MB, enviados individualmente e validados no servidor; restaura cópias privadas, sem herdar compartilhamentos. Falhas parciais informam a quantidade importada.

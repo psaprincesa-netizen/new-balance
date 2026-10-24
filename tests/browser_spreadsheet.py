@@ -68,6 +68,16 @@ def exercise(page,base,title='Planilha de aceitação'):
     assert len(ws.conditional_formatting)==1
     assert len(ws._charts)==1 and ws._charts[0].series[0].val.numRef.f=="'Planilha 1'!$B$2:$B$3"
     expect(page.locator('#sheet-charts svg')).to_be_visible()
+    with page.expect_download() as backup_download:page.get_by_role('button',name='Exportar JSON',exact=True).click()
+    backup=json.loads(Path(backup_download.value.path()).read_text());backup['items'][0]['title']='Cópia JSON '+title
+    with page.expect_file_chooser() as chooser:page.get_by_role('button',name='Importar JSON',exact=True).click()
+    chooser.value.set_files({'name':'backup.json','mimeType':'application/json','buffer':json.dumps(backup).encode()})
+    expect(page.get_by_role('status')).to_contain_text('1 arquivos importados')
+    page.get_by_role('button',name='Todos os arquivos',exact=False).click();page.get_by_role('button',name='Cópia JSON '+title,exact=False).click();ready()
+    expect(page.locator('#sheet-charts svg')).to_be_visible();expect(page.locator('button[aria-label="Negrito"]:visible')).to_be_enabled()
+    copied=next(x for x in page.request.get(base+'/api/items').json()['items'] if x['title']=='Cópia JSON '+title)
+    assert copied['content']==backup['items'][0]['content']
+    assert page.request.post(base+'/api/items/'+copied['id'],headers={'Origin':base},data={'title':copied['title'],'content':copied['content'],'version':copied['version'],'deleted':True}).ok
     reader_context=page.context.browser.new_context();reader=reader_context.new_page()
     credentials={'email':uuid.uuid4().hex+'@example.org','password':uuid.uuid4().hex+'-Reader12'};headers={'Origin':base}
     assert reader.request.post(base+'/api/register',headers=headers,data={**credentials,'name':'Leitor de teste'}).ok
@@ -77,12 +87,14 @@ def exercise(page,base,title='Planilha de aceitação'):
     expect(reader.locator('#spreadsheet')).to_have_attribute('data-ready','true')
     expect(reader.locator('#save')).to_be_disabled();expect(reader.locator('#sheet-apply')).to_be_disabled()
     expect(reader.locator('button[aria-label="Negrito"]:visible')).to_be_disabled()
+    with reader.expect_download() as reader_backup:reader.get_by_role('button',name='Exportar JSON',exact=True).click()
+    assert json.loads(Path(reader_backup.value.path()).read_text())['items'][0]['content']==item['content']
     denied=reader.request.post(base+'/api/items/'+item['id'],headers=headers,data={'title':title,'content':item['content'],'version':item['version'],'deleted':False});assert denied.status==403
     assert page.request.post(base+'/api/items/'+item['id']+'/share',headers=headers,data={'email':credentials['email'],'role':'remove'}).ok
     reader.request.post(base+'/api/logout',headers=headers,data={});reader_context.close()
     assert not errors,errors
     page.screenshot(path='/tmp/drap-spreadsheet-verified.png',full_page=True)
-    print('PASS: edição nativa, fórmula, negrito, desfazer/refazer, mesclagem, ordenação, filtro, validação, formatação condicional, gráficos vinculados/SVG, reabertura e XLSX',flush=True)
+    print('PASS: edição nativa, fórmula, negrito, desfazer/refazer, mesclagem, ordenação, filtro, validação, formatação condicional, gráficos vinculados/SVG, backup JSON, modo leitura, reabertura e XLSX',flush=True)
     return item
 
 def main():
