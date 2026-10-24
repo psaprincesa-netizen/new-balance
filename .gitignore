@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.data/
+.venv/
+.env
+public/
+dist/
+.vercel/
+.env.*
+!.env.example
+node_modules/
+# Generated from pinned npm packages by npm run build.
+web/formula-engine.js
+web/spreadsheet.js
+web/spreadsheet.css
+docs/licencas-formulas.txt
+docs/licencas-planilha.txt

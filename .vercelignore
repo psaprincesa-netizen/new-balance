@@ -1,0 +1,13 @@
+.git
+.data
+.env
+.env.*
+!.env.example
+node_modules
+.venv
+__pycache__
+**/__pycache__
+*.pyc
+public
+dist
+docs/screenshots
