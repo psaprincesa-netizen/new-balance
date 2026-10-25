@@ -63,7 +63,7 @@ A grade inicial foi substituída pelo **Univer 1.2.0**, distribuído com a aplic
 
 O XLSX importa/exporta valores, fórmulas, estilos básicos, formatos numéricos, mesclagens, dimensões e painéis congelados. A exportação inclui filtros por valores, validações comuns e regras condicionais numéricas/por fórmula; regras avançadas permanecem no snapshot/JSON. A importação também preserva filtros por valores, validações comuns e regras condicionais numéricas/por fórmula. Gráficos de colunas, linhas e pizza vinculados a intervalos são salvos no DRAP e exportados para SVG e XLSX editável. A importação de gráficos Excel, gráficos avançados, pivôs nativos no XLSX, macros, Power Query e equivalência integral ao Excel continuam pendentes.
 
-Limites persistidos: 20 abas, 50 mil células preenchidas, 2 MB de conteúdo JSON por arquivo, coordenadas até 100 mil linhas × 1024 colunas. Importação XLSX: 2,5 MB comprimidos com inspeção do ZIP. CSV: até 10 mil linhas × 256 colunas, respeitando o total de 50 mil células. Os limites são verificados, sem truncamento silencioso. Fórmulas nativas usam nomes em inglês; o campo auxiliar normaliza nomes portugueses.
+Limites persistidos: 20 abas, 50 mil células preenchidas, 2 MB de conteúdo JSON por arquivo, coordenadas até 100 mil linhas × 1024 colunas. Importação XLSX: 2,5 MB comprimidos com inspeção do ZIP. CSV: até 10 mil linhas × 256 colunas, respeitando o total de 50 mil células. Os limites são verificados, sem truncamento silencioso. Fórmulas nativas são armazenadas em inglês; células, barra de fórmulas, colagem e campo auxiliar normalizam os aliases portugueses suportados (por exemplo, SOMA/SE/PROCV), preservando texto entre aspas. A entrada numérica nativa usa o locale brasileiro: vírgula decimal.
 
 O editor usa canvas: o campo auxiliar permite selecionar intervalos e inserir conteúdo por teclado, mas isso não constitui conformidade integral com leitores de tela. O CSS requer estilos inline; a política continua bloqueando scripts inline e `unsafe-eval`.
 
@@ -98,3 +98,9 @@ Planilhas: campos de intervalo/valor acompanham a seleção; atalhos para inseri
 ## Edição visual de documentos e notas
 
 Editor visual com títulos, parágrafos, negrito/itálico combinados, listas/checklists, tabelas com edição de células/linhas/colunas, imagens, desfazer/refazer e substituição do texto visível. Markdown continua disponível; imagens e conteúdo antigo permanecem compatíveis. A primeira linha de tabelas é mantida como cabeçalho para evitar linhas artificiais ao reabrir. Colagem recebe texto simples; imagens usam upload local. Paginação profissional, fontes/cores arbitrárias, coautoria e fidelidade completa ao Word continuam fora dessa implementação.
+
+## Barra nativa da planilha
+
+Salvar preserva a instância do editor: célula selecionada, aba da barra, rolagem e histórico de desfazer/refazer da sessão. Alterações posteriores continuam sendo persistidas e geram novas versões. A caixa de endereço nativa atualiza os controles para a seleção atual; valores colados também atualizam o campo auxiliar. `tests/browser_ribbon.py` verifica comandos reais da barra e o XLSX, sem usar a API do editor para aplicar formatação. A memória de desfazer continua restrita à sessão aberta; reabrir o arquivo usa o histórico de versões do DRAP.
+
+O menu Colar e as variantes de colagem usam os comandos nativos registrados, mantendo permissões, valores e estilos. A leitura de intervalos para edição auxiliar, gráficos e tabelas dinâmicas usa os valores numéricos originais, mesmo quando a grade mostra moeda ou percentual. Os testes de gráficos e resumos incluem fontes formatadas como moeda.

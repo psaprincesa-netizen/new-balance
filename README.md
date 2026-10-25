@@ -103,7 +103,7 @@ A interface não envia conteúdo para ferramentas de IA ou serviços Office. No 
 
 O servidor da biblioteca padrão é para desenvolvimento. A Vercel fornece HTTPS e o runtime de produção. Ainda faltam recuperação de conta, auditoria administrativa, observabilidade, backups ensaiados e testes de carga. A preparação do schema foi validada no build remoto Vercel. Testes de carga e restauração do banco gerenciado ainda não foram realizados.
 
-A verificação automatizada está em `.github/workflows/verify.yml`: build, testes de domínio/API e sete jornadas reais no Chromium. O ZIP inclui essa configuração.
+A verificação automatizada está em `.github/workflows/verify.yml`: build, testes de domínio/API e oito jornadas reais no Chromium. O ZIP inclui essa configuração.
 
 Em Planilhas, selecione um intervalo com cabeçalhos e clique em **Tabela dinâmica** para configurar agrupamentos, cálculo e filtro. Os resumos seguem os valores da fonte; no XLSX são exportados como tabelas comuns. O JSON preserva a configuração dinâmica.
 

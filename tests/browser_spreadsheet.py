@@ -42,6 +42,8 @@ def exercise(page,base,title='Planilha de aceitação'):
     panel=page.locator('[aria-label="Painel lateral"]')
     panel.locator('input').nth(1).fill('15');page.get_by_text('Aplicar',exact=True).click()
     if page.get_by_role('button',name='Fechar o painel lateral').is_visible():page.get_by_role('button',name='Fechar o painel lateral').click()
+    page.set_viewport_size({'width':1920,'height':1100});page.get_by_role('tab',name='Início',exact=True).click();select('B2:B3')
+    page.locator('[data-u-command="sheet.command.numfmt.set.currency"]:visible').click();page.set_viewport_size({'width':1600,'height':1100})
     select('A1:B3');page.get_by_role('button',name='Criar gráfico',exact=True).click()
     page.get_by_label('Título do gráfico',exact=True).fill('Valores por produto');page.get_by_label('Intervalo de dados',exact=True).fill('A1:B3');page.get_by_role('button',name='Adicionar gráfico',exact=True).click()
     expect(page.locator('#sheet-charts svg')).to_be_visible()

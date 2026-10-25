@@ -20,6 +20,12 @@ def exercise(page,base,title='Receitas dinâmicas'):
     with page.expect_file_chooser() as chooser:page.get_by_role('button',name='Importar CSV',exact=True).click()
     chooser.value.set_files({'name':'receitas.csv','mimeType':'text/csv','buffer':csv.encode()})
     page.locator('#sheet-address').fill('A1');page.locator('#sheet-select').click();expect(page.locator('#sheet-value')).to_have_value('Equipe')
+    # Currency formatting must not turn numeric source data into display text
+    # (e.g. "R$10,00") when the pivot reads the range.
+    page.set_viewport_size({'width':1920,'height':1100})
+    page.locator('#sheet-address').fill('C2:C7');page.locator('#sheet-select').click()
+    page.locator('[data-u-command="sheet.command.numfmt.set.currency"]:visible').click()
+    page.set_viewport_size({'width':1600,'height':1100})
     page.locator('#sheet-address').fill('A1:C7');page.get_by_role('button',name='Tabela dinâmica',exact=True).click()
     page.get_by_label('Título do resumo',exact=True).fill('Receita por equipe e mês')
     page.get_by_label('Agrupar linhas por',exact=True).select_option('0');page.get_by_label('Agrupar colunas por',exact=True).select_option('1');page.get_by_label('Campo de valores',exact=True).select_option('2');page.get_by_label('Cálculo',exact=True).select_option('avg')

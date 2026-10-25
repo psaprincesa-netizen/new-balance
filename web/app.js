@@ -467,18 +467,28 @@ async function save() {
   app.inert = true;
   try {
     await spreadsheet?.flush();
-    current = await api("/api/items/" + current.id, {
+    const saved = await api("/api/items/" + current.id, {
       title: current.title,
       content: current.content,
       version: current.version,
       deleted: current.deleted,
     });
+    // Saving must not remount Univer: that clears selection, the active ribbon
+    // tab and undo history. Keep the content object held by the mounted editor.
+    const keepSheet = spreadsheet && !saved.deleted && saved.role !== 'read';
+    if (keepSheet) {
+      const content = current.content;
+      for (const key of Object.keys(content)) delete content[key];
+      Object.assign(content, saved.content);
+      current = {...saved, content};
+    } else current = saved;
     dirty = false;
     clearTimeout(stashDraft.timer);
     try { localStorage.removeItem(draftKey()); } catch {}
     notify("Arquivo salvo. Seu trabalho está em dia.");
     await refresh();
-    editor();
+    if (keepSheet) document.querySelector('#save-state').textContent = `Versão ${current.version} · ${date(current.updated)}`;
+    else editor();
   } catch (e) {
     notify(e.message);
     const status = document.querySelector("#save-state");
@@ -679,7 +689,7 @@ function textEditor(root, c) {
 }
 async function sheetEditor(root, c) {
   root.classList.add('spreadsheet-editor');
-  root.innerHTML = `<div class="toolbar sheet-tools"><label>Intervalo <input id="sheet-address" aria-label="Intervalo da planilha" value="A1" size="10"></label><button id="sheet-select">Selecionar</button><label>Valor ou fórmula <input id="sheet-value" aria-label="Valor ou fórmula" placeholder="=SUM(A1:A5)"></label><button id="sheet-apply">Aplicar à célula</button><button id="csv-import">Importar CSV</button><button id="csv-export">Exportar CSV</button><button id="sheet-report">Criar relatório ↗</button><button id="sheet-chart-add">Criar gráfico</button><button id="sheet-pivot-add">Tabela dinâmica</button></div><div class="toolbar sheet-tools"><button id="sheet-calculate">∑ Inserir cálculo</button><button id="sheet-row">Inserir linha</button><button id="sheet-column">Inserir coluna</button><button id="sheet-clear">Limpar valores</button><button id="sheet-paste">Colar tabela</button><span class="muted">Clique numa célula e digite. Enter confirma; Tab avança. Selecione um intervalo para formatar.</span></div><div id="spreadsheet" aria-label="Editor de planilhas"><p>Carregando editor…</p></div><p class="muted sheet-help">Use a barra de ferramentas para formatar, mesclar, filtrar e ordenar. Clique com o botão direito para inserir/excluir linhas e colunas. As fórmulas do editor usam nomes em inglês (SUM, IF, VLOOKUP); o campo acima também aceita SOMA, SE e PROCV. Salve para registrar no banco. XLSX preserva valores, fórmulas, estilos, mesclagens, filtros e validações comuns; regras avançadas ficam no arquivo DRAP e no JSON. Gráficos de colunas, linhas e pizza ficam abaixo da grade e no XLSX. Tabelas dinâmicas agrupam e resumem os dados abaixo da grade. Macros VBA ainda não estão disponíveis.</p><section id="sheet-charts" aria-label="Gráficos da planilha"></section><section id="sheet-pivots" aria-label="Tabelas dinâmicas"></section>`;
+  root.innerHTML = `<div class="toolbar sheet-tools"><label>Intervalo <input id="sheet-address" aria-label="Intervalo da planilha" value="A1" size="10"></label><button id="sheet-select">Selecionar</button><label>Valor ou fórmula <input id="sheet-value" aria-label="Valor ou fórmula" placeholder="=SUM(A1:A5)"></label><button id="sheet-apply">Aplicar à célula</button><button id="csv-import">Importar CSV</button><button id="csv-export">Exportar CSV</button><button id="sheet-report">Criar relatório ↗</button><button id="sheet-chart-add">Criar gráfico</button><button id="sheet-pivot-add">Tabela dinâmica</button></div><div class="toolbar sheet-tools"><button id="sheet-calculate">∑ Inserir cálculo</button><button id="sheet-row">Inserir linha</button><button id="sheet-column">Inserir coluna</button><button id="sheet-clear">Limpar valores</button><button id="sheet-paste">Colar tabela</button><span class="muted">Clique numa célula e digite. Enter confirma; Tab avança. Selecione um intervalo para formatar.</span></div><div id="spreadsheet" aria-label="Editor de planilhas"><p>Carregando editor…</p></div><p class="muted sheet-help">Use a barra de ferramentas para formatar, mesclar, filtrar e ordenar. Clique com o botão direito para inserir/excluir linhas e colunas. As células, a barra de fórmulas e o campo acima aceitam SUM/IF/VLOOKUP e os equivalentes SOMA/SE/PROCV; os nomes são armazenados em inglês. Ao digitar números na grade, use vírgula decimal (1234,50). Salve para registrar no banco. XLSX preserva valores, fórmulas, estilos, mesclagens, filtros e validações comuns; regras avançadas ficam no arquivo DRAP e no JSON. Gráficos de colunas, linhas e pizza ficam abaixo da grade e no XLSX. Tabelas dinâmicas agrupam e resumem os dados abaixo da grade. Macros VBA ainda não estão disponíveis.</p><section id="sheet-charts" aria-label="Gráficos da planilha"></section><section id="sheet-pivots" aria-label="Tabelas dinâmicas"></section>`;
   const item=current;let pivotUI=null;
   try {
     if (!document.querySelector('#spreadsheet-css')) {

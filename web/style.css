@@ -940,6 +940,7 @@ a {
 #spreadsheet{height:calc(100vh - 300px);min-height:540px;position:relative;width:100%;isolation:isolate;color:#222;font-size:13px}
 #spreadsheet button,#spreadsheet input,#spreadsheet select{font:inherit}
 #spreadsheet button{min-height:0}
+#spreadsheet [data-u-command="sheet.command.set-range-font-family"] input{width:100%;min-width:0;padding:0}
 .sheet-help{font-size:12px;padding:8px 12px}
 @media(max-width:800px){#spreadsheet{height:650px;min-width:650px}.spreadsheet-editor{overflow:auto}}
 
