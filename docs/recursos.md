@@ -94,3 +94,7 @@ Planilhas: campos de intervalo/valor acompanham a seleção; atalhos para inseri
 - Tabelas: importação CSV, ordenação nos dois sentidos, filtro preservado, conversão dos 200 registros mais cabeçalho. Textos iniciados com `=` permanecem texto na planilha gerada.
 - Somente leitura: navegação do portal, filtro de tabelas e downloads autorizados ficam acessíveis; edição continua bloqueada no servidor.
 - Diagramas: mover etapas para baixo amplia a área visível em vez de esconder as etapas fora do canvas.
+
+## Edição visual de documentos e notas
+
+Editor visual com títulos, parágrafos, negrito/itálico combinados, listas/checklists, tabelas com edição de células/linhas/colunas, imagens, desfazer/refazer e substituição do texto visível. Markdown continua disponível; imagens e conteúdo antigo permanecem compatíveis. A primeira linha de tabelas é mantida como cabeçalho para evitar linhas artificiais ao reabrir. Colagem recebe texto simples; imagens usam upload local. Paginação profissional, fontes/cores arbitrárias, coautoria e fidelidade completa ao Word continuam fora dessa implementação.

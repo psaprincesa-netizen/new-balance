@@ -36,10 +36,12 @@ def main():
                 def save():
                     page.get_by_role('button',name='Salvar',exact=True).click();expect(page.locator('#save-state')).to_contain_text('Versão')
                 create('document','Documento avançado')
+                if page.get_by_role('button',name='Editar Markdown',exact=True).is_visible():page.get_by_role('button',name='Editar Markdown',exact=True).click()
                 page.get_by_label('Conteúdo do documento').fill('# Plano\n\n**Texto** de teste.');save()
                 page.get_by_role('button',name='Comentários',exact=True).click();page.get_by_label('Seu comentário').fill('Revisar a entrega')
                 page.get_by_role('button',name='Enviar comentário',exact=True).click();expect(page.locator('dialog')).to_contain_text('Revisar a entrega')
                 page.get_by_role('button',name='Fechar',exact=True).click()
+                if page.get_by_role('button',name='Editar Markdown',exact=True).is_visible():page.get_by_role('button',name='Editar Markdown',exact=True).click()
                 page.get_by_label('Conteúdo do documento').fill('Rascunho recuperável')
                 for _ in range(30):
                     if page.evaluate("Object.keys(localStorage).some(k=>k.startsWith('drap:draft:'))"):break

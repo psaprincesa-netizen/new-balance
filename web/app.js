@@ -233,9 +233,9 @@ async function allPages(path) {
 async function refresh() {
   items = await allPages("/api/items");
 }
-let spreadsheet = null;
+let spreadsheet = null,documentEditor=null;
 function shell(body) {
-  spreadsheet?.dispose(); spreadsheet=null;
+  spreadsheet?.dispose(); spreadsheet=null;documentEditor?.dispose();documentEditor=null;
   app.innerHTML = `<div class="layout"><aside class="sidebar"><div class="brand"><span class="brand-name">DRAP <span>office</span></span><span class="badge">beta</span></div><div class="workspace">◉ &nbsp; Meu espaço de trabalho<br><small>&nbsp;&nbsp;&nbsp;&nbsp; ${esc(user.name)}</small></div><nav class="nav" aria-label="Navegação principal">${[
     ["home", "⌂", "Visão geral"],
     ["files", "▤", "Todos os arquivos"],
@@ -594,19 +594,31 @@ function editor() {
   if (read)
     root
       .querySelectorAll("input,textarea,select,button")
-      .forEach(n=>{const allowed={slides:'[data-slide],#present',document:'#export-text',note:'#export-text',portal:'[data-link]',diagram:'#diagram-svg',table:'#table-filter,#table-csv',form:'#form-csv'}[current.kind];if(!allowed||!n.matches(allowed))n.disabled=true;});
+      .forEach(n=>{const allowed={slides:'[data-slide],#present',document:'#export-text,#document-mode',note:'#export-text,#document-mode',portal:'[data-link]',diagram:'#diagram-svg',table:'#table-filter,#table-csv',form:'#form-csv'}[current.kind];if(!allowed||!n.matches(allowed))n.disabled=true;});
   colors();
 }
 function textEditor(root, c) {
+  documentEditor?.dispose();documentEditor=null;const token={};root.documentToken=token;
   c.text ??= "";
-  root.innerHTML = `<div class="toolbar"><button data-format="# ">Título</button><button data-format="## ">Subtítulo</button><button data-format="**">Negrito</button><button data-format="*">Itálico</button><button data-format="- ">Lista</button><button data-format="- [ ] ">Checklist</button><button id="insert-table">Tabela</button><button id="insert-link">Link</button><button id="document-image">Inserir imagem</button><button id="document-images">Gerenciar imagens</button><button id="find-replace">Localizar e substituir</button><button id="to-slides">Criar apresentação ↗</button><button id="export-text">Baixar texto</button><span class="muted" id="word-count"></span></div><div class="document"><textarea id="text" aria-label="Conteúdo do documento" placeholder="Escreva sua próxima ideia… Use # para títulos e **texto** para negrito.">${esc(c.text)}</textarea><article id="preview" class="preview">${markdown(c.text,c.images)}</article></div>`;
+  let visual=true,doc=null;
+  try{visual=sessionStorage.getItem('drap-document-mode')!=='markdown';}catch{}
+  const readOnly=current.role==='read';
+  root.innerHTML = `<div class="toolbar"><button id="document-mode">Editar Markdown</button><button id="document-paragraph">Parágrafo</button><button data-format="# ">Título</button><button data-format="## ">Subtítulo</button><button data-format="**">Negrito</button><button data-format="*">Itálico</button><button data-format="- ">Lista</button><button data-format="- [ ] ">Checklist</button><button id="insert-table">Tabela</button><button id="insert-link">Link</button><button id="document-image">Inserir imagem</button><button id="document-images">Gerenciar imagens</button><button id="find-replace">Localizar e substituir</button><button id="to-slides">Criar apresentação ↗</button><button id="export-text">Baixar texto</button><button id="document-undo">Desfazer</button><button id="document-redo">Refazer</button><span class="muted" id="word-count"></span></div><div class="toolbar" id="document-table-tools"><span id="document-table-hint">Selecione uma célula para editar a tabela.</span><button data-document-command="row">Adicionar linha</button><button data-document-command="column">Adicionar coluna</button><button data-document-command="deleteRow">Excluir linha</button><button data-document-command="deleteColumn">Excluir coluna</button><button data-document-command="deleteTable">Excluir tabela</button></div><div class="document"><textarea id="text" aria-label="Conteúdo do documento" placeholder="Escreva sua próxima ideia… Use # para títulos e **texto** para negrito.">${esc(c.text)}</textarea><article id="preview" class="preview">${markdown(c.text,c.images)}</article></div>`;
   const update = () => {
-    document.querySelector("#preview").innerHTML = markdown(c.text,c.images);
+    if(doc)doc.refresh();else document.querySelector("#preview").innerHTML = markdown(c.text,c.images);
     document.querySelector("#word-count").textContent =
-      `${c.text.trim() ? c.text.trim().split(/\s+/).length : 0} palavras`;
+      `${doc?doc.words():(c.text.trim()?c.text.trim().split(/\s+/).length:0)} palavras`;
   };
   update();
   if(c.images?.length)root.querySelector('#export-text').textContent='Baixar HTML com imagens';
+  const setMode=()=>{root.querySelector('.document').classList.toggle('visual-mode',visual);root.querySelector('#text').hidden=visual;root.querySelector('#document-mode').textContent=visual?'Editar Markdown':'Editar visualmente';root.querySelector('#document-table-tools').hidden=!visual;for(const id of ['document-paragraph','document-undo','document-redo'])root.querySelector('#'+id).hidden=!visual;};
+  setMode();
+  bind('document-mode',()=>{visual=!visual;try{sessionStorage.setItem('drap-document-mode',visual?'visual':'markdown');}catch{}setMode();});
+  bind('document-paragraph',()=>{if(visual)doc?.format('paragraph');});
+  for(const command of ['undo','redo'])bind('document-'+command,()=>{if(visual)doc?.format(command);else{root.querySelector('#text').focus();document.execCommand(command);}});
+  root.querySelectorAll('[data-document-command]').forEach(el=>el.onclick=()=>doc?.format(el.dataset.documentCommand));
+  import('/document.js').then(({mountDocument})=>{if(!root.isConnected||root.documentToken!==token)return;root.querySelector('#preview').textContent='';doc=mountDocument(root.querySelector('#preview'),c,{readOnly,onChange:(text,words)=>{c.text=text;root.querySelector('#text').value=text;root.querySelector('#word-count').textContent=words+' palavras';setDirty();},notify,onState:state=>{root.querySelector('#document-table-hint').textContent=state.table?'Tabela selecionada:':'Selecione uma célula para editar a tabela.';root.querySelectorAll('[data-document-command]').forEach(el=>el.disabled=readOnly||!state.table);root.querySelector('#document-undo').disabled=readOnly||!state.undo;root.querySelector('#document-redo').disabled=readOnly||!state.redo;}});documentEditor=doc;root.querySelectorAll('[data-document-command]').forEach(el=>el.disabled=readOnly||!doc.state().table);root.querySelector('#document-undo').disabled=true;root.querySelector('#document-redo').disabled=true;root.querySelector('#preview').dataset.ready='true';root.querySelector('#word-count').textContent=doc.words()+' palavras';}).catch(e=>{if(!root.isConnected||root.documentToken!==token)return;visual=false;setMode();notify('O editor visual não carregou. A edição Markdown continua disponível.');});
+
   bind(
     "text",
     (e) => {
@@ -619,6 +631,7 @@ function textEditor(root, c) {
   document.querySelectorAll("[data-format]").forEach(
     (n) =>
       (n.onclick = () => {
+        if(visual){doc?.format(n.dataset.format);return;}
         const input = document.querySelector("#text"),
           a = input.selectionStart,
           b = input.selectionEnd,
@@ -636,6 +649,7 @@ function textEditor(root, c) {
       }),
   );
   function insertSnippet(text) {
+    if(visual&&doc){doc.insert(text);return;}
     const input=document.querySelector('#text');input.setRangeText(text,input.selectionStart,input.selectionEnd,'end');c.text=input.value;update();setDirty();input.focus();
   }
   bind('document-image',()=>{
@@ -649,9 +663,9 @@ function textEditor(root, c) {
   }));
   bind('insert-table',()=>insertSnippet('\n| Coluna 1 | Coluna 2 |\n| --- | --- |\n| Valor | Valor |\n'));
   bind('insert-link',()=>showDialog('<h2>Inserir link</h2><form id="link-form"><label class="field">Texto do link<input name="label" required></label><label class="field">URL HTTPS<input name="url" type="url" required></label><button class="primary">Inserir</button></form>',()=>bind('link-form',e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));if(!/^https?:\/\//i.test(d.url))return notify('Use um endereço HTTP ou HTTPS.');closeDialog();insertSnippet('['+d.label.replaceAll(']','')+']('+d.url.replaceAll(')','%29')+')');},'submit')));
-  bind('find-replace',()=>showDialog('<h2>Localizar e substituir</h2><form id="replace-form"><label class="field">Localizar<input name="search" required></label><label class="field">Substituir por<input name="replacement"></label><button class="primary">Substituir todas</button></form>',()=>bind('replace-form',e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const count=c.text.split(d.search).length-1;c.text=c.text.replaceAll(d.search,d.replacement);closeDialog();setDirty();textEditor(root,c);notify(count+' ocorrências substituídas.');},'submit')));
+  bind('find-replace',()=>showDialog('<h2>Localizar e substituir</h2><form id="replace-form"><label class="field">Localizar<input name="search" required></label><label class="field">Substituir por<input name="replacement"></label><button class="primary">Substituir todas</button></form>',()=>bind('replace-form',e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));if(visual&&doc){const count=doc.replace(d.search,d.replacement);closeDialog();notify(count+' ocorrências substituídas.');return;}const count=c.text.split(d.search).length-1;c.text=c.text.replaceAll(d.search,d.replacement);closeDialog();setDirty();textEditor(root,c);notify(count+' ocorrências substituídas.');},'submit')));
   bind("export-text", () =>
-    c.images?.length?download(current.title+".html",'<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>'+esc(current.title)+'</title><body>'+markdown(c.text,c.images)+'</body></html>',"text/html"):download(current.title + ".md", c.text, "text/markdown"),
+    c.images?.length?download(current.title+".html",'<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>'+esc(current.title)+'</title><body>'+(doc?doc.html():markdown(c.text,c.images))+'</body></html>',"text/html"):download(current.title + ".md", c.text, "text/markdown"),
   );
   bind("to-slides", () =>
     convert(
@@ -1258,7 +1272,7 @@ function coverage() {
       [
         "Documentos e notas",
         "Disponível",
-        "Texto, listas, tabelas, links, checklist, busca/substituição, Markdown, DOCX e impressão.",
+        "Edição visual, títulos, negrito/itálico, listas, tabelas editáveis, links, imagens, checklist, desfazer/refazer, busca/substituição, Markdown, DOCX e impressão.",
         "Pendentes: paginação profissional, bibliografia, mala direta e revisão com alterações rastreadas.",
       ],
       [

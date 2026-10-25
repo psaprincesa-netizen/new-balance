@@ -32,3 +32,5 @@ Tabelas dinâmicas DRAP implementadas em `web/pivot.js` / `web/pivot-ui.js`; exp
 Revisão visual: `web/slides.js` monta editor de objetos; `server/slides_io.py` valida imagens/objetos e faz intercâmbio PPTX. `tests/browser_slides.py` verifica uso real. Planilha ganhou ações diretas e sincronização da seleção nos campos auxiliares; a jornada existente cobre essas operações.
 
 Fluxos corrigidos em `web/workflows.js`, `web/app.js` e `server/document_io.py`: imagens/tabelas/listas/links DOCX, agenda editável, respostas duplicadas preservadas, CSV e conversão completa de registros, ações permitidas em leitura. Testes em `tests/browser_workflows.py` e unidades correspondentes.
+
+Editor visual: TipTap/ProseMirror 3.32.0, bundle `scripts/document-entry.js`, mantém `content.text` Markdown e `content.images`. Imagens são referências locais, sem buscar URLs. Leitores não ganham edição. `tests/browser_document.py` cobre edição visual, persistência e DOCX. Manter cabeçalho na primeira linha das tabelas evita normalização com linha adicional. Bibliotecas do npm têm versões fixadas; markdown-it-py 4.0.0 sustenta a exportação inline DOCX.

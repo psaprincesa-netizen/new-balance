@@ -20,3 +20,10 @@ class DocumentIOTest(unittest.TestCase):
         validate_content('calendar',valid)
         valid['events'][0]['end']='2026-10-25T12:30:00Z'
         with self.assertRaises(InvalidInput):validate_content('calendar',valid)
+
+    def test_nested_marks_escaped_literals_and_table_breaks(self):
+        c={'text':r'***Destaque*** e 2 \* 3'+'\n| Campo |\n| --- |\n| A<br>B |'}
+        data,_=export_file({'kind':'document','title':'Texto','content':c},'docx');doc=Document(io.BytesIO(data))
+        self.assertTrue(any(r.bold and r.italic and r.text=='Destaque' for r in doc.paragraphs[0].runs))
+        self.assertIn('2 * 3',doc.paragraphs[0].text);self.assertEqual(doc.tables[0].cell(1,0).text,'A\nB')
+        restored,_=import_file('Texto.docx',base64.b64encode(data).decode());self.assertIn('***Destaque***',restored['content']['text'])

@@ -13,6 +13,13 @@
     "node": "24.x"
   },
   "dependencies": {
+    "@tiptap/core": "3.32.0",
+    "@tiptap/extension-image": "3.32.0",
+    "@tiptap/extension-table": "3.32.0",
+    "@tiptap/extension-task-item": "3.32.0",
+    "@tiptap/extension-task-list": "3.32.0",
+    "@tiptap/markdown": "3.32.0",
+    "@tiptap/starter-kit": "3.32.0",
     "@univerjs/preset-sheets-conditional-formatting": "1.2.0",
     "@univerjs/preset-sheets-core": "1.2.0",
     "@univerjs/preset-sheets-data-validation": "1.2.0",

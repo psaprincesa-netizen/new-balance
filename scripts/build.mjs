@@ -2,6 +2,7 @@ import { cp, mkdir, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 const root = new URL('../', import.meta.url);
 execFileSync(process.execPath, ['scripts/build-engine.mjs'], {cwd:root,stdio:'inherit'});
+execFileSync(process.execPath, ['scripts/build-document.mjs'], {cwd:root,stdio:'inherit'});
 execFileSync(process.execPath, ['scripts/build-spreadsheet.mjs'], {cwd:root,stdio:'inherit'});
 if (process.env.VERCEL === '1') {
   if (!process.env.DATABASE_URL || process.env.DATABASE_URL === '[SENSITIVE]') {

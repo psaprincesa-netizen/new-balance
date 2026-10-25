@@ -1,6 +1,8 @@
 """Document exchange preserves supported tables, lists, links and embedded raster images."""
 import base64,io,re
 from PIL import Image
+from markdown_it import MarkdownIt
+INLINE_MARKDOWN=MarkdownIt('commonmark')
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -24,14 +26,22 @@ def valid_images(images):
 
 
 def inline(paragraph,text):
-    for part in re.split(r'(\[[^\]]+\]\(https?://[^\s)]+\)|\*\*.*?\*\*|\*[^*]+\*)',text):
-        link=re.fullmatch(r'\[([^\]]+)\]\((https?://[^\s)]+)\)',part)
+    tokens=INLINE_MARKDOWN.parseInline(text)[0].children or []
+    bold=italic=0;link=None
+    for token in tokens:
+        if token.type=='strong_open':bold+=1;continue
+        if token.type=='strong_close':bold=max(0,bold-1);continue
+        if token.type=='em_open':italic+=1;continue
+        if token.type=='em_close':italic=max(0,italic-1);continue
+        if token.type=='link_open':
+            url=token.attrGet('href') or '';link=url if url.startswith(('http://','https://')) else None;continue
+        if token.type=='link_close':link=None;continue
+        value='\n' if token.type in ('softbreak','hardbreak') or (token.type=='html_inline' and re.fullmatch(r'<br\s*/?>',token.content,re.I)) else token.content
+        if not value:continue
+        run=paragraph.add_run(value);run.bold=bool(bold);run.italic=bool(italic)
+        if token.type=='code_inline':run.font.name='Courier New'
         if link:
-            h=OxmlElement('w:hyperlink');h.set(qn('r:id'),paragraph.part.relate_to(link[2],RT.HYPERLINK,is_external=True));r=OxmlElement('w:r');t=OxmlElement('w:t');t.text=link[1];r.append(t);h.append(r);paragraph._p.append(h)
-        else:
-            run=paragraph.add_run(part[2:-2] if part.startswith('**') and part.endswith('**') else part[1:-1] if part.startswith('*') and part.endswith('*') else part)
-            if part.startswith('**') and part.endswith('**'):run.bold=True
-            elif part.startswith('*') and part.endswith('*'):run.italic=True
+            h=OxmlElement('w:hyperlink');h.set(qn('r:id'),paragraph.part.relate_to(link,RT.HYPERLINK,is_external=True));h.append(run._r);paragraph._p.append(h)
 
 
 def export_document(content,title,output):
@@ -71,11 +81,14 @@ def import_document(stream):
         for part in paragraph.iter_inner_content():
             if hasattr(part,'url'):
                 result.append('['+part.text+']('+part.url.replace(')','%29')+')' if part.url.startswith(('http://','https://')) else part.text)
-            else:result.append('**'+part.text+'**' if part.bold else '*'+part.text+'*' if part.italic else part.text)
+            else:
+                value=re.sub(r'([\\`*_\[\]])',r'\\\1',part.text)
+                marker='***' if part.bold and part.italic else '**' if part.bold else '*' if part.italic else ''
+                result.append(marker+value+marker if value else '')
         return ''.join(result)
     for block in document.iter_inner_content():
         if hasattr(block,'rows'):
-            rows=[[cell.text.replace('|','\\|').replace('\n',' ') for cell in row.cells] for row in block.rows]
+            rows=[[cell.text.replace('|','\\|').replace('\n','<br>') for cell in row.cells] for row in block.rows]
             if rows:lines.extend(['| '+' | '.join(rows[0])+' |','| '+' | '.join('---' for _ in rows[0])+' |',*['| '+' | '.join(row)+' |' for row in rows[1:]]])
             continue
         prefix=''

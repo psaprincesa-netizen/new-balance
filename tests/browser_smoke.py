@@ -54,6 +54,7 @@ def main():
                     expect(page.locator('#save-state')).to_contain_text('Versão')
 
                 create('document','Plano integrado')
+                if page.get_by_role('button',name='Editar Markdown',exact=True).is_visible():page.get_by_role('button',name='Editar Markdown',exact=True).click()
                 page.get_by_label('Conteúdo do documento').fill('# Estratégia\n\n**Planejar** o próximo trimestre.\n\n## Entrega\nConectar as ferramentas.')
                 save()
                 page.reload()
@@ -111,6 +112,7 @@ def main():
                 expect(page.locator('.node').nth(1)).to_have_text('Aprovação')
 
                 create('note','Ideias')
+                if page.get_by_role('button',name='Editar Markdown',exact=True).is_visible():page.get_by_role('button',name='Editar Markdown',exact=True).click()
                 page.get_by_label('Conteúdo do documento').fill('Uma anotação integrada.')
                 save()
                 page.get_by_role('button',name='Mover para lixeira').click()
