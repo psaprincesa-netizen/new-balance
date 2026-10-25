@@ -947,7 +947,7 @@ function portalEditor(root, c) {
     "portal-text",
     (e) => {
       c.text = e.target.value;
-      root.querySelector(".preview").innerHTML = markdown(c.text,c.images);
+      root.querySelector(".preview").innerHTML = markdown(c.text);
       setDirty();
     },
     "input",
