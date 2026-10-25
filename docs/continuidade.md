@@ -9,7 +9,7 @@ Manter a plataforma abrindo em https://new-balance-pi.vercel.app e preservar os 
 ## Próximas entregas por módulo
 
 1. Núcleo comum: auditoria administrativa, recuperação de conta e cotas. Rascunhos, comentários e acessos listáveis foram implementados.
-2. Documentos e planilhas: ampliar fidelidade de Office, paginação, imagens, pivôs nativos XLSX e conectores. Abas, motor de fórmulas e intercâmbio Office já foram adicionados.
+2. Documentos e planilhas: ampliar fidelidade de Office, paginação, fidelidade avançada de imagens/Office, pivôs nativos XLSX e conectores. Abas, motor de fórmulas e intercâmbio Office já foram adicionados.
 3. Apresentações e diagramas: mestre, áudio/vídeo, animações e bibliotecas de diagramas. Imagens, caixas de texto, formas, camadas e PPTX visual foram adicionados aos slides; conectores e canvas aos diagramas.
 4. Projetos, agenda, formulários e tabelas: dependências, convites, quizzes, relacionamentos. Subtarefas, ocorrências repetidas, ICS, coleta pública e tipos de campos foram adicionados.
 5. Colaboração, arquivos e portais: equipes, armazenamento binário, permissões organizacionais e coautoria.
@@ -30,3 +30,5 @@ Pendências de planilhas: pivôs nativos no XLSX, agrupamentos multinível, tipo
 Tabelas dinâmicas DRAP implementadas em `web/pivot.js` / `web/pivot-ui.js`; exportação e validação em `server/pivots.py`. Fixtures compartilhadas verificam agregação equivalente em JS/Python, e `tests/browser_pivots.py` cobre criação, alteração, fórmulas, registros, XLSX, recuperação JSON e leitura.
 
 Revisão visual: `web/slides.js` monta editor de objetos; `server/slides_io.py` valida imagens/objetos e faz intercâmbio PPTX. `tests/browser_slides.py` verifica uso real. Planilha ganhou ações diretas e sincronização da seleção nos campos auxiliares; a jornada existente cobre essas operações.
+
+Fluxos corrigidos em `web/workflows.js`, `web/app.js` e `server/document_io.py`: imagens/tabelas/listas/links DOCX, agenda editável, respostas duplicadas preservadas, CSV e conversão completa de registros, ações permitidas em leitura. Testes em `tests/browser_workflows.py` e unidades correspondentes.

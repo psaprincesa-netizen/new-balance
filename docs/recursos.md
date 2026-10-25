@@ -7,9 +7,9 @@ A lista recebida inclui centenas de funções de produtos maduros. Esta entrega 
 | Planilhas / Excel | Editor Univer, abas, fórmulas, estilos, mesclagem, filtros, ordenação, validação, formatação condicional, CSV e XLSX (detalhes abaixo) | Gráficos avançados, pivôs nativos no XLSX, macros, Solver, Power Query e equivalência integral ao Excel |
 | Power Query | Importação CSV local | Fontes externas, ETL, junções, transformações, atualizações e linguagem M |
 | Power Pivot | Não implementado | Modelo relacional, medidas, KPIs, DAX e cubos |
-| Documentos / Word | Texto com marcação de títulos, negrito e itálico, visualização, contagem, exportação Markdown, impressão do navegador | DOCX, estilos avançados, paginação, seções, cabeçalhos/rodapés, imagens, tabelas, gráficos, formas, referências acadêmicas, sumário, índices, mala direta, revisão e assinatura |
+| Documentos / Word | Texto com títulos, negrito/itálico, listas, tabelas, links e imagens incorporadas; DOCX, Markdown ou HTML com imagens, impressão | Estilos avançados, paginação, seções, cabeçalhos/rodapés, gráficos, formas, referências acadêmicas, sumário, índices, mala direta, revisão e assinatura |
 | Apresentações / PowerPoint | Slides com imagens, caixas de texto e formas editáveis; posição/tamanho/camadas, desfazer/refazer, criação, duplicação, remoção, reordenação, notas, temas, apresentação por teclado, documento → slides, PPTX | Mestre, áudio/vídeo, 3D, transições, animações, ações interativas, gravação e vídeo |
-| Agenda / Outlook | Compromissos locais com início/fim e apresentação no fuso do navegador | Recorrência, disponibilidade, salas, convites, delegação e sincronização |
+| Agenda / Outlook | Criação e edição de compromissos, descrição/local, ocorrências repetidas, ICS e apresentação no fuso do navegador | Disponibilidade, salas, convites, delegação e sincronização |
 | Correio / Outlook | Não implementado | Conexão a provedor, pastas, contatos, mensagens, pesquisa, regras, anexos, envio e recebimento reais |
 | Armazenamento / OneDrive | Biblioteca de arquivos próprios do DRAP office, histórico, lixeira e exportação JSON | Arquivos binários, upload/download, sincronização, cofre e armazenamento remoto |
 | Notas / OneNote | Notas textuais, formatação simples, busca pela biblioteca | Cadernos/seções, desenho, PDF, multimídia, OCR e manuscritos |
@@ -34,7 +34,7 @@ A lista recebida inclui centenas de funções de produtos maduros. Esta entrega 
 
 | Área | Implementação adicionada | Limites que permanecem |
 | --- | --- | --- |
-| Documentos / notas / portais | Listas, checklist, tabelas Markdown, links seguros, busca/substituição; DOCX para documentos/notas | Não há paginação profissional nem fidelidade total de layout DOCX |
+| Documentos / notas / portais | Listas, checklist, tabelas Markdown, links seguros, busca/substituição; imagens e DOCX para documentos/notas | Não há paginação profissional nem fidelidade total de layout DOCX |
 | Planilhas | Editor Univer; ver detalhes e limites na seção abaixo | Sem macros, pivôs nativos no XLSX, gráficos avançados, DAX, Power Query ou equivalência de todas as fórmulas |
 | Apresentações | Imagens, texto, formas, camadas, arraste/redimensionamento, temas e PPTX com imagens/objetos | Importação preserva imagens e objetos de texto/formas criados pelo DRAP; grupos, recortes, temas externos, animações e vídeos não são preservados |
 | Projetos | Responsáveis, prioridades e subtarefas | Sem caminho crítico ou planejamento de recursos |
@@ -85,3 +85,12 @@ Limites: dez resumos por pasta, até 50 mil células/256 colunas na fonte e dez 
 Slides usam coordenadas proporcionais em uma página 16:9. Imagens PNG/JPEG/WebP locais são otimizadas para PNG e salvas com o documento; até 30 objetos por slide e 100 slides, respeitando 2 MB por documento. O editor limita novas imagens/duplicações antes de 1,8 MB e imagens individuais a cerca de 300 KB otimizados. O PPTX contém imagens incorporadas e textos/formas editáveis. Impressão/PDF inclui todos os slides, sem notas. Leitores podem navegar e apresentar, sem editar.
 
 Planilhas: campos de intervalo/valor acompanham a seleção; atalhos para inserir linha/coluna, limpar valores, colar dados tabulados e criar soma/média/mínimo/máximo/contagens. O assistente rejeita resultado dentro da própria origem para evitar referência circular. Fórmulas continuam atualizando após inserção de linhas e colunas.
+
+## Correções de fluxos entre módulos
+
+- Documentos/notas: inserção de até 20 imagens raster otimizadas, descrição/largura, remoção, exportação HTML autocontida e DOCX com imagens, tabelas, listas e hyperlinks. Imagens de parágrafos DOCX são importadas; imagens dentro de tabelas, cabeçalhos/rodapés e posições flutuantes não são preservadas. Documentos com imagens podem gerar slides com essas imagens. Permanece o limite de 2 MB por documento.
+- Agenda: edição de título, início/fim, local e descrição de cada ocorrência; validação do intervalo considera o instante real, incluindo fusos diferentes.
+- Formulários: rótulos/obrigatoriedade são atualizados no formulário de resposta; perguntas com títulos repetidos mantêm colunas distintas. Conversão para tabela verifica 200 registros/26 campos e orienta usar planilha ou CSV. Planilhas aceitam até 50 mil células nessa conversão.
+- Tabelas: importação CSV, ordenação nos dois sentidos, filtro preservado, conversão dos 200 registros mais cabeçalho. Textos iniciados com `=` permanecem texto na planilha gerada.
+- Somente leitura: navegação do portal, filtro de tabelas e downloads autorizados ficam acessíveis; edição continua bloqueada no servidor.
+- Diagramas: mover etapas para baixo amplia a área visível em vez de esconder as etapas fora do canvas.

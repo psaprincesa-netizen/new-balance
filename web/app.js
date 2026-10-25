@@ -1,4 +1,5 @@
-import {mountSlides,slideMarkup,printSlides} from './slides.js';
+import {responseTable,recordsWorkbook,answerError,localDateTime,safeCsv,documentSlides} from './workflows.js';
+import {mountSlides,slideMarkup,printSlides,raster} from './slides.js';
 import {mountPivots} from './pivot-ui.js';
 import {chartSvg,chartData} from './chart.js';
 import { cellValue, parseCSV, toCSV } from "./formula.js";
@@ -487,14 +488,17 @@ async function save() {
     app.inert = false;
   }
 }
-function markdown(text) {
+function markdown(text,images=[]) {
   const inline=s=>esc(s).replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\*(.*?)\*/g,'<em>$1</em>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
   const lines=String(text).split('\n'),out=[];
   for(let i=0;i<lines.length;i++) {
     const line=lines[i];
+    const picture=/^!\[([^\]]*)\]\(drap-image:([a-zA-Z0-9_-]+)\)$/.exec(line.trim());
+    if(picture){const im=images.find(im=>im.id===picture[2]);out.push(im?`<figure><img src="${esc(im.src)}" alt="${esc(im.alt||picture[1])}" style="width:${im.width||80}%;max-width:100%;height:auto;max-height:900px;object-fit:contain"></figure>`:'<p>Imagem indisponível: '+esc(picture[1])+'</p>');continue;}
+
     if(line.startsWith('```')) {const block=[];while(++i<lines.length&&!lines[i].startsWith('```'))block.push(lines[i]);out.push('<pre><code>'+esc(block.join('\n'))+'</code></pre>');continue;}
     if(line.includes('|') && /^\s*\|?\s*:?-{3,}/.test(lines[i+1]||'')) {
-      const cells=s=>s.replace(/^\s*\|/,'').replace(/\|\s*$/,'').split('|').map(x=>x.trim());
+      const cells=s=>s.replace(/^\s*\|/,'').replace(/\|\s*$/,'').split(/(?<!\\)\|/).map(x=>x.trim().replaceAll('\\|','|'));
       const header=cells(line);i++;const rows=[];
       while(i+1<lines.length && lines[i+1].includes('|'))rows.push(cells(lines[++i]));
       out.push('<table><thead><tr>'+header.map(v=>'<th>'+inline(v)+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+r.map(v=>'<td>'+inline(v)+'</td>').join('')+'</tr>').join('')+'</tbody></table>');continue;
@@ -590,18 +594,19 @@ function editor() {
   if (read)
     root
       .querySelectorAll("input,textarea,select,button")
-      .forEach((n) => {if(current.kind!=="slides"||(!n.matches("[data-slide],#present")))n.disabled=true;});
+      .forEach(n=>{const allowed={slides:'[data-slide],#present',document:'#export-text',note:'#export-text',portal:'[data-link]',diagram:'#diagram-svg',table:'#table-filter,#table-csv',form:'#form-csv'}[current.kind];if(!allowed||!n.matches(allowed))n.disabled=true;});
   colors();
 }
 function textEditor(root, c) {
   c.text ??= "";
-  root.innerHTML = `<div class="toolbar"><button data-format="# ">Título</button><button data-format="## ">Subtítulo</button><button data-format="**">Negrito</button><button data-format="*">Itálico</button><button data-format="- ">Lista</button><button data-format="- [ ] ">Checklist</button><button id="insert-table">Tabela</button><button id="insert-link">Link</button><button id="find-replace">Localizar e substituir</button><button id="to-slides">Criar apresentação ↗</button><button id="export-text">Baixar texto</button><span class="muted" id="word-count"></span></div><div class="document"><textarea id="text" aria-label="Conteúdo do documento" placeholder="Escreva sua próxima ideia… Use # para títulos e **texto** para negrito.">${esc(c.text)}</textarea><article id="preview" class="preview">${markdown(c.text)}</article></div>`;
+  root.innerHTML = `<div class="toolbar"><button data-format="# ">Título</button><button data-format="## ">Subtítulo</button><button data-format="**">Negrito</button><button data-format="*">Itálico</button><button data-format="- ">Lista</button><button data-format="- [ ] ">Checklist</button><button id="insert-table">Tabela</button><button id="insert-link">Link</button><button id="document-image">Inserir imagem</button><button id="document-images">Gerenciar imagens</button><button id="find-replace">Localizar e substituir</button><button id="to-slides">Criar apresentação ↗</button><button id="export-text">Baixar texto</button><span class="muted" id="word-count"></span></div><div class="document"><textarea id="text" aria-label="Conteúdo do documento" placeholder="Escreva sua próxima ideia… Use # para títulos e **texto** para negrito.">${esc(c.text)}</textarea><article id="preview" class="preview">${markdown(c.text,c.images)}</article></div>`;
   const update = () => {
-    document.querySelector("#preview").innerHTML = markdown(c.text);
+    document.querySelector("#preview").innerHTML = markdown(c.text,c.images);
     document.querySelector("#word-count").textContent =
       `${c.text.trim() ? c.text.trim().split(/\s+/).length : 0} palavras`;
   };
   update();
+  if(c.images?.length)root.querySelector('#export-text').textContent='Baixar HTML com imagens';
   bind(
     "text",
     (e) => {
@@ -633,28 +638,26 @@ function textEditor(root, c) {
   function insertSnippet(text) {
     const input=document.querySelector('#text');input.setRangeText(text,input.selectionStart,input.selectionEnd,'end');c.text=input.value;update();setDirty();input.focus();
   }
+  bind('document-image',()=>{
+    const input=document.createElement('input');input.type='file';input.accept='image/png,image/jpeg,image/webp';
+    input.onchange=async()=>{if(!input.files[0])return;try{const {src,ratio}=await raster(input.files[0]);if(!root.isConnected)return;if((c.images||[]).length>=20||JSON.stringify(c).length+src.length>1800000)throw Error('Limite de imagens do documento atingido. Remova imagens não usadas ou crie outro documento.');const im={id:crypto.randomUUID(),src,ratio,alt:input.files[0].name.slice(0,200),width:80};(c.images??=[]).push(im);insertSnippet('\n!['+im.alt.replaceAll(']','')+'](drap-image:'+im.id+')\n');document.querySelector('#export-text').textContent='Baixar HTML com imagens';}catch(e){notify(e.message);}};input.click();
+  });
+  bind('document-images',()=>showDialog(`<h2>Imagens do documento</h2>${(c.images||[]).map((im,i)=>`<article class="card"><img src="${esc(im.src)}" alt="${esc(im.alt)}" style="max-width:120px;max-height:100px"><label class="field">Descrição<input data-image-alt="${i}" aria-label="Descrição da imagem ${i+1}" maxlength="200" value="${esc(im.alt)}"></label><label class="field">Largura (%)<input type="number" min="10" max="100" data-image-width="${i}" aria-label="Largura da imagem ${i+1}" value="${im.width||80}"></label><button data-image-remove="${i}">Remover imagem ${i+1}</button></article>`).join('')||'<p>Nenhuma imagem inserida.</p>'}<button id="images-close">Concluir</button>`,()=>{
+    modal.querySelectorAll('[data-image-alt]').forEach(el=>el.oninput=()=>{c.images[+el.dataset.imageAlt].alt=el.value;update();setDirty();});
+    modal.querySelectorAll('[data-image-width]').forEach(el=>el.onchange=()=>{const value=Number(el.value);if(!Number.isFinite(value))return;c.images[+el.dataset.imageWidth].width=Math.max(10,Math.min(100,value));el.value=c.images[+el.dataset.imageWidth].width;update();setDirty();});
+    modal.querySelectorAll('[data-image-remove]').forEach(el=>el.onclick=()=>{const im=c.images[+el.dataset.imageRemove];c.text=c.text.split('\n').filter(line=>!line.includes('](drap-image:'+im.id+')')).join('\n');c.images.splice(+el.dataset.imageRemove,1);closeDialog();setDirty();textEditor(root,c);});bind('images-close',closeDialog);
+  }));
   bind('insert-table',()=>insertSnippet('\n| Coluna 1 | Coluna 2 |\n| --- | --- |\n| Valor | Valor |\n'));
   bind('insert-link',()=>showDialog('<h2>Inserir link</h2><form id="link-form"><label class="field">Texto do link<input name="label" required></label><label class="field">URL HTTPS<input name="url" type="url" required></label><button class="primary">Inserir</button></form>',()=>bind('link-form',e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));if(!/^https?:\/\//i.test(d.url))return notify('Use um endereço HTTP ou HTTPS.');closeDialog();insertSnippet('['+d.label.replaceAll(']','')+']('+d.url.replaceAll(')','%29')+')');},'submit')));
   bind('find-replace',()=>showDialog('<h2>Localizar e substituir</h2><form id="replace-form"><label class="field">Localizar<input name="search" required></label><label class="field">Substituir por<input name="replacement"></label><button class="primary">Substituir todas</button></form>',()=>bind('replace-form',e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const count=c.text.split(d.search).length-1;c.text=c.text.replaceAll(d.search,d.replacement);closeDialog();setDirty();textEditor(root,c);notify(count+' ocorrências substituídas.');},'submit')));
   bind("export-text", () =>
-    download(current.title + ".md", c.text, "text/markdown"),
+    c.images?.length?download(current.title+".html",'<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>'+esc(current.title)+'</title><body>'+markdown(c.text,c.images)+'</body></html>',"text/html"):download(current.title + ".md", c.text, "text/markdown"),
   );
   bind("to-slides", () =>
     convert(
       "slides",
       {
-        slides: c.text
-          .split(/(?=^#{1,2} )/m)
-          .filter((s) => s.trim())
-          .map((s) => {
-            const lines = s.split("\n");
-            return {
-              title: lines.shift().replace(/^#+\s*/, ""),
-              body: lines.join("\n").trim(),
-              notes: "",
-            };
-          })
-          .slice(0, 100),
+        slides: documentSlides(c),
       },
       " — Apresentação",
     ),
@@ -690,7 +693,7 @@ async function sheetEditor(root, c) {
     bind('sheet-chart-add',()=>showDialog(`<h2>Criar gráfico</h2><form id="chart-form"><label class="field">Título do gráfico<input name="title" value="${esc(current.title)}" maxlength="100" required></label><label class="field">Tipo de gráfico<select name="type"><option value="bar">Colunas</option><option value="line">Linhas</option><option value="pie">Pizza</option></select></label><label class="field">Intervalo de dados<input name="range" value="${esc(address().includes(':')?address():'A1:B5')}" required></label><p>Duas colunas: rótulos e valores, com cabeçalho. Até 200 linhas. O gráfico acompanha os valores dessas células.</p><p id="chart-error" role="alert" class="error"></p><button class="primary">Adicionar gráfico</button></form>`,()=>bind('chart-form',async e=>{e.preventDefault();try{await spreadsheet.flush();if((c.charts||[]).length>=10)throw Error('Limite de dez gráficos por arquivo.');const d=Object.fromEntries(new FormData(e.target));d.range=d.range.trim().toUpperCase();if(!/^[A-Z]{1,3}[1-9]\d{0,5}:[A-Z]{1,3}[1-9]\d{0,5}$/.test(d.range))throw Error('Use um intervalo como A1:B5.');d.sheetId=spreadsheet.activeSheetId();d.id=crypto.randomUUID();chartData(spreadsheet.chartRows(d.range,d.sheetId),d.type);(c.charts??=[]).push(d);closeDialog();setDirty();renderCharts();}catch(err){document.querySelector('#chart-error').textContent=err.message;}},'submit')));
     bind('csv-export',action(async()=>{await spreadsheet.flush();download(current.title+'.csv',spreadsheet.csv(),'text/csv');}));
     bind('sheet-report',action(async()=>{await spreadsheet.flush();await convert('document',{text:'# '+current.title+'\n\n'+spreadsheet.rows().map(r=>r.join(' | ')).join('\n')},' — Relatório');}));
-    if(item.role==='read')root.querySelectorAll('.sheet-tools input,.sheet-tools button').forEach(el=>el.disabled=true);
+    if(item.role==='read')root.querySelectorAll('.sheet-tools input,.sheet-tools button:not(#csv-export)').forEach(el=>el.disabled=true);
   function renderCharts(){
     if(!spreadsheet||!root.isConnected)return;
     const panel=root.querySelector('#sheet-charts');
@@ -769,7 +772,7 @@ function calendarEditor(root, c) {
           .sort((a, b) => a.start.localeCompare(b.start))
           .map(
             (e) =>
-              `<article class="card row between"><div><h3>${esc(e.title)}</h3><p class="muted">${date(e.start)} → ${date(e.end)}${e.location ? " · " + esc(e.location) : ""}</p></div><button data-event="${e.index}">Excluir</button></article>`,
+              `<article class="card row between"><div><h3>${esc(e.title)}</h3><p class="muted">${date(e.start)} → ${date(e.end)}${e.location ? " · " + esc(e.location) : ""}</p>${e.description?"<p>"+esc(e.description)+"</p>":""}</div><div class="row"><button data-edit-event="${e.index}">Editar compromisso</button><button data-event="${e.index}">Excluir</button></div></article>`,
           )
           .join("")
       : '<div class="empty">Sua agenda está livre. Adicione o primeiro compromisso.</div>'
@@ -795,6 +798,10 @@ function calendarEditor(root, c) {
     },
     "submit",
   );
+  root.querySelectorAll('[data-edit-event]').forEach(button=>button.onclick=()=>{
+    const event=c.events[+button.dataset.editEvent];
+    showDialog(`<h2>Editar compromisso</h2><form id="edit-event"><label class="field">Título do compromisso<input name="title" value="${esc(event.title)}" maxlength="200" required></label><label class="field">Início<input name="start" type="datetime-local" value="${localDateTime(event.start)}" required></label><label class="field">Fim<input name="end" type="datetime-local" value="${localDateTime(event.end)}" required></label><label class="field">Local<input name="location" value="${esc(event.location||'')}" maxlength="500"></label><label class="field">Descrição<textarea name="description" aria-label="Descrição do compromisso" maxlength="4000">${esc(event.description||'')}</textarea></label><p>Esta alteração afeta somente este compromisso.</p><p id="event-error" role="alert"></p><button class="primary">Aplicar compromisso</button></form>`,()=>bind('edit-event',e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));if(new Date(d.end)<=new Date(d.start)){document.querySelector('#event-error').textContent='O fim deve ser posterior ao início.';return;}Object.assign(event,{title:d.title,location:d.location,description:d.description,start:new Date(d.start).toISOString(),end:new Date(d.end).toISOString()});closeDialog();setDirty();calendarEditor(root,c);},'submit'));
+  });
   root.querySelectorAll("[data-event]").forEach(
     (n) =>
       (n.onclick = () => {
@@ -812,20 +819,18 @@ function formEditor(root,c) {
   c.questions ??=[];c.responses ??=[];
   c.fields ??=c.questions.map(()=>({type:'text',required:true,options:[]}));
   const fieldTypes={text:'Texto',email:'E-mail',number:'Número',date:'Data',choice:'Escolha única'};
-  root.innerHTML=`<div class="toolbar"><button id="add-question">＋ Pergunta de texto</button><button id="form-table">Respostas → Tabela</button><button id="form-csv">Baixar respostas CSV</button>${current.role==='owner'?'<button id="form-publish">Link de coleta</button>':''}<span>${c.responses.length} respostas</span></div><h3>Perguntas</h3>${c.questions.map((q,i)=>`<article class="card"><div class="row"><input data-question="${i}" value="${esc(q)}" aria-label="Pergunta ${i+1}" maxlength="300"><select data-field-type="${i}" aria-label="Tipo da pergunta ${i+1}">${Object.entries(fieldTypes).map(([type,label])=>`<option value="${type}" ${c.fields[i].type===type?'selected':''}>${label}</option>`).join('')}</select><button data-remove-question="${i}">Excluir</button></div><label class="checklist"><input type="checkbox" data-field-required="${i}" ${c.fields[i].required?'checked':''}>Obrigatória</label>${c.fields[i].type==='choice'?`<label class="field">Opções, uma por linha<textarea data-field-options="${i}">${esc(c.fields[i].options.join('\n'))}</textarea></label>`:''}</article>`).join('')}<hr><h3>Responder neste espaço</h3><form id="respond-form">${c.questions.map((q,i)=>answerField(q,c.fields[i],i)).join('')}<button class="primary" ${c.questions.length?'':'disabled'}>Registrar resposta</button></form><h3 class="section-head">Respostas registradas</h3>${c.responses.map(r=>`<div class="card"><small>${date(r.at)}</small>${r.answers.map((a,i)=>`<p>${esc(r.questions?.[i]||'Pergunta '+(i+1))}: ${esc(a)}</p>`).join('')}</div>`).join('')}`;
-  root.querySelectorAll('[data-question]').forEach(n=>n.oninput=()=>{c.questions[+n.dataset.question]=n.value;setDirty();});
+  root.innerHTML=`<div class="toolbar"><button id="add-question">＋ Pergunta de texto</button><button id="form-table">Respostas → Tabela</button><button id="form-sheet">Respostas → Planilha</button><button id="form-csv">Baixar respostas CSV</button>${current.role==='owner'?'<button id="form-publish">Link de coleta</button>':''}<span>${c.responses.length} respostas</span></div><h3>Perguntas</h3>${c.questions.map((q,i)=>`<article class="card"><div class="row"><input data-question="${i}" value="${esc(q)}" aria-label="Pergunta ${i+1}" maxlength="300"><select data-field-type="${i}" aria-label="Tipo da pergunta ${i+1}">${Object.entries(fieldTypes).map(([type,label])=>`<option value="${type}" ${c.fields[i].type===type?'selected':''}>${label}</option>`).join('')}</select><button data-remove-question="${i}">Excluir</button></div><label class="checklist"><input type="checkbox" data-field-required="${i}" ${c.fields[i].required?'checked':''}>Obrigatória</label>${c.fields[i].type==='choice'?`<label class="field">Opções, uma por linha<textarea data-field-options="${i}">${esc(c.fields[i].options.join('\n'))}</textarea></label>`:''}</article>`).join('')}<hr><h3>Responder neste espaço</h3><form id="respond-form">${c.questions.map((q,i)=>answerField(q,c.fields[i],i)).join('')}<button class="primary" ${c.questions.length?'':'disabled'}>Registrar resposta</button></form><h3 class="section-head">Respostas registradas</h3>${c.responses.map(r=>`<div class="card"><small>${date(r.at)}</small>${r.answers.map((a,i)=>`<p>${esc(r.questions?.[i]||'Pergunta '+(i+1))}: ${esc(a)}</p>`).join('')}</div>`).join('')}`;
+  root.querySelectorAll('[data-question]').forEach(n=>n.oninput=()=>{const i=+n.dataset.question;c.questions[i]=n.value;const label=root.querySelector(`[name="q${i}"]`).closest('label');label.firstChild.textContent=n.value+(c.fields[i].required?' *':'');setDirty();});
   root.querySelectorAll('[data-remove-question]').forEach(n=>n.onclick=()=>{c.questions.splice(+n.dataset.removeQuestion,1);c.fields.splice(+n.dataset.removeQuestion,1);setDirty();formEditor(root,c);});
   root.querySelectorAll('[data-field-type]').forEach(n=>n.onchange=()=>{c.fields[+n.dataset.fieldType].type=n.value;setDirty();formEditor(root,c);});
-  root.querySelectorAll('[data-field-required]').forEach(n=>n.onchange=()=>{c.fields[+n.dataset.fieldRequired].required=n.checked;setDirty();});
+  root.querySelectorAll('[data-field-required]').forEach(n=>n.onchange=()=>{const i=+n.dataset.fieldRequired;c.fields[i].required=n.checked;const field=root.querySelector(`[name="q${i}"]`);field.required=n.checked;field.closest('label').firstChild.textContent=c.questions[i]+(n.checked?' *':'');setDirty();});
   root.querySelectorAll('[data-field-options]').forEach(n=>n.onchange=()=>{const options=n.value.split('\n').map(s=>s.trim()).filter(Boolean);if(options.length>50)return notify('Até 50 opções.');c.fields[+n.dataset.fieldOptions].options=options;setDirty();formEditor(root,c);});
   bind('add-question',()=>{if(c.questions.length>=100)return notify('Limite de 100 perguntas.');c.questions.push('Nova pergunta');c.fields.push({type:'text',required:true,options:[]});setDirty();formEditor(root,c);});
-  bind('respond-form',e=>{e.preventDefault();if(c.responses.length>=1000)return notify('Limite de 1000 respostas.');const d=new FormData(e.target);c.responses.push({at:Date.now(),questions:[...c.questions],answers:c.questions.map((_,i)=>d.get('q'+i)||'')});setDirty();formEditor(root,c);},'submit');
-  const responseRows=()=>{
-    const columns=[...new Set(c.responses.flatMap(r=>r.questions||c.questions))];
-    return {columns:['Data',...columns],rows:c.responses.map(r=>[date(r.at),...columns.map(q=>{const i=(r.questions||c.questions).indexOf(q);return i<0?'':r.answers[i];})])};
-  };
-  bind('form-csv',()=>{const data=responseRows();download(current.title+'-respostas.csv',toCSV([data.columns,...data.rows]),'text/csv');});
-  bind('form-table',()=>{if(!c.responses.length)return notify('Registre uma resposta primeiro.');convert('table',responseRows(),' — Respostas');});
+  bind('respond-form',e=>{e.preventDefault();if(c.responses.length>=1000)return notify('Limite de 1000 respostas.');const d=new FormData(e.target),answers=c.questions.map((_,i)=>d.get('q'+i)||'');for(let i=0;i<answers.length;i++){const error=answerError(answers[i],c.fields[i]);if(error){notify('Pergunta '+(i+1)+': '+error);return;}}c.responses.push({at:Date.now(),questions:[...c.questions],answers});setDirty();formEditor(root,c);},'submit');
+  const responseRows=()=>responseTable(c,date);
+  bind('form-csv',()=>{const data=responseRows();download(current.title+'-respostas.csv',toCSV(safeCsv([data.columns,...data.rows])),'text/csv');});
+  bind('form-table',()=>{if(!c.responses.length)return notify('Registre uma resposta primeiro.');const data=responseRows();if(data.columns.length>26||data.rows.length>200)return notify('A tabela aceita 26 campos e 200 registros. Use Respostas → Planilha ou Baixar respostas CSV para levar todos os dados.');convert('table',data,' — Respostas');});
+  bind('form-sheet',()=>{try{if(!c.responses.length)return notify('Registre uma resposta primeiro.');const data=responseRows();convert('sheet',{workbook:recordsWorkbook(data.columns,data.rows)},' — Respostas');}catch(e){notify(e.message);}});
   bind('form-publish',publicationDialog);
 }
 async function publicationDialog() {
@@ -845,14 +850,17 @@ async function publicForm(token) {
   app.innerHTML=`<main class="public-form"><div class="brand"><span class="brand-name">DRAP <span>office</span></span></div><h1>${esc(data.title)}</h1><form id="public-response">${data.questions.map((q,i)=>answerField(q,data.fields[i],i)).join('')}<p id="public-response-error" class="error" role="alert"></p><button class="primary">Enviar resposta</button></form></main>`;
   bind('public-response',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;const values=new FormData(e.target);try{await api('/api/forms/'+encodeURIComponent(token),{answers:data.questions.map((_,i)=>values.get('q'+i)||''),schema_id:data.schema_id});e.target.innerHTML='<h2>Resposta enviada</h2><p>Sua resposta foi registrada. Obrigado!</p>';}catch(err){document.querySelector('#public-response-error').textContent=err.message;button.disabled=false;}},'submit');
 }
+const tableStates=new Map();
 function tableEditor(root, c) {
+  if(!tableStates.has(current.id))tableStates.set(current.id,{filter:"",sort:null,direction:1});
+  const state=tableStates.get(current.id);
   c.columns ??= ["Nome", "Descrição"];
   c.rows ??= [];
   c.types ??= c.columns.map(()=>"text");
-  root.innerHTML = `<div class="toolbar"><button id="table-row">＋ Registro</button><button id="table-column">＋ Campo</button><button id="table-deduplicate">Remover duplicatas</button><button id="table-csv">Exportar CSV</button><button id="table-sheet">Abrir como planilha ↗</button><input id="table-filter" placeholder="Filtrar registros…" aria-label="Filtrar registros"></div><div class="grid-wrap"><table class="sheet"><thead><tr>${c.columns.map((v, i) => `<th><input data-column="${i}" aria-label="Nome do campo ${i + 1}" value="${esc(v)}"><select data-column-type="${i}" aria-label="Tipo do campo ${i+1}">${Object.entries({text:"Texto",number:"Número",date:"Data",email:"E-mail"}).map(([type,label])=>`<option value="${type}" ${c.types[i]===type?"selected":""}>${label}</option>`).join("")}</select><button data-sort-column="${i}" aria-label="Ordenar por ${esc(v)}">A → Z</button><button data-drop-column="${i}" aria-label="Excluir campo ${esc(v)}" ${c.columns.length===1?"disabled":""}>×</button></th>`).join("")}<th>Ações</th></tr></thead><tbody>${c.rows.map((row, r) => `<tr data-table-row="${r}">${c.columns.map((_, col) => `<td><input type="${c.types[col]}" ${c.types[col]==="number"?'step="any"':""} data-table-r="${r}" data-table-c="${col}" aria-label="Registro ${r + 1}, ${esc(c.columns[col])}" value="${esc(row[col] || "")}"></td>`).join("")}<td><button data-delete-row="${r}" class="danger">×</button></td></tr>`).join("")}</tbody></table></div>`;
+  root.innerHTML = `<div class="toolbar"><button id="table-row">＋ Registro</button><button id="table-column">＋ Campo</button><button id="table-deduplicate">Remover duplicatas</button><button id="table-import">Importar CSV</button><button id="table-csv">Exportar CSV</button><button id="table-sheet">Abrir como planilha ↗</button><input id="table-filter" placeholder="Filtrar registros…" aria-label="Filtrar registros" value="${esc(state.filter)}"></div><div class="grid-wrap"><table class="sheet"><thead><tr>${c.columns.map((v, i) => `<th><input data-column="${i}" aria-label="Nome do campo ${i + 1}" value="${esc(v)}"><select data-column-type="${i}" aria-label="Tipo do campo ${i+1}">${Object.entries({text:"Texto",number:"Número",date:"Data",email:"E-mail"}).map(([type,label])=>`<option value="${type}" ${c.types[i]===type?"selected":""}>${label}</option>`).join("")}</select><button data-sort-column="${i}" aria-label="Ordenar por ${esc(v)}">${state.sort===i&&state.direction===-1?"Z → A":"A → Z"}</button><button data-drop-column="${i}" aria-label="Excluir campo ${esc(v)}" ${c.columns.length===1?"disabled":""}>×</button></th>`).join("")}<th>Ações</th></tr></thead><tbody>${c.rows.map((row, r) => `<tr data-table-row="${r}">${c.columns.map((_, col) => `<td><input type="${c.types[col]}" ${c.types[col]==="number"?'step="any"':""} data-table-r="${r}" data-table-c="${col}" aria-label="Registro ${r + 1}, ${esc(c.columns[col])}" value="${esc(row[col] || "")}"></td>`).join("")}<td><button data-delete-row="${r}" class="danger">×</button></td></tr>`).join("")}</tbody></table></div>`;
   const validValue=(value,type)=>!value || type==='text' || (type==='number' && Number.isFinite(Number(value))) || (type==='date' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))) || (type==='email' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value));
   root.querySelectorAll('[data-column-type]').forEach(n=>n.onchange=()=>{const index=+n.dataset.columnType;if(c.rows.some(r=>!validValue(r[index],n.value))){n.value=c.types[index];return notify('Existem valores incompatíveis com esse tipo. Corrija os registros primeiro.');}c.types[index]=n.value;setDirty();tableEditor(root,c);});
-  root.querySelectorAll('[data-sort-column]').forEach(n=>n.onclick=()=>{const index=+n.dataset.sortColumn;c.rows.sort((a,b)=>c.types[index]==='number'?Number(a[index])-Number(b[index]):a[index].localeCompare(b[index],'pt-BR',{numeric:true}));setDirty();tableEditor(root,c);});
+  root.querySelectorAll('[data-sort-column]').forEach(n=>n.onclick=()=>{const index=+n.dataset.sortColumn;state.direction=state.sort===index?-state.direction:1;state.sort=index;c.rows.sort((a,b)=>(c.types[index]==='number'?Number(a[index])-Number(b[index]):a[index].localeCompare(b[index],'pt-BR',{numeric:true}))*state.direction);setDirty();tableEditor(root,c);});
   root.querySelectorAll('[data-drop-column]').forEach(n=>n.onclick=async()=>{if(c.columns.length<2||!(await askConfirm('Excluir campo?', 'O campo e seus valores serão removidos.')))return;const index=+n.dataset.dropColumn;c.columns.splice(index,1);c.types.splice(index,1);c.rows.forEach(r=>r.splice(index,1));setDirty();tableEditor(root,c);});
   bind('table-deduplicate',()=>{const seen=new Set();c.rows=c.rows.filter(r=>{const key=JSON.stringify(r);if(seen.has(key))return false;seen.add(key);return true;});setDirty();tableEditor(root,c);});
   root.querySelectorAll("[data-column]").forEach(
@@ -893,25 +901,13 @@ function tableEditor(root, c) {
     tableEditor(root, c);
   });
   bind("table-csv", () =>
-    download(current.title + ".csv", toCSV([c.columns, ...c.rows]), "text/csv"),
+    download(current.title + ".csv", toCSV(safeCsv([c.columns, ...c.rows.map(row=>row.map((v,i)=>c.types[i]==="number"&&v!==""?Number(v):v))])), "text/csv"),
   );
-  bind(
-    "table-filter",
-    (e) => {
-      root
-        .querySelectorAll("[data-table-row]")
-        .forEach(
-          (n) =>
-            (n.hidden = !c.rows[+n.dataset.tableRow]
-              .join(" ")
-              .toLowerCase()
-              .includes(e.target.value.toLowerCase())),
-        );
-    },
-    "input",
-  );
+  const filter=()=>root.querySelectorAll('[data-table-row]').forEach(n=>n.hidden=!c.rows[+n.dataset.tableRow].join(' ').toLowerCase().includes(state.filter.toLowerCase()));
+  bind('table-filter',e=>{state.filter=e.target.value;filter();},'input');filter();
+  bind('table-import',()=>pickFile('.csv',text=>{try{const parsed=parseCSV(text,{maxRows:201,maxCols:26,minCols:1});const columns=parsed[0],rows=parsed.slice(1);if(!columns?.length||!rows.length)throw Error('Use uma linha de cabeçalhos e pelo menos um registro.');if(c.rows.length+rows.length>200)throw Error('A tabela aceita até 200 registros.');if(c.rows.length&&JSON.stringify(columns)!==JSON.stringify(c.columns))throw Error('Os cabeçalhos do CSV precisam corresponder aos campos da tabela.');const types=c.rows.length?c.types:columns.map(()=> 'text');if(rows.some(r=>r.length!==columns.length||r.some((value,i)=>!validValue(value,types[i]))))throw Error('O CSV contém linhas ou tipos incompatíveis.');c.columns=columns;c.types=types;c.rows.push(...rows);setDirty();tableEditor(root,c);notify(rows.length+' registros importados.');}catch(e){notify(e.message);}}));
   bind("table-sheet", () =>
-    convert("sheet", { cells: [c.columns, ...c.rows] }, " — Planilha"),
+    convert("sheet", { workbook: recordsWorkbook(c.columns,c.rows,c.types) }, " — Planilha"),
   );
 }
 function diagramEditor(root,c) {
@@ -933,8 +929,8 @@ function diagramEditor(root,c) {
     root.querySelectorAll('[data-edge-line]').forEach(n=>{const e=c.edges[+n.dataset.edgeLine],a=c.positions[e.from],b=c.positions[e.to];for(const[k,v]of Object.entries({x1:a.x+80,y1:a.y+30,x2:b.x+80,y2:b.y+30}))n.setAttribute(k,v);});
   };
   root.querySelectorAll('[data-drag-node]').forEach(n=>{
-    n.onkeydown=e=>{if(current.role==='read'||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();const p=c.positions[+n.dataset.dragNode],step=e.shiftKey?50:10;p.x=Math.max(0,Math.min(840,p.x+(e.key==='ArrowLeft'?-step:e.key==='ArrowRight'?step:0)));p.y=Math.max(0,Math.min(1900,p.y+(e.key==='ArrowUp'?-step:e.key==='ArrowDown'?step:0)));setDirty();redrawPositions();};
-    n.onpointerdown=e=>{if(current.role==='read')return;e.preventDefault();n.setPointerCapture(e.pointerId);const point=canvas.createSVGPoint();const move=ev=>{point.x=ev.clientX;point.y=ev.clientY;const local=point.matrixTransform(canvas.getScreenCTM().inverse());c.positions[+n.dataset.dragNode]={x:Math.max(0,Math.min(840,local.x-80)),y:Math.max(0,Math.min(1900,local.y-30))};redrawPositions();setDirty();};n.onpointermove=move;n.onpointerup=()=>{n.onpointermove=null;n.releasePointerCapture(e.pointerId);};n.onpointercancel=()=>{n.onpointermove=null;};};
+    n.onkeydown=e=>{if(current.role==='read'||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();const p=c.positions[+n.dataset.dragNode],step=e.shiftKey?50:10;p.x=Math.max(0,Math.min(840,p.x+(e.key==='ArrowLeft'?-step:e.key==='ArrowRight'?step:0)));p.y=Math.max(0,Math.min(1900,p.y+(e.key==='ArrowUp'?-step:e.key==='ArrowDown'?step:0)));setDirty();redrawPositions();canvas.setAttribute("viewBox","0 0 1000 "+Math.max(600,...c.positions.map(p=>p.y+100)));};
+    n.onpointerdown=e=>{if(current.role==='read')return;e.preventDefault();n.setPointerCapture(e.pointerId);const point=canvas.createSVGPoint();const move=ev=>{point.x=ev.clientX;point.y=ev.clientY;const local=point.matrixTransform(canvas.getScreenCTM().inverse());c.positions[+n.dataset.dragNode]={x:Math.max(0,Math.min(840,local.x-80)),y:Math.max(0,Math.min(1900,local.y-30))};redrawPositions();setDirty();};n.onpointermove=move;n.onpointerup=()=>{n.onpointermove=null;n.releasePointerCapture(e.pointerId);canvas.setAttribute("viewBox","0 0 1000 "+Math.max(600,...c.positions.map(p=>p.y+100)));};n.onpointercancel=()=>{n.onpointermove=null;};};
   });
 }
 function portalEditor(root, c) {
@@ -944,14 +940,14 @@ function portalEditor(root, c) {
   root.innerHTML = `<label class="field">Boas-vindas<textarea id="portal-text" rows="4">${esc(c.text)}</textarea></label><div class="preview">${markdown(c.text)}</div><form id="add-link" class="toolbar"><select name="id" aria-label="Arquivo para vincular">${available.map((i) => `<option value="${i.id}">${esc(i.title)}</option>`).join("")}</select><button ${available.length ? "" : "disabled"}>Vincular arquivo</button></form><p class="muted">Os links respeitam as permissões de cada arquivo. Compartilhar o portal não compartilha automaticamente os arquivos.</p>${c.links
     .map((id, index) => {
       const i = items.find((i) => i.id === id && !i.deleted);
-      return `<div class="row"><button class="link-card" data-link="${id}">${esc(i?.title || "Arquivo indisponível ou sem acesso")} ↗</button><button data-remove-link="${index}">Remover</button></div>`;
+      return `<div class="row"><button class="link-card" data-link="${id}" ${i?"":"disabled"}>${esc(i?.title || "Arquivo indisponível ou sem acesso")} ↗</button><button data-remove-link="${index}">Remover</button></div>`;
     })
     .join("")}`;
   bind(
     "portal-text",
     (e) => {
       c.text = e.target.value;
-      root.querySelector(".preview").innerHTML = markdown(c.text);
+      root.querySelector(".preview").innerHTML = markdown(c.text,c.images);
       setDirty();
     },
     "input",
@@ -961,6 +957,7 @@ function portalEditor(root, c) {
     (e) => {
       e.preventDefault();
       const id = new FormData(e.target).get("id");
+      if(c.links.length>=100)return notify("Limite de 100 links por portal.");
       if (id && !c.links.includes(id)) c.links.push(id);
       setDirty();
       portalEditor(root, c);
@@ -1262,7 +1259,7 @@ function coverage() {
         "Documentos e notas",
         "Disponível",
         "Texto, listas, tabelas, links, checklist, busca/substituição, Markdown, DOCX e impressão.",
-        "Pendentes: paginação profissional, imagens, bibliografia, mala direta e revisão com alterações rastreadas.",
+        "Pendentes: paginação profissional, bibliografia, mala direta e revisão com alterações rastreadas.",
       ],
       [
         "Planilhas",

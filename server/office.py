@@ -1,4 +1,4 @@
-"""Bounded Office file exchange. No macros, external links or remote fetches."""
+"""Bounded Office file exchange. No macros or remote fetches."""
 import base64
 import binascii
 import io
@@ -82,22 +82,9 @@ def import_file(name, encoded):
     warnings = []
     try:
         if ext == 'docx':
-            from docx import Document
-            document = Document(stream)
-            lines = []
-            for block in document.iter_inner_content():
-                if hasattr(block, 'rows'):
-                    for row in block.rows:
-                        lines.append(' | '.join(cell.text for cell in row.cells))
-                else:
-                    prefix = ''
-                    if block.style and block.style.name.startswith('Heading '):
-                        level = block.style.name.split()[-1]
-                        prefix = '#' * min(3, int(level)) + ' ' if level.isdigit() else ''
-                    text = ''.join(('**' + run.text + '**' if run.bold else '*' + run.text + '*' if run.italic else run.text) for run in block.runs)
-                    lines.append(prefix + (text or block.text))
-            kind, content = 'document', {'text': '\n'.join(lines)}
-            warnings.append('Texto, títulos e tabelas foram importados; imagens e layout de página não são preservados.')
+            from server.document_io import import_document
+            kind,content='document',import_document(stream)
+            warnings.append('Textos, títulos, listas, links, tabelas e imagens incorporadas foram importados. Páginas, cabeçalhos, rodapés e posicionamento flutuante não são preservados. Imagens dentro de tabelas não são importadas.')
         elif ext == 'xlsx':
             from server.spreadsheet_io import import_workbook
             kind, content = 'sheet', import_workbook(stream)
@@ -137,24 +124,8 @@ def export_file(item, extension):
     content = item['content']
     output = io.BytesIO()
     if extension == 'docx':
-        from docx import Document
-        document = Document()
-        document.core_properties.title = item['title']
-        document.core_properties.author = 'DRAP office'
-        for line in content['text'].splitlines():
-            heading = re.match(r'^(#{1,3})\s+(.*)', line)
-            if heading:
-                paragraph = document.add_heading('', level=len(heading[1]))
-                line = heading[2]
-            else:
-                paragraph = document.add_paragraph()
-            for part in re.split(r'(\*\*.*?\*\*|\*[^*]+\*)', line):
-                run = paragraph.add_run(part[2:-2] if part.startswith('**') and part.endswith('**') else part[1:-1] if part.startswith('*') and part.endswith('*') else part)
-                if part.startswith('**') and part.endswith('**'):
-                    run.bold = True
-                elif part.startswith('*') and part.endswith('*'):
-                    run.italic = True
-        document.save(output)
+        from server.document_io import export_document
+        export_document(content,item['title'],output)
     elif extension == 'xlsx' and 'workbook' in content:
         from server.spreadsheet_io import export_workbook
         export_workbook(content['workbook'], output, content.get('charts',[]), content.get('pivots',[]))

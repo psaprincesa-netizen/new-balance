@@ -65,7 +65,7 @@ def handler_for(store):
                 raise InvalidInput('Paginação inválida.')
             offset = int(offset_text)
             if method == 'GET':
-                assets = {'/slides.js': ('slides.js', 'text/javascript; charset=utf-8'), '/': ('index.html', 'text/html; charset=utf-8'),
+                assets = {'/workflows.js': ('workflows.js', 'text/javascript; charset=utf-8'), '/slides.js': ('slides.js', 'text/javascript; charset=utf-8'), '/': ('index.html', 'text/html; charset=utf-8'),
                           '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
                           '/pivot.js': ('pivot.js', 'text/javascript; charset=utf-8'),
                           '/pivot-ui.js': ('pivot-ui.js', 'text/javascript; charset=utf-8'),

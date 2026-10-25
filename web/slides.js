@@ -3,7 +3,7 @@ const bounds=o=>`left:${o.x}%;top:${o.y}%;width:${o.w}%;height:${o.h}%;`;
 export function slideMarkup(slide,{editable=false,selected=null,heading='h2'}={}){
   return `<${heading} class="slide-heading">${esc(slide.title)}</${heading}><p class="slide-body ${slide.objects?.length?'with-objects':''}">${esc(slide.body)}</p>`+(slide.objects||[]).map(o=>`<div class="slide-object ${o.type} ${selected===o.id?'selected':''}" data-object="${esc(o.id)}" style="${bounds(o)}${o.type!=='image'?`color:${esc(o.color||'#172018')};background:${o.type==='text'?'transparent':esc(o.fill||'#4b5320')};font-size:${(o.fontSize||24)/9.6}cqw;font-weight:${o.bold?'bold':'normal'};text-align:${esc(o.align||'left')};`:''}" ${editable?'tabindex="0" role="button" aria-label="Selecionar objeto '+esc(o.alt||o.text||o.type)+'"':''}>${o.type==='image'?`<img src="${esc(o.src)}" alt="${esc(o.alt||'Imagem do slide')}" draggable="false">`:`<span>${esc(o.text||'')}</span>`}${editable&&selected===o.id?'<button class="slide-resize" aria-label="Redimensionar objeto" title="Arraste para redimensionar">↘</button>':''}</div>`).join('');
 }
-async function raster(file){
+export async function raster(file){
   if(!['image/png','image/jpeg','image/webp'].includes(file.type))throw Error('Escolha uma imagem PNG, JPEG ou WebP.');
   if(file.size>12000000)throw Error('A imagem original deve ter até 12 MB.');
   const bitmap=await createImageBitmap(file);

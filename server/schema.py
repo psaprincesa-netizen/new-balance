@@ -1,9 +1,10 @@
 """Bounded JSON contracts for every editor, including imported content."""
-from datetime import datetime
+from datetime import datetime, timezone
 import math
 import re
 from server.store import InvalidInput
 from server.pivots import valid_pivots
+from server.document_io import valid_images
 from server.slides_io import valid_objects
 
 
@@ -32,7 +33,7 @@ def valid_content(kind, c):
     if not isinstance(c, dict):
         return False
     if kind in ('document', 'note'):
-        return isinstance(c.get('text'), str)
+        return isinstance(c.get('text'), str) and valid_images(c.get('images',[]))
     if kind == 'sheet':
         if not valid_pivots(c.get('pivots',[])):return False
         if 'workbook' in c:
@@ -58,7 +59,7 @@ def valid_content(kind, c):
                        and isinstance(t.get('assignee', ''), str) and len(t.get('assignee', '')) <= 100
                        and objects(t.get('subtasks', []), lambda s: isinstance(s.get('title'), str) and 1 <= len(s['title']) <= 200 and type(s.get('done')) is bool, 50))
     if kind == 'calendar':
-        return objects(c.get('events'), lambda e: isinstance(e.get('title'), str) and timestamp(e.get('start')) and timestamp(e.get('end')) and e['start'] < e['end']
+        return objects(c.get('events'), lambda e: isinstance(e.get('title'), str) and timestamp(e.get('start')) and timestamp(e.get('end')) and event_duration_positive(e['start'],e['end'])
                        and isinstance(e.get('location', ''), str) and len(e.get('location', '')) <= 500
                        and isinstance(e.get('description', ''), str) and len(e.get('description', '')) <= 4000)
     if kind == 'form':
@@ -161,3 +162,10 @@ def valid_charts(charts,book):
         c1,r1,c2,r2=match.groups();x1,x2=col(c1),col(c2);y1,y2=int(r1),int(r2)
         if x2-x1!=1 or not 0<y2-y1<=200 or x2>1024 or y2>100000:return False
     return True
+
+
+def event_duration_positive(start,end):
+    def instant(value):
+        parsed=datetime.fromisoformat(value.replace('Z','+00:00'))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    return instant(end)>instant(start)
