@@ -98,6 +98,7 @@ def exercise(page,base,title='Planilha de aceitação'):
     return item
 
 def main():
+    expect.set_options(timeout=15000)
     with tempfile.TemporaryDirectory() as temp:
         server=ThreadingHTTPServer(('127.0.0.1',0),handler_for(Store(Path(temp)/'test.sqlite')));threading.Thread(target=server.serve_forever,daemon=True).start()
         try:

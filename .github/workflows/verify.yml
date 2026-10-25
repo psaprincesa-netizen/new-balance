@@ -29,3 +29,4 @@ jobs:
           python -m tests.browser_smoke
           python -m tests.browser_features
           python -m tests.browser_spreadsheet
+          python -m tests.browser_pivots

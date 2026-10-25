@@ -153,7 +153,7 @@ def export_file(item, extension):
         document.save(output)
     elif extension == 'xlsx' and 'workbook' in content:
         from server.spreadsheet_io import export_workbook
-        export_workbook(content['workbook'], output, content.get('charts',[]))
+        export_workbook(content['workbook'], output, content.get('charts',[]), content.get('pivots',[]))
     elif extension == 'xlsx':
         from openpyxl import Workbook
         from openpyxl.styles import Font, PatternFill

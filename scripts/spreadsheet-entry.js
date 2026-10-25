@@ -15,6 +15,7 @@ import '@univerjs/preset-sheets-filter/lib/index.css';
 import '@univerjs/preset-sheets-sort/lib/index.css';
 import '@univerjs/preset-sheets-data-validation/lib/index.css';
 import '@univerjs/preset-sheets-conditional-formatting/lib/index.css';
+import {parsePivotRange} from '../web/pivot.js';
 import {toWorkbook,workbookRows} from '../web/spreadsheet-model.js';
 import {normalizeFormula,parseCSV,toCSV} from '../web/formula.js';
 export {toWorkbook,workbookRows};
@@ -50,7 +51,7 @@ export async function mountSpreadsheet(container,content,{id,name,readOnly,onCha
     if(!readOnly&&!command.id.startsWith('formula.'))onChange();clearTimeout(timer);timer=setTimeout(()=>{try{sync();onRender();}catch(e){onError(e.message);}},50);
   });
   return {
-    async flush(){await book.endEditingAsync(true);clearTimeout(timer);sync();},
+    async flush(){await book.endEditingAsync(true);await univerAPI.getFormula().onCalculationResultApplied(10000);clearTimeout(timer);sync();},
     snapshot(){sync();return content.workbook;},
     dispose(){disposed=true;clearTimeout(timer);subscription.dispose();univer.dispose();},
     select(address){const range=book.getActiveSheet().getRange(address);range.activate();return range;},
@@ -59,6 +60,8 @@ export async function mountSpreadsheet(container,content,{id,name,readOnly,onCha
     async paste(text,address){if(readOnly)return;const rows=text.includes('\t')?text.replace(/\r/g,'').replace(/\n$/,'').split('\n').map(r=>r.split('\t')):parseCSV(text,{maxRows:10000,maxCols:256,minCols:1});const anchor=book.getActiveSheet().getRange(address);const pos=anchor.getRange();const width=Math.max(...rows.map(r=>r.length));if(rows.length>10000||width>256||rows.length*width>50000)throw Error('Limite de colagem: 50 mil células, 10 mil linhas e 256 colunas.');const sheet=book.getActiveSheet();if(pos.startRow+rows.length>sheet.getMaxRows())sheet.insertRowsAfter(sheet.getMaxRows()-1,pos.startRow+rows.length-sheet.getMaxRows());if(pos.startColumn+width>sheet.getMaxColumns())sheet.insertColumnsAfter(sheet.getMaxColumns()-1,pos.startColumn+width-sheet.getMaxColumns());const values=rows.map(r=>Array.from({length:width},(_,i)=>r[i]??''));book.getActiveSheet().getRange(pos.startRow,pos.startColumn,rows.length,width).setValues(values);sync();onChange();},
     csv(){sync();return toCSV(workbookRows(content.workbook,book.getActiveSheet().getSheetId()));},
     rows(){sync();return workbookRows(content.workbook,book.getActiveSheet().getSheetId());},
+    listSheets(){return book.getSheets().map(s=>({id:s.getSheetId(),name:s.getSheetName()}));},
+    rangeRows(address,sheetId){const r=parsePivotRange(address),sheet=book.getSheetBySheetId(sheetId);if(!sheet)throw Error('A aba de origem foi removida. Configure outra fonte.');if(r.endRow>=sheet.getMaxRows()||r.endColumn>=sheet.getMaxColumns())throw Error('O intervalo ultrapassa o tamanho da aba.');return sheet.getRange(r.startRow,r.startColumn,r.height,r.width).getValues();},
     activeSheetId(){return book.getActiveSheet().getSheetId();},
     chartRows(address,sheetId){const sheet=book.getSheetBySheetId(sheetId);if(!sheet)throw Error('A aba de origem foi removida.');const range=sheet.getRange(address);const r=range.getRange();if(r.endRow-r.startRow>200||r.endColumn-r.startColumn!==1)throw Error('Selecione duas colunas, cabeçalho e até 200 linhas de dados.');return range.getValues();},
     api:univerAPI,

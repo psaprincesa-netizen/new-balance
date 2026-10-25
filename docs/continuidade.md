@@ -9,7 +9,7 @@ Manter a plataforma abrindo em https://new-balance-pi.vercel.app e preservar os 
 ## Próximas entregas por módulo
 
 1. Núcleo comum: auditoria administrativa, recuperação de conta e cotas. Rascunhos, comentários e acessos listáveis foram implementados.
-2. Documentos e planilhas: ampliar fidelidade de Office, paginação, imagens, pivôs e conectores. Abas, motor de fórmulas e intercâmbio Office já foram adicionados.
+2. Documentos e planilhas: ampliar fidelidade de Office, paginação, imagens, pivôs nativos XLSX e conectores. Abas, motor de fórmulas e intercâmbio Office já foram adicionados.
 3. Apresentações e diagramas: imagens e objetos de apresentação; bibliotecas de diagramas. Temas, conectores e canvas de diagramas foram adicionados.
 4. Projetos, agenda, formulários e tabelas: dependências, convites, quizzes, relacionamentos. Subtarefas, ocorrências repetidas, ICS, coleta pública e tipos de campos foram adicionados.
 5. Colaboração, arquivos e portais: equipes, armazenamento binário, permissões organizacionais e coautoria.
@@ -25,4 +25,6 @@ Nome confirmado: DRAP office. Cor: verde-exército #4B5320. Não aplicar a image
 
 Substituída a grade básica por Univer com presets comunitários de núcleo, filtros, ordenação, validação e formatação condicional. Persistência usa `content.workbook`, migração compatível de matrizes legadas e exportação Office. Gráficos próprios vinculados a intervalos ficam em `content.charts` e são exportados como SVG ou gráficos editáveis no XLSX. `tests/browser_spreadsheet.py` verifica operações reais, persistência, exportação e acesso somente leitura. O plugin de proteção interna do Univer não representa o sistema de contas DRAP; menus de gestão dessa proteção foram ocultados. Permissões por arquivo continuam validadas pelo backend.
 
-Pendências de planilhas: pivôs, tipos avançados de gráficos, importação de gráficos, mais fidelidade de temas/rich text e regras Office, impressão paginada, proteção por célula com autorização no backend, conectores e macros. Não declarar inventário 100% completo.
+Pendências de planilhas: pivôs nativos no XLSX, agrupamentos multinível, tipos avançados de gráficos, importação de gráficos, mais fidelidade de temas/rich text e regras Office, impressão paginada, proteção por célula com autorização no backend, conectores e macros. Não declarar inventário 100% completo.
+
+Tabelas dinâmicas DRAP implementadas em `web/pivot.js` / `web/pivot-ui.js`; exportação e validação em `server/pivots.py`. Fixtures compartilhadas verificam agregação equivalente em JS/Python, e `tests/browser_pivots.py` cobre criação, alteração, fórmulas, registros, XLSX, recuperação JSON e leitura.

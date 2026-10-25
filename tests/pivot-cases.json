@@ -1,0 +1,605 @@
+[
+  {
+    "name": "sum",
+    "source": [
+      [
+        "Equipe",
+        "Mês",
+        "Receita"
+      ],
+      [
+        "A",
+        "Jan",
+        10
+      ],
+      [
+        "A",
+        "Jan",
+        30
+      ],
+      [
+        "A",
+        "Fev",
+        -5
+      ],
+      [
+        "B",
+        "Jan",
+        20
+      ],
+      [
+        "B",
+        "Fev",
+        null
+      ],
+      [
+        "B",
+        "Fev",
+        "texto"
+      ]
+    ],
+    "config": {
+      "rowField": 0,
+      "columnField": 1,
+      "valueField": 2,
+      "filterField": null,
+      "filterValue": "",
+      "sort": "source",
+      "aggregate": "sum"
+    },
+    "expected": [
+      [
+        "Equipe",
+        "Jan",
+        "Fev",
+        "Total geral"
+      ],
+      [
+        "A",
+        40,
+        -5,
+        35
+      ],
+      [
+        "B",
+        20,
+        0,
+        20
+      ],
+      [
+        "Total geral",
+        60,
+        -5,
+        55
+      ]
+    ]
+  },
+  {
+    "name": "avg",
+    "source": [
+      [
+        "Equipe",
+        "Mês",
+        "Receita"
+      ],
+      [
+        "A",
+        "Jan",
+        10
+      ],
+      [
+        "A",
+        "Jan",
+        30
+      ],
+      [
+        "A",
+        "Fev",
+        -5
+      ],
+      [
+        "B",
+        "Jan",
+        20
+      ],
+      [
+        "B",
+        "Fev",
+        null
+      ],
+      [
+        "B",
+        "Fev",
+        "texto"
+      ]
+    ],
+    "config": {
+      "rowField": 0,
+      "columnField": 1,
+      "valueField": 2,
+      "filterField": null,
+      "filterValue": "",
+      "sort": "source",
+      "aggregate": "avg"
+    },
+    "expected": [
+      [
+        "Equipe",
+        "Jan",
+        "Fev",
+        "Total geral"
+      ],
+      [
+        "A",
+        20,
+        -5,
+        11.666666666666666
+      ],
+      [
+        "B",
+        20,
+        null,
+        20
+      ],
+      [
+        "Total geral",
+        20,
+        -5,
+        13.75
+      ]
+    ]
+  },
+  {
+    "name": "count",
+    "source": [
+      [
+        "Equipe",
+        "Mês",
+        "Receita"
+      ],
+      [
+        "A",
+        "Jan",
+        10
+      ],
+      [
+        "A",
+        "Jan",
+        30
+      ],
+      [
+        "A",
+        "Fev",
+        -5
+      ],
+      [
+        "B",
+        "Jan",
+        20
+      ],
+      [
+        "B",
+        "Fev",
+        null
+      ],
+      [
+        "B",
+        "Fev",
+        "texto"
+      ]
+    ],
+    "config": {
+      "rowField": 0,
+      "columnField": 1,
+      "valueField": 2,
+      "filterField": null,
+      "filterValue": "",
+      "sort": "source",
+      "aggregate": "count"
+    },
+    "expected": [
+      [
+        "Equipe",
+        "Jan",
+        "Fev",
+        "Total geral"
+      ],
+      [
+        "A",
+        2,
+        1,
+        3
+      ],
+      [
+        "B",
+        1,
+        1,
+        2
+      ],
+      [
+        "Total geral",
+        3,
+        2,
+        5
+      ]
+    ]
+  },
+  {
+    "name": "rows",
+    "source": [
+      [
+        "Equipe",
+        "Mês",
+        "Receita"
+      ],
+      [
+        "A",
+        "Jan",
+        10
+      ],
+      [
+        "A",
+        "Jan",
+        30
+      ],
+      [
+        "A",
+        "Fev",
+        -5
+      ],
+      [
+        "B",
+        "Jan",
+        20
+      ],
+      [
+        "B",
+        "Fev",
+        null
+      ],
+      [
+        "B",
+        "Fev",
+        "texto"
+      ]
+    ],
+    "config": {
+      "rowField": 0,
+      "columnField": 1,
+      "valueField": 2,
+      "filterField": null,
+      "filterValue": "",
+      "sort": "source",
+      "aggregate": "rows"
+    },
+    "expected": [
+      [
+        "Equipe",
+        "Jan",
+        "Fev",
+        "Total geral"
+      ],
+      [
+        "A",
+        2,
+        1,
+        3
+      ],
+      [
+        "B",
+        1,
+        2,
+        3
+      ],
+      [
+        "Total geral",
+        3,
+        3,
+        6
+      ]
+    ]
+  },
+  {
+    "name": "min",
+    "source": [
+      [
+        "Equipe",
+        "Mês",
+        "Receita"
+      ],
+      [
+        "A",
+        "Jan",
+        10
+      ],
+      [
+        "A",
+        "Jan",
+        30
+      ],
+      [
+        "A",
+        "Fev",
+        -5
+      ],
+      [
+        "B",
+        "Jan",
+        20
+      ],
+      [
+        "B",
+        "Fev",
+        null
+      ],
+      [
+        "B",
+        "Fev",
+        "texto"
+      ]
+    ],
+    "config": {
+      "rowField": 0,
+      "columnField": 1,
+      "valueField": 2,
+      "filterField": null,
+      "filterValue": "",
+      "sort": "source",
+      "aggregate": "min"
+    },
+    "expected": [
+      [
+        "Equipe",
+        "Jan",
+        "Fev",
+        "Total geral"
+      ],
+      [
+        "A",
+        10,
+        -5,
+        -5
+      ],
+      [
+        "B",
+        20,
+        null,
+        20
+      ],
+      [
+        "Total geral",
+        10,
+        -5,
+        -5
+      ]
+    ]
+  },
+  {
+    "name": "max",
+    "source": [
+      [
+        "Equipe",
+        "Mês",
+        "Receita"
+      ],
+      [
+        "A",
+        "Jan",
+        10
+      ],
+      [
+        "A",
+        "Jan",
+        30
+      ],
+      [
+        "A",
+        "Fev",
+        -5
+      ],
+      [
+        "B",
+        "Jan",
+        20
+      ],
+      [
+        "B",
+        "Fev",
+        null
+      ],
+      [
+        "B",
+        "Fev",
+        "texto"
+      ]
+    ],
+    "config": {
+      "rowField": 0,
+      "columnField": 1,
+      "valueField": 2,
+      "filterField": null,
+      "filterValue": "",
+      "sort": "source",
+      "aggregate": "max"
+    },
+    "expected": [
+      [
+        "Equipe",
+        "Jan",
+        "Fev",
+        "Total geral"
+      ],
+      [
+        "A",
+        30,
+        -5,
+        30
+      ],
+      [
+        "B",
+        20,
+        null,
+        20
+      ],
+      [
+        "Total geral",
+        30,
+        -5,
+        30
+      ]
+    ]
+  },
+  {
+    "name": "filter",
+    "source": [
+      [
+        "Equipe",
+        "Mês",
+        "Receita"
+      ],
+      [
+        "A",
+        "Jan",
+        10
+      ],
+      [
+        "A",
+        "Jan",
+        30
+      ],
+      [
+        "A",
+        "Fev",
+        -5
+      ],
+      [
+        "B",
+        "Jan",
+        20
+      ],
+      [
+        "B",
+        "Fev",
+        null
+      ],
+      [
+        "B",
+        "Fev",
+        "texto"
+      ]
+    ],
+    "config": {
+      "rowField": 0,
+      "columnField": null,
+      "valueField": 2,
+      "filterField": 0,
+      "filterValue": "B",
+      "sort": "source",
+      "aggregate": "sum"
+    },
+    "expected": [
+      [
+        "Equipe",
+        "Soma"
+      ],
+      [
+        "B",
+        20
+      ],
+      [
+        "Total geral",
+        20
+      ]
+    ]
+  },
+  {
+    "name": "safe categories",
+    "source": [
+      [
+        "Categoria",
+        "Valor"
+      ],
+      [
+        "__proto__",
+        10
+      ],
+      [
+        "constructor",
+        2
+      ],
+      [
+        "__proto__",
+        -2
+      ]
+    ],
+    "config": {
+      "rowField": 0,
+      "columnField": null,
+      "valueField": 1,
+      "filterField": null,
+      "filterValue": "",
+      "sort": "asc",
+      "aggregate": "sum"
+    },
+    "expected": [
+      [
+        "Categoria",
+        "Soma"
+      ],
+      [
+        "constructor",
+        2
+      ],
+      [
+        "__proto__",
+        8
+      ],
+      [
+        "Total geral",
+        10
+      ]
+    ]
+  },
+  {
+    "name": "numeric filter",
+    "source": [
+      [
+        "Tipo",
+        "Cotação",
+        "Valor"
+      ],
+      [
+        "A",
+        1e-07,
+        12
+      ],
+      [
+        "B",
+        1e-06,
+        8
+      ]
+    ],
+    "config": {
+      "rowField": 0,
+      "valueField": 2,
+      "columnField": null,
+      "aggregate": "sum",
+      "filterField": 1,
+      "filterValue": "1e-7"
+    },
+    "expected": [
+      [
+        "Tipo",
+        "Soma"
+      ],
+      [
+        "A",
+        12
+      ],
+      [
+        "Total geral",
+        12
+      ]
+    ]
+  }
+]

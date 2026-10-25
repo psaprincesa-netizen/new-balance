@@ -86,7 +86,7 @@ def import_workbook(stream):
         return {'workbook':snapshot}
     finally:book.close()
 
-def export_workbook(snapshot, output, charts=()):
+def export_workbook(snapshot, output, charts=(), pivots=None):
     from server.office import excel_formula
     book=Workbook();book.remove(book.active)
     if snapshot.get('dateSystem')=='date1904':
@@ -130,6 +130,8 @@ def export_workbook(snapshot, output, charts=()):
         chart.add_data(Reference(ws,min_col=x2,min_row=y1,max_row=y2),titles_from_data=True)
         chart.set_categories(Reference(ws,min_col=x1,min_row=y1+1,max_row=y2))
         chart.width=18;chart.height=10;ws.add_chart(chart,'D'+str(2+i*20))
+    from server.pivots import export_pivots
+    export_pivots(book,snapshot,[] if pivots is None else pivots)
     book.save(output)
 
 def a1_range(r):

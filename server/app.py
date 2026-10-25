@@ -67,6 +67,8 @@ def handler_for(store):
             if method == 'GET':
                 assets = {'/': ('index.html', 'text/html; charset=utf-8'),
                           '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
+                          '/pivot.js': ('pivot.js', 'text/javascript; charset=utf-8'),
+                          '/pivot-ui.js': ('pivot-ui.js', 'text/javascript; charset=utf-8'),
                           '/chart.js': ('chart.js', 'text/javascript; charset=utf-8'),
                           '/spreadsheet.js': ('spreadsheet.js', 'text/javascript; charset=utf-8'),
                           '/spreadsheet.css': ('spreadsheet.css', 'text/css; charset=utf-8'),

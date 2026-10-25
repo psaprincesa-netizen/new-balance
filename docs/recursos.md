@@ -4,7 +4,7 @@ A lista recebida inclui centenas de funções de produtos maduros. Esta entrega 
 
 | Área solicitada | Disponível nesta versão | Próxima implementação necessária |
 | --- | --- | --- |
-| Planilhas / Excel | Editor Univer, abas, fórmulas, estilos, mesclagem, filtros, ordenação, validação, formatação condicional, CSV e XLSX (detalhes abaixo) | Gráficos avançados, pivôs, macros, Solver, Power Query e equivalência integral ao Excel |
+| Planilhas / Excel | Editor Univer, abas, fórmulas, estilos, mesclagem, filtros, ordenação, validação, formatação condicional, CSV e XLSX (detalhes abaixo) | Gráficos avançados, pivôs nativos no XLSX, macros, Solver, Power Query e equivalência integral ao Excel |
 | Power Query | Importação CSV local | Fontes externas, ETL, junções, transformações, atualizações e linguagem M |
 | Power Pivot | Não implementado | Modelo relacional, medidas, KPIs, DAX e cubos |
 | Documentos / Word | Texto com marcação de títulos, negrito e itálico, visualização, contagem, exportação Markdown, impressão do navegador | DOCX, estilos avançados, paginação, seções, cabeçalhos/rodapés, imagens, tabelas, gráficos, formas, referências acadêmicas, sumário, índices, mala direta, revisão e assinatura |
@@ -35,7 +35,7 @@ A lista recebida inclui centenas de funções de produtos maduros. Esta entrega 
 | Área | Implementação adicionada | Limites que permanecem |
 | --- | --- | --- |
 | Documentos / notas / portais | Listas, checklist, tabelas Markdown, links seguros, busca/substituição; DOCX para documentos/notas | Não há paginação profissional nem fidelidade total de layout DOCX |
-| Planilhas | Editor Univer; ver detalhes e limites na seção abaixo | Sem macros, pivôs, gráficos avançados, DAX, Power Query ou equivalência de todas as fórmulas |
+| Planilhas | Editor Univer; ver detalhes e limites na seção abaixo | Sem macros, pivôs nativos no XLSX, gráficos avançados, DAX, Power Query ou equivalência de todas as fórmulas |
 | Apresentações | Temas e importação/exportação PPTX de textos e notas | Mídia, animações e objetos não são preservados na importação |
 | Projetos | Responsáveis, prioridades e subtarefas | Sem caminho crítico ou planejamento de recursos |
 | Agenda | Ocorrências repetidas e intercâmbio ICS | Sem envio de convites; recorrências importadas são expandidas em até 1000 ocorrências |
@@ -61,7 +61,7 @@ Essa sequência é um plano técnico, não uma promessa de equivalência conclu�
 
 A grade inicial foi substituída pelo **Univer 1.2.0**, distribuído com a aplicação (Apache-2.0), com interface em português. Oferece edição no canvas, seleção de intervalos, copiar/colar, preenchimento, desfazer/refazer, fontes/cores/bordas, formatos numéricos, mesclagem, linhas/colunas, abas, fórmulas, filtros, ordenação, validação de dados e formatação condicional. A edição salva o snapshot nativo completo no banco, inclusive regras, mantendo versões e permissões. Planilhas antigas são convertidas ao abrir sem apagar o histórico.
 
-O XLSX importa/exporta valores, fórmulas, estilos básicos, formatos numéricos, mesclagens, dimensões e painéis congelados. A exportação inclui filtros por valores, validações comuns e regras condicionais numéricas/por fórmula; regras avançadas permanecem no snapshot/JSON. A importação também preserva filtros por valores, validações comuns e regras condicionais numéricas/por fórmula. Gráficos de colunas, linhas e pizza vinculados a intervalos são salvos no DRAP e exportados para SVG e XLSX editável. A importação de gráficos Excel, gráficos avançados, tabelas dinâmicas, macros, Power Query e equivalência integral ao Excel continuam pendentes.
+O XLSX importa/exporta valores, fórmulas, estilos básicos, formatos numéricos, mesclagens, dimensões e painéis congelados. A exportação inclui filtros por valores, validações comuns e regras condicionais numéricas/por fórmula; regras avançadas permanecem no snapshot/JSON. A importação também preserva filtros por valores, validações comuns e regras condicionais numéricas/por fórmula. Gráficos de colunas, linhas e pizza vinculados a intervalos são salvos no DRAP e exportados para SVG e XLSX editável. A importação de gráficos Excel, gráficos avançados, pivôs nativos no XLSX, macros, Power Query e equivalência integral ao Excel continuam pendentes.
 
 Limites persistidos: 20 abas, 50 mil células preenchidas, 2 MB de conteúdo JSON por arquivo, coordenadas até 100 mil linhas × 1024 colunas. Importação XLSX: 2,5 MB comprimidos com inspeção do ZIP. CSV: até 10 mil linhas × 256 colunas, respeitando o total de 50 mil células. Os limites são verificados, sem truncamento silencioso. Fórmulas nativas usam nomes em inglês; o campo auxiliar normaliza nomes portugueses.
 
@@ -70,3 +70,12 @@ O editor usa canvas: o campo auxiliar permite selecionar intervalos e inserir co
 Gráficos: até dez definições por pasta, cada uma com rótulos e uma série numérica (duas colunas com cabeçalho e até 200 linhas). A vinculação usa endereços literais; inserir/excluir linhas não ajusta automaticamente esses endereços. Gráficos de pizza exigem dados não negativos.
 
 Backups JSON reconhecem o formato nativo novo da planilha e o formato antigo. A importação aceita até 100 arquivos em um JSON de até 64 MB, enviados individualmente e validados no servidor; restaura cópias privadas, sem herdar compartilhamentos. Falhas parciais informam a quantidade importada.
+
+
+## Tabelas dinâmicas DRAP
+
+O botão **Tabela dinâmica** cria resumos vinculados a um intervalo de uma aba. Permite escolher um campo de linhas, um de colunas (opcional), o campo de valores, soma, média, mínimo, máximo, contagem preenchida ou contagem de linhas; filtro por correspondência exata e ordenação pelo total. Os totais são calculados a partir dos registros originais, incluindo médias com quantidades diferentes em cada grupo. Texto é ignorado nas operações numéricas; erros de fórmula impedem um resumo numérico incorreto.
+
+Os resultados acompanham mudanças de valores e fórmulas. Clicar em um resultado abre os registros que o compõem: são exibidas até 200 linhas, com CSV de todos os registros selecionados. A definição persiste em `content.pivots`, funciona na recuperação JSON e respeita acesso de leitura/edição. O XLSX adiciona abas `Resumo N` com os resultados atuais como tabelas comuns. **Não cria o objeto PivotTable nativo do Excel**; para manter a configuração dinâmica do DRAP, use JSON.
+
+Limites: dez resumos por pasta, até 50 mil células/256 colunas na fonte e dez mil células por resultado. Cabeçalhos precisam ser preenchidos e únicos. O intervalo é fixo: inserir/excluir linhas ou colunas não ajusta sua definição automaticamente. Filtros da grade não afetam o resumo; use o filtro do próprio resumo. Múltiplos níveis de agrupamento, segmentações, atualização de fontes externas e importação de PivotTables Excel continuam pendentes.

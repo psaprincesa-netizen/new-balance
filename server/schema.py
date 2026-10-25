@@ -3,6 +3,7 @@ from datetime import datetime
 import math
 import re
 from server.store import InvalidInput
+from server.pivots import valid_pivots
 
 
 def valid_content(kind, c):
@@ -32,6 +33,7 @@ def valid_content(kind, c):
     if kind in ('document', 'note'):
         return isinstance(c.get('text'), str)
     if kind == 'sheet':
+        if not valid_pivots(c.get('pivots',[])):return False
         if 'workbook' in c:
             return valid_workbook(c['workbook']) and valid_charts(c.get('charts',[]),c['workbook'])
         rows = c.get('cells')

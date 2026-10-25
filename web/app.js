@@ -1,3 +1,4 @@
+import {mountPivots} from './pivot-ui.js';
 import {chartSvg,chartData} from './chart.js';
 import { cellValue, parseCSV, toCSV } from "./formula.js";
 const app = document.querySelector("#app"),
@@ -660,8 +661,8 @@ function textEditor(root, c) {
 }
 async function sheetEditor(root, c) {
   root.classList.add('spreadsheet-editor');
-  root.innerHTML = `<div class="toolbar sheet-tools"><label>Intervalo <input id="sheet-address" aria-label="Intervalo da planilha" value="A1" size="10"></label><button id="sheet-select">Selecionar</button><label>Valor ou fórmula <input id="sheet-value" aria-label="Valor ou fórmula" placeholder="=SUM(A1:A5)"></label><button id="sheet-apply">Aplicar à célula</button><button id="csv-import">Importar CSV</button><button id="csv-export">Exportar CSV</button><button id="sheet-report">Criar relatório ↗</button><button id="sheet-chart-add">Criar gráfico</button></div><div id="spreadsheet" aria-label="Editor de planilhas"><p>Carregando editor…</p></div><p class="muted sheet-help">Use a barra de ferramentas para formatar, mesclar, filtrar e ordenar. Clique com o botão direito para inserir/excluir linhas e colunas. As fórmulas do editor usam nomes em inglês (SUM, IF, VLOOKUP); o campo acima também aceita SOMA, SE e PROCV. Salve para registrar no banco. XLSX preserva valores, fórmulas, estilos, mesclagens, filtros e validações comuns; regras avançadas ficam no arquivo DRAP e no JSON. Gráficos de colunas, linhas e pizza ficam abaixo da grade e no XLSX. Macros e tabelas dinâmicas ainda não estão disponíveis.</p><section id="sheet-charts" aria-label="Gráficos da planilha"></section>`;
-  const item=current;
+  root.innerHTML = `<div class="toolbar sheet-tools"><label>Intervalo <input id="sheet-address" aria-label="Intervalo da planilha" value="A1" size="10"></label><button id="sheet-select">Selecionar</button><label>Valor ou fórmula <input id="sheet-value" aria-label="Valor ou fórmula" placeholder="=SUM(A1:A5)"></label><button id="sheet-apply">Aplicar à célula</button><button id="csv-import">Importar CSV</button><button id="csv-export">Exportar CSV</button><button id="sheet-report">Criar relatório ↗</button><button id="sheet-chart-add">Criar gráfico</button><button id="sheet-pivot-add">Tabela dinâmica</button></div><div id="spreadsheet" aria-label="Editor de planilhas"><p>Carregando editor…</p></div><p class="muted sheet-help">Use a barra de ferramentas para formatar, mesclar, filtrar e ordenar. Clique com o botão direito para inserir/excluir linhas e colunas. As fórmulas do editor usam nomes em inglês (SUM, IF, VLOOKUP); o campo acima também aceita SOMA, SE e PROCV. Salve para registrar no banco. XLSX preserva valores, fórmulas, estilos, mesclagens, filtros e validações comuns; regras avançadas ficam no arquivo DRAP e no JSON. Gráficos de colunas, linhas e pizza ficam abaixo da grade e no XLSX. Tabelas dinâmicas agrupam e resumem os dados abaixo da grade. Macros VBA ainda não estão disponíveis.</p><section id="sheet-charts" aria-label="Gráficos da planilha"></section><section id="sheet-pivots" aria-label="Tabelas dinâmicas"></section>`;
+  const item=current;let pivotUI=null;
   try {
     if (!document.querySelector('#spreadsheet-css')) {
       const link=document.createElement('link');link.id='spreadsheet-css';link.rel='stylesheet';link.href='/spreadsheet.css';document.head.append(link);
@@ -670,14 +671,15 @@ async function sheetEditor(root, c) {
     const {mountSpreadsheet}=await import('/spreadsheet.js');
     if(!root.isConnected || current!==item)return;
     const host=root.querySelector('#spreadsheet');host.textContent='';
-    const mounted=await mountSpreadsheet(host,c,{id:item.id,name:item.title,readOnly:item.role==='read',onChange:setDirty,onError:notify,onRender:renderCharts});
+    const mounted=await mountSpreadsheet(host,c,{id:item.id,name:item.title,readOnly:item.role==='read',onChange:setDirty,onError:notify,onRender:()=>{renderCharts();pivotUI?.render();}});
     if(!root.isConnected||current!==item){mounted.dispose();return;}
     spreadsheet=mounted;
+    pivotUI=mountPivots({root,content:c,spreadsheet,readOnly:item.role==='read',dirty:setDirty,dialog:showDialog,closeDialog,notify,download,escapeHtml:esc});
     host.dataset.ready='true';
     renderCharts();
     const address=()=>document.querySelector('#sheet-address').value.trim().toUpperCase();
     const action=fn=>async()=>{try{await fn();}catch(e){notify(e.message);}};
-    bind('sheet-select',action(()=>{spreadsheet.select(address());const value=spreadsheet.read(address());document.querySelector('#sheet-value').value=value.formulas[0]?.[0]||value.values[0]?.[0]||'';}));
+    bind('sheet-select',action(()=>{spreadsheet.select(address());const value=spreadsheet.read(address());document.querySelector('#sheet-value').value=value.formulas[0]?.[0]||(value.values[0]?.[0]??'');}));
     bind('sheet-apply',action(()=>spreadsheet.set(address(),document.querySelector('#sheet-value').value)));
     bind('csv-import',()=>pickFile('.csv',async text=>{try{await spreadsheet.paste(text,address());}catch(e){notify(e.message);}}));
     bind('sheet-chart-add',()=>showDialog(`<h2>Criar gráfico</h2><form id="chart-form"><label class="field">Título do gráfico<input name="title" value="${esc(current.title)}" maxlength="100" required></label><label class="field">Tipo de gráfico<select name="type"><option value="bar">Colunas</option><option value="line">Linhas</option><option value="pie">Pizza</option></select></label><label class="field">Intervalo de dados<input name="range" value="${esc(address().includes(':')?address():'A1:B5')}" required></label><p>Duas colunas: rótulos e valores, com cabeçalho. Até 200 linhas. O gráfico acompanha os valores dessas células.</p><p id="chart-error" role="alert" class="error"></p><button class="primary">Adicionar gráfico</button></form>`,()=>bind('chart-form',async e=>{e.preventDefault();try{await spreadsheet.flush();if((c.charts||[]).length>=10)throw Error('Limite de dez gráficos por arquivo.');const d=Object.fromEntries(new FormData(e.target));d.range=d.range.trim().toUpperCase();if(!/^[A-Z]{1,3}[1-9]\d{0,5}:[A-Z]{1,3}[1-9]\d{0,5}$/.test(d.range))throw Error('Use um intervalo como A1:B5.');d.sheetId=spreadsheet.activeSheetId();d.id=crypto.randomUUID();chartData(spreadsheet.chartRows(d.range,d.sheetId),d.type);(c.charts??=[]).push(d);closeDialog();setDirty();renderCharts();}catch(err){document.querySelector('#chart-error').textContent=err.message;}},'submit')));
@@ -1315,8 +1317,8 @@ function coverage() {
       [
         "Planilhas",
         "Disponível",
-        "Editor Univer: múltiplas abas, intervalos, fórmulas, desfazer/refazer, formatação, mesclagem, ordenação, filtros, validação, formatação condicional, gráficos de colunas/linhas/pizza, CSV e XLSX.",
-        "Pendentes: gráficos avançados, tabelas dinâmicas, Solver, DAX, Power Query, macros e equivalência de todas as funções Excel.",
+        "Editor Univer: múltiplas abas, intervalos, fórmulas, desfazer/refazer, formatação, mesclagem, ordenação, filtros, validação, formatação condicional, gráficos de colunas/linhas/pizza, tabelas dinâmicas, CSV e XLSX.",
+        "Pendentes: gráficos avançados, pivôs nativos no XLSX, múltiplos níveis de agrupamento, Solver, DAX, Power Query, macros e equivalência de todas as funções Excel.",
       ],
       [
         "Apresentações",
