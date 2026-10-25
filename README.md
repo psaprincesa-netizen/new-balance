@@ -31,7 +31,7 @@ Configurações opcionais: `HOST` (padrão `127.0.0.1`), `PORT` (8000), `DATABAS
 
 ## Recursos ampliados
 
-- DOCX, XLSX e PPTX reais para importar/exportar texto, células, abas, slides e notas. A importação informa perdas de layout, imagens, gráficos e mídia; não promete fidelidade completa ao Office.
+- DOCX, XLSX e PPTX reais para importar/exportar texto, células, abas, slides e notas. Slides incluem imagens, caixas de texto e formas editáveis no PPTX. A importação informa perdas de layout, gráficos e mídia avançada; não promete fidelidade completa ao Office.
 - Até 20 abas por pasta, fórmulas entre abas e motor de expressões com funções de busca, datas, texto, estatística e finanças. Funções de rede são bloqueadas; macros não são executadas. Importação Office: até 2,5 MB e 24 MB expandidos, conteúdo de cada arquivo limitado a 2 MB.
 - Comentários privados por arquivo, lista de acessos para o proprietário e recuperação de rascunhos no mesmo navegador. Os rascunhos não substituem o salvamento no servidor.
 - Formulários com texto, e-mail, número, data e escolha única; link público ativado/revogado pelo proprietário. Respostas públicas não expõem a coleção de respostas e são limitadas por IP, tamanho e quantidade.
@@ -42,7 +42,7 @@ A marca visível é **DRAP office**, em verde-exército. A logo gerada foi rejei
 ## Jornada integrada
 
 1. Crie um documento com títulos `#` e `##`; escreva e salve.
-2. Use **Criar apresentação** para gerar slides a partir das seções. Apresente com as setas do teclado; Esc encerra.
+2. Use **Criar apresentação** para gerar slides a partir das seções. No editor, **＋ Slide** adiciona páginas; **Inserir imagem**, **Caixa de texto**, **Retângulo** e **Elipse** criam objetos. Arraste-os ou ajuste posição/tamanho, cores e fonte no painel. **Baixar PPTX** preserva imagens e objetos. Apresente com as setas do teclado; Esc encerra.
 3. Crie uma planilha e insira valores e fórmulas: `=A1+B1`, `=SOMA(A1:A5)`, `=MÉDIA(A1:A5)`. Use a barra do editor para formatação, mesclagem, filtros, ordenação e regras. Importe/exporte CSV e XLSX; salve para persistir as alterações. No editor nativo, use funções em inglês; o campo auxiliar aceita nomes portugueses.
 4. Gere um relatório da planilha. Respostas de formulários podem virar tabelas; tabelas podem virar planilhas.
 5. Organize tarefas no Kanban e compromissos na agenda. Consulte os indicadores calculados desses dados.
@@ -103,6 +103,6 @@ A interface não envia conteúdo para ferramentas de IA ou serviços Office. No 
 
 O servidor da biblioteca padrão é para desenvolvimento. A Vercel fornece HTTPS e o runtime de produção. Ainda faltam recuperação de conta, auditoria administrativa, observabilidade, backups ensaiados e testes de carga. A preparação do schema foi validada no build remoto Vercel. Testes de carga e restauração do banco gerenciado ainda não foram realizados.
 
-A verificação automatizada está em `.github/workflows/verify.yml`: build, testes de domínio/API e quatro jornadas reais no Chromium. O ZIP inclui essa configuração.
+A verificação automatizada está em `.github/workflows/verify.yml`: build, testes de domínio/API e cinco jornadas reais no Chromium. O ZIP inclui essa configuração.
 
 Em Planilhas, selecione um intervalo com cabeçalhos e clique em **Tabela dinâmica** para configurar agrupamentos, cálculo e filtro. Os resumos seguem os valores da fonte; no XLSX são exportados como tabelas comuns. O JSON preserva a configuração dinâmica.

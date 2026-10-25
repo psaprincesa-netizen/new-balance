@@ -4,6 +4,7 @@ import math
 import re
 from server.store import InvalidInput
 from server.pivots import valid_pivots
+from server.slides_io import valid_objects
 
 
 def valid_content(kind, c):
@@ -49,7 +50,7 @@ def valid_content(kind, c):
                 and len({s['name'].casefold() for s in sheets}) == len(sheets)
                 and rows == sheets[active]['cells'])
     if kind == 'slides':
-        return c.get('theme', 'light') in ('light', 'army', 'navy') and bool(c.get('slides')) and objects(c.get('slides'), lambda s: all(isinstance(s.get(k), str) for k in ('title', 'body', 'notes')), 100)
+        return c.get('theme', 'light') in ('light', 'army', 'navy') and bool(c.get('slides')) and objects(c.get('slides'), lambda s: all(isinstance(s.get(k), str) for k in ('title', 'body', 'notes')) and valid_objects(s.get('objects',[])), 100)
     if kind == 'board':
         return objects(c.get('tasks'), lambda t: isinstance(t.get('title'), str) and isinstance(t.get('due'), str)
                        and t.get('status') in ('A fazer', 'Em andamento', 'Concluído')

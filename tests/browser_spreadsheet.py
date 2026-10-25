@@ -92,6 +92,15 @@ def exercise(page,base,title='Planilha de aceitação'):
     denied=reader.request.post(base+'/api/items/'+item['id'],headers=headers,data={'title':title,'content':item['content'],'version':item['version'],'deleted':False});assert denied.status==403
     assert page.request.post(base+'/api/items/'+item['id']+'/share',headers=headers,data={'email':credentials['email'],'role':'remove'}).ok
     reader.request.post(base+'/api/logout',headers=headers,data={});reader_context.close()
+    page.get_by_role('button',name='Todos os arquivos',exact=False).click();page.get_by_role('button',name=title,exact=False).click();ready()
+    select('F1');page.get_by_role('button',name='Colar tabela',exact=True).click();page.get_by_label('Dados copiados do Excel ou CSV',exact=True).fill('Produto\tQuantidade\nX\t5\nY\t7');page.get_by_role('button',name='Colar dados',exact=True).click();expect(page.locator('dialog')).not_to_be_visible()
+    select('G2:G3');page.get_by_role('button',name='∑ Inserir cálculo',exact=True).click();page.get_by_label('Operação',exact=True).select_option('AVERAGE');page.get_by_label('Célula do resultado',exact=True).fill('G2');page.get_by_role('button',name='Inserir fórmula',exact=True).click();expect(page.locator('#calc-error')).to_contain_text('fora da origem');page.get_by_label('Célula do resultado',exact=True).fill('H1');page.get_by_role('button',name='Inserir fórmula',exact=True).click();expect(page.locator('dialog')).not_to_be_visible()
+    setcell('G3','9');select('F1');page.get_by_role('button',name='Inserir linha',exact=True).click();select('F1');page.get_by_role('button',name='Inserir coluna',exact=True).click();save()
+    item=next(x for x in page.request.get(base+'/api/items').json()['items'] if x['id']==item['id'])
+    b=item['content']['workbook'];cells=b['sheets'][b['sheetOrder'][0]]['cellData'];assert cells['1']['8']['v']==7,cells
+    select('H3');page.get_by_role('button',name='Limpar valores',exact=True).click();save()
+    item=next(x for x in page.request.get(base+'/api/items').json()['items'] if x['id']==item['id'])
+    b=item['content']['workbook'];cells=b['sheets'][b['sheetOrder'][0]]['cellData'];assert cells['1']['8']['v']==9,cells
     assert not errors,errors
     page.screenshot(path='/tmp/drap-spreadsheet-verified.png',full_page=True)
     print('PASS: edição nativa, fórmula, negrito, desfazer/refazer, mesclagem, ordenação, filtro, validação, formatação condicional, gráficos vinculados/SVG, backup JSON, modo leitura, reabertura e XLSX',flush=True)

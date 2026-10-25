@@ -30,3 +30,4 @@ jobs:
           python -m tests.browser_features
           python -m tests.browser_spreadsheet
           python -m tests.browser_pivots
+          python -m tests.browser_slides

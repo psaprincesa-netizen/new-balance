@@ -19,7 +19,7 @@ import {parsePivotRange} from '../web/pivot.js';
 import {toWorkbook,workbookRows} from '../web/spreadsheet-model.js';
 import {normalizeFormula,parseCSV,toCSV} from '../web/formula.js';
 export {toWorkbook,workbookRows};
-export async function mountSpreadsheet(container,content,{id,name,readOnly,onChange,onError,onRender=()=>{}}) {
+export async function mountSpreadsheet(container,content,{id,name,readOnly,onChange,onError,onRender=()=>{},onSelection=()=>{}}) {
   const snapshot=toWorkbook(content,id,name);
   // Keep existing localized formulas executable, without touching quoted text.
   for(const sheet of Object.values(snapshot.sheets)) for(const row of Object.values(sheet.cellData||{})) for(const cell of Object.values(row||{})) if(cell?.f) cell.f=normalizeFormula(cell.f);
@@ -50,10 +50,12 @@ export async function mountSpreadsheet(container,content,{id,name,readOnly,onCha
     if(disposed||command.type!==2)return;
     if(!readOnly&&!command.id.startsWith('formula.'))onChange();clearTimeout(timer);timer=setTimeout(()=>{try{sync();onRender();}catch(e){onError(e.message);}},50);
   });
+  const selectionSubscription=book.onSelectionChange(()=>{if(!disposed){const range=book.getActiveRange();if(range)onSelection(range.getA1Notation(),range.getFormulas()[0]?.[0]||(range.getValues()[0]?.[0]??''));}});
   return {
+    quick(action,address){if(readOnly)return;const sheet=book.getActiveSheet(),range=sheet.getRange(address),pos=range.getRange();if(action==='row')sheet.insertRowsBefore(pos.startRow,1);else if(action==='column')sheet.insertColumnsBefore(pos.startColumn,1);else if(action==='clear')range.clear({contentsOnly:true});else throw Error('Ação inválida.');sync();onChange();},
     async flush(){await book.endEditingAsync(true);await univerAPI.getFormula().onCalculationResultApplied(10000);clearTimeout(timer);sync();},
     snapshot(){sync();return content.workbook;},
-    dispose(){disposed=true;clearTimeout(timer);subscription.dispose();univer.dispose();},
+    dispose(){disposed=true;clearTimeout(timer);subscription.dispose();selectionSubscription.dispose();univer.dispose();},
     select(address){const range=book.getActiveSheet().getRange(address);range.activate();return range;},
     set(address,value){if(readOnly)return;const range=book.getActiveSheet().getRange(address);range.setValue(typeof value==='string'&&value.startsWith('=')?normalizeFormula(value):value);range.activate();sync();onChange();},
     read(address){const range=book.getActiveSheet().getRange(address);return {values:range.getValues(),formulas:range.getFormulas()};},

@@ -110,11 +110,15 @@ def import_file(name, encoded):
             slides = []
             for slide in presentation.slides:
                 title = slide.shapes.title
-                body = '\n'.join(shape.text for shape in slide.shapes if shape.has_text_frame and shape != title)
+                body = '\n'.join(shape.text for shape in slide.shapes if shape.has_text_frame and shape != title and not shape.name.startswith('DRAP '))
                 notes = slide.notes_slide.notes_text_frame.text if slide.has_notes_slide and slide.notes_slide.notes_text_frame else ''
-                slides.append({'title': title.text if title is not None else '', 'body': body, 'notes': notes})
+                entry={'title': title.text if title is not None else '', 'body': body, 'notes': notes}
+                from server.slides_io import import_objects
+                objects=import_objects(slide,presentation)
+                if objects:entry['objects']=objects
+                slides.append(entry)
             kind, content = 'slides', {'slides': slides}
-            warnings.append('Títulos, textos e notas foram importados. Objetos visuais, animações e mídia não são preservados.')
+            warnings.append('Títulos, textos, notas e imagens foram importados. Objetos de texto e formas criados no DRAP também são preservados. Animações, vídeos, grupos, recortes e temas externos não são preservados.')
     except InvalidInput:
         raise
     except Exception:
@@ -182,26 +186,8 @@ def export_file(item, extension):
             sheet.auto_filter.ref = sheet.dimensions
         workbook.save(output)
     else:
-        from pptx import Presentation
-        from pptx.dml.color import RGBColor
-        presentation = Presentation()
-        presentation.core_properties.title = item['title']
-        presentation.core_properties.author = 'DRAP office'
-        for entry in content['slides']:
-            slide = presentation.slides.add_slide(presentation.slide_layouts[1])
-            slide.shapes.title.text = entry['title']
-            slide.placeholders[1].text = entry['body']
-            slide.notes_slide.notes_text_frame.text = entry['notes']
-            theme = content.get('theme', 'light')
-            if theme in ('army', 'navy'):
-                slide.background.fill.solid()
-                slide.background.fill.fore_color.rgb = RGBColor.from_string('4B5320' if theme == 'army' else '102237')
-                for shape in slide.shapes:
-                    if shape.has_text_frame:
-                        for paragraph in shape.text_frame.paragraphs:
-                            for run in paragraph.runs:
-                                run.font.color.rgb = RGBColor(255, 255, 255)
-        presentation.save(output)
+        from server.slides_io import export_slides
+        export_slides(content,item['title'],output)
     result = output.getvalue()
     if len(result) > 4_000_000:
         raise InvalidInput('A exportação excede o limite de 4 MB.')

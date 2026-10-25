@@ -8,7 +8,7 @@ A lista recebida inclui centenas de funções de produtos maduros. Esta entrega 
 | Power Query | Importação CSV local | Fontes externas, ETL, junções, transformações, atualizações e linguagem M |
 | Power Pivot | Não implementado | Modelo relacional, medidas, KPIs, DAX e cubos |
 | Documentos / Word | Texto com marcação de títulos, negrito e itálico, visualização, contagem, exportação Markdown, impressão do navegador | DOCX, estilos avançados, paginação, seções, cabeçalhos/rodapés, imagens, tabelas, gráficos, formas, referências acadêmicas, sumário, índices, mala direta, revisão e assinatura |
-| Apresentações / PowerPoint | Slides textuais, criação, duplicação, remoção, reordenação, notas, apresentação por teclado, documento → slides | PPTX, mestre, temas, objetos, imagens, mídia, 3D, transições, animações, ações interativas, gravação e vídeo |
+| Apresentações / PowerPoint | Slides com imagens, caixas de texto e formas editáveis; posição/tamanho/camadas, desfazer/refazer, criação, duplicação, remoção, reordenação, notas, temas, apresentação por teclado, documento → slides, PPTX | Mestre, áudio/vídeo, 3D, transições, animações, ações interativas, gravação e vídeo |
 | Agenda / Outlook | Compromissos locais com início/fim e apresentação no fuso do navegador | Recorrência, disponibilidade, salas, convites, delegação e sincronização |
 | Correio / Outlook | Não implementado | Conexão a provedor, pastas, contatos, mensagens, pesquisa, regras, anexos, envio e recebimento reais |
 | Armazenamento / OneDrive | Biblioteca de arquivos próprios do DRAP office, histórico, lixeira e exportação JSON | Arquivos binários, upload/download, sincronização, cofre e armazenamento remoto |
@@ -36,7 +36,7 @@ A lista recebida inclui centenas de funções de produtos maduros. Esta entrega 
 | --- | --- | --- |
 | Documentos / notas / portais | Listas, checklist, tabelas Markdown, links seguros, busca/substituição; DOCX para documentos/notas | Não há paginação profissional nem fidelidade total de layout DOCX |
 | Planilhas | Editor Univer; ver detalhes e limites na seção abaixo | Sem macros, pivôs nativos no XLSX, gráficos avançados, DAX, Power Query ou equivalência de todas as fórmulas |
-| Apresentações | Temas e importação/exportação PPTX de textos e notas | Mídia, animações e objetos não são preservados na importação |
+| Apresentações | Imagens, texto, formas, camadas, arraste/redimensionamento, temas e PPTX com imagens/objetos | Importação preserva imagens e objetos de texto/formas criados pelo DRAP; grupos, recortes, temas externos, animações e vídeos não são preservados |
 | Projetos | Responsáveis, prioridades e subtarefas | Sem caminho crítico ou planejamento de recursos |
 | Agenda | Ocorrências repetidas e intercâmbio ICS | Sem envio de convites; recorrências importadas são expandidas em até 1000 ocorrências |
 | Formulários | Tipos de campo, validação e links públicos revogáveis | Sem quizzes/ramificação; até 1000 respostas e limite de conteúdo |
@@ -79,3 +79,9 @@ O botão **Tabela dinâmica** cria resumos vinculados a um intervalo de uma aba.
 Os resultados acompanham mudanças de valores e fórmulas. Clicar em um resultado abre os registros que o compõem: são exibidas até 200 linhas, com CSV de todos os registros selecionados. A definição persiste em `content.pivots`, funciona na recuperação JSON e respeita acesso de leitura/edição. O XLSX adiciona abas `Resumo N` com os resultados atuais como tabelas comuns. **Não cria o objeto PivotTable nativo do Excel**; para manter a configuração dinâmica do DRAP, use JSON.
 
 Limites: dez resumos por pasta, até 50 mil células/256 colunas na fonte e dez mil células por resultado. Cabeçalhos precisam ser preenchidos e únicos. O intervalo é fixo: inserir/excluir linhas ou colunas não ajusta sua definição automaticamente. Filtros da grade não afetam o resumo; use o filtro do próprio resumo. Múltiplos níveis de agrupamento, segmentações, atualização de fontes externas e importação de PivotTables Excel continuam pendentes.
+
+## Slides visuais e ações de planilha
+
+Slides usam coordenadas proporcionais em uma página 16:9. Imagens PNG/JPEG/WebP locais são otimizadas para PNG e salvas com o documento; até 30 objetos por slide e 100 slides, respeitando 2 MB por documento. O editor limita novas imagens/duplicações antes de 1,8 MB e imagens individuais a cerca de 300 KB otimizados. O PPTX contém imagens incorporadas e textos/formas editáveis. Impressão/PDF inclui todos os slides, sem notas. Leitores podem navegar e apresentar, sem editar.
+
+Planilhas: campos de intervalo/valor acompanham a seleção; atalhos para inserir linha/coluna, limpar valores, colar dados tabulados e criar soma/média/mínimo/máximo/contagens. O assistente rejeita resultado dentro da própria origem para evitar referência circular. Fórmulas continuam atualizando após inserção de linhas e colunas.

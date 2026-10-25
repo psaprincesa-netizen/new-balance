@@ -1,3 +1,4 @@
+import {mountSlides,slideMarkup,printSlides} from './slides.js';
 import {mountPivots} from './pivot-ui.js';
 import {chartSvg,chartData} from './chart.js';
 import { cellValue, parseCSV, toCSV } from "./formula.js";
@@ -531,7 +532,7 @@ function editor() {
     );
   });
   bind("export-office", exportOffice);
-  bind("print", () => window.print());
+  bind("print", () => current.kind==="slides"?printSlides(current.content):window.print());
   bind("history", historyDialog);
   bind("comments", commentsDialog);
   bind("share", shareDialog);
@@ -589,7 +590,7 @@ function editor() {
   if (read)
     root
       .querySelectorAll("input,textarea,select,button")
-      .forEach((n) => (n.disabled = true));
+      .forEach((n) => {if(current.kind!=="slides"||(!n.matches("[data-slide],#present")))n.disabled=true;});
   colors();
 }
 function textEditor(root, c) {
@@ -661,7 +662,7 @@ function textEditor(root, c) {
 }
 async function sheetEditor(root, c) {
   root.classList.add('spreadsheet-editor');
-  root.innerHTML = `<div class="toolbar sheet-tools"><label>Intervalo <input id="sheet-address" aria-label="Intervalo da planilha" value="A1" size="10"></label><button id="sheet-select">Selecionar</button><label>Valor ou fórmula <input id="sheet-value" aria-label="Valor ou fórmula" placeholder="=SUM(A1:A5)"></label><button id="sheet-apply">Aplicar à célula</button><button id="csv-import">Importar CSV</button><button id="csv-export">Exportar CSV</button><button id="sheet-report">Criar relatório ↗</button><button id="sheet-chart-add">Criar gráfico</button><button id="sheet-pivot-add">Tabela dinâmica</button></div><div id="spreadsheet" aria-label="Editor de planilhas"><p>Carregando editor…</p></div><p class="muted sheet-help">Use a barra de ferramentas para formatar, mesclar, filtrar e ordenar. Clique com o botão direito para inserir/excluir linhas e colunas. As fórmulas do editor usam nomes em inglês (SUM, IF, VLOOKUP); o campo acima também aceita SOMA, SE e PROCV. Salve para registrar no banco. XLSX preserva valores, fórmulas, estilos, mesclagens, filtros e validações comuns; regras avançadas ficam no arquivo DRAP e no JSON. Gráficos de colunas, linhas e pizza ficam abaixo da grade e no XLSX. Tabelas dinâmicas agrupam e resumem os dados abaixo da grade. Macros VBA ainda não estão disponíveis.</p><section id="sheet-charts" aria-label="Gráficos da planilha"></section><section id="sheet-pivots" aria-label="Tabelas dinâmicas"></section>`;
+  root.innerHTML = `<div class="toolbar sheet-tools"><label>Intervalo <input id="sheet-address" aria-label="Intervalo da planilha" value="A1" size="10"></label><button id="sheet-select">Selecionar</button><label>Valor ou fórmula <input id="sheet-value" aria-label="Valor ou fórmula" placeholder="=SUM(A1:A5)"></label><button id="sheet-apply">Aplicar à célula</button><button id="csv-import">Importar CSV</button><button id="csv-export">Exportar CSV</button><button id="sheet-report">Criar relatório ↗</button><button id="sheet-chart-add">Criar gráfico</button><button id="sheet-pivot-add">Tabela dinâmica</button></div><div class="toolbar sheet-tools"><button id="sheet-calculate">∑ Inserir cálculo</button><button id="sheet-row">Inserir linha</button><button id="sheet-column">Inserir coluna</button><button id="sheet-clear">Limpar valores</button><button id="sheet-paste">Colar tabela</button><span class="muted">Clique numa célula e digite. Enter confirma; Tab avança. Selecione um intervalo para formatar.</span></div><div id="spreadsheet" aria-label="Editor de planilhas"><p>Carregando editor…</p></div><p class="muted sheet-help">Use a barra de ferramentas para formatar, mesclar, filtrar e ordenar. Clique com o botão direito para inserir/excluir linhas e colunas. As fórmulas do editor usam nomes em inglês (SUM, IF, VLOOKUP); o campo acima também aceita SOMA, SE e PROCV. Salve para registrar no banco. XLSX preserva valores, fórmulas, estilos, mesclagens, filtros e validações comuns; regras avançadas ficam no arquivo DRAP e no JSON. Gráficos de colunas, linhas e pizza ficam abaixo da grade e no XLSX. Tabelas dinâmicas agrupam e resumem os dados abaixo da grade. Macros VBA ainda não estão disponíveis.</p><section id="sheet-charts" aria-label="Gráficos da planilha"></section><section id="sheet-pivots" aria-label="Tabelas dinâmicas"></section>`;
   const item=current;let pivotUI=null;
   try {
     if (!document.querySelector('#spreadsheet-css')) {
@@ -671,7 +672,7 @@ async function sheetEditor(root, c) {
     const {mountSpreadsheet}=await import('/spreadsheet.js');
     if(!root.isConnected || current!==item)return;
     const host=root.querySelector('#spreadsheet');host.textContent='';
-    const mounted=await mountSpreadsheet(host,c,{id:item.id,name:item.title,readOnly:item.role==='read',onChange:setDirty,onError:notify,onRender:()=>{renderCharts();pivotUI?.render();}});
+    const mounted=await mountSpreadsheet(host,c,{id:item.id,name:item.title,readOnly:item.role==='read',onChange:setDirty,onError:notify,onSelection:(address,value)=>{if(!root.isConnected||document.activeElement?.closest('.sheet-tools'))return;root.querySelector('#sheet-address').value=address;root.querySelector('#sheet-value').value=value;},onRender:()=>{renderCharts();pivotUI?.render();}});
     if(!root.isConnected||current!==item){mounted.dispose();return;}
     spreadsheet=mounted;
     pivotUI=mountPivots({root,content:c,spreadsheet,readOnly:item.role==='read',dirty:setDirty,dialog:showDialog,closeDialog,notify,download,escapeHtml:esc});
@@ -681,6 +682,10 @@ async function sheetEditor(root, c) {
     const action=fn=>async()=>{try{await fn();}catch(e){notify(e.message);}};
     bind('sheet-select',action(()=>{spreadsheet.select(address());const value=spreadsheet.read(address());document.querySelector('#sheet-value').value=value.formulas[0]?.[0]||(value.values[0]?.[0]??'');}));
     bind('sheet-apply',action(()=>spreadsheet.set(address(),document.querySelector('#sheet-value').value)));
+    for(const kind of ['row','column','clear'])bind('sheet-'+kind,action(()=>spreadsheet.quick(kind,address())));
+    bind('sheet-paste',()=>showDialog(`<h2>Colar tabela</h2><form id="sheet-paste-form"><label class="field">Célula inicial<input name="target" value="${esc(address().split(':')[0])}" required pattern="[A-Za-z]{1,3}[1-9][0-9]{0,5}"></label><label class="field">Dados copiados do Excel ou CSV<textarea name="data" rows="8" required></textarea></label><p id="paste-error" role="alert"></p><button class="primary">Colar dados</button></form>`,()=>bind('sheet-paste-form',async e=>{e.preventDefault();try{const f=new FormData(e.target);await spreadsheet.paste(f.get('data'),f.get('target').toUpperCase());closeDialog();notify('Dados inseridos na planilha.');}catch(err){document.querySelector('#paste-error').textContent=err.message;}},'submit')));
+    bind('sheet-calculate',()=>showDialog(`<h2>Inserir cálculo</h2><form id="sheet-calc-form"><label class="field">Operação<select name="operation" aria-label="Operação"><option value="SUM">Soma</option><option value="AVERAGE">Média</option><option value="MIN">Mínimo</option><option value="MAX">Máximo</option><option value="COUNT">Contar números</option><option value="COUNTA">Contar preenchidas</option></select></label><label class="field">Intervalo de origem<input name="source" value="${esc(address())}" required pattern="[A-Za-z]{1,3}[1-9][0-9]{0,5}(:[A-Za-z]{1,3}[1-9][0-9]{0,5})?"></label><label class="field">Célula do resultado<input name="target" placeholder="Ex.: D1" required pattern="[A-Za-z]{1,3}[1-9][0-9]{0,5}"></label><p>Escolha uma célula fora do intervalo de origem. O resultado acompanhará as alterações dos dados.</p><p id="calc-error" role="alert"></p><button class="primary">Inserir fórmula</button></form>`,()=>bind('sheet-calc-form',async e=>{e.preventDefault();try{const f=new FormData(e.target),source=f.get('source').toUpperCase(),target=f.get('target').toUpperCase();const parse=a=>{const m=/^([A-Z]+)([0-9]+)$/.exec(a);return {c:[...m[1]].reduce((n,c)=>n*26+c.charCodeAt(0)-64,0),r:+m[2]};};const [a,b]=source.split(':'),start=parse(a),end=parse(b||a),dest=parse(target);if(start.r>end.r||start.c>end.c)throw Error('Use um intervalo em ordem crescente.');if(dest.r>=start.r&&dest.r<=end.r&&dest.c>=start.c&&dest.c<=end.c)throw Error('A célula do resultado precisa ficar fora da origem.');spreadsheet.set(target,'='+f.get('operation')+'('+source+')');await spreadsheet.flush();closeDialog();notify('Fórmula inserida em '+target+'.');}catch(err){document.querySelector('#calc-error').textContent=err.message;}},'submit')));
+
     bind('csv-import',()=>pickFile('.csv',async text=>{try{await spreadsheet.paste(text,address());}catch(e){notify(e.message);}}));
     bind('sheet-chart-add',()=>showDialog(`<h2>Criar gráfico</h2><form id="chart-form"><label class="field">Título do gráfico<input name="title" value="${esc(current.title)}" maxlength="100" required></label><label class="field">Tipo de gráfico<select name="type"><option value="bar">Colunas</option><option value="line">Linhas</option><option value="pie">Pizza</option></select></label><label class="field">Intervalo de dados<input name="range" value="${esc(address().includes(':')?address():'A1:B5')}" required></label><p>Duas colunas: rótulos e valores, com cabeçalho. Até 200 linhas. O gráfico acompanha os valores dessas células.</p><p id="chart-error" role="alert" class="error"></p><button class="primary">Adicionar gráfico</button></form>`,()=>bind('chart-form',async e=>{e.preventDefault();try{await spreadsheet.flush();if((c.charts||[]).length>=10)throw Error('Limite de dez gráficos por arquivo.');const d=Object.fromEntries(new FormData(e.target));d.range=d.range.trim().toUpperCase();if(!/^[A-Z]{1,3}[1-9]\d{0,5}:[A-Z]{1,3}[1-9]\d{0,5}$/.test(d.range))throw Error('Use um intervalo como A1:B5.');d.sheetId=spreadsheet.activeSheetId();d.id=crypto.randomUUID();chartData(spreadsheet.chartRows(d.range,d.sheetId),d.type);(c.charts??=[]).push(d);closeDialog();setDirty();renderCharts();}catch(err){document.querySelector('#chart-error').textContent=err.message;}},'submit')));
     bind('csv-export',action(async()=>{await spreadsheet.flush();download(current.title+'.csv',spreadsheet.csv(),'text/csv');}));
@@ -695,62 +700,7 @@ async function sheetEditor(root, c) {
   }
   } catch(e) {root.querySelector('#spreadsheet').textContent='Não foi possível abrir a planilha: '+e.message;}
 }
-function slideEditor(root, c) {
-  c.slides ??= defaults("slides").slides;
-  selectedSlide = Math.max(0, Math.min(selectedSlide, c.slides.length - 1));
-  const s = c.slides[selectedSlide];
-  root.innerHTML = `<div class="toolbar"><button id="add-slide">＋ Slide</button><button id="duplicate-slide">Duplicar</button><button id="remove-slide">Excluir slide</button><button id="prev-slide">Mover antes</button><label>Tema<select id="slide-theme">${Object.entries({light:"Claro",army:"Verde-exército",navy:"Azul-escuro"}).map(([value,label])=>`<option value="${value}" ${value===(c.theme||"light")?"selected":""}>${label}</option>`).join("")}</select></label><button id="present" class="primary">▷ Apresentar</button></div><div class="split"><aside class="slide-list">${c.slides.map((s, i) => `<button data-slide="${i}" class="${i === selectedSlide ? "primary" : ""}">${i + 1}. ${esc(s.title)}</button>`).join("")}</aside><div><div class="slide-canvas" id="slide-preview"><h2>${esc(s.title)}</h2><p>${esc(s.body)}</p></div><label class="field">Título<input id="slide-title" value="${esc(s.title)}"></label><label class="field">Conteúdo<textarea id="slide-body" rows="5">${esc(s.body)}</textarea></label><label class="field">Notas do apresentador<textarea id="slide-notes" rows="2">${esc(s.notes)}</textarea></label></div></div>`;
-  root.querySelector("#slide-preview").dataset.theme=c.theme||"light";
-  bind("slide-theme",e=>{c.theme=e.target.value;setDirty();slideEditor(root,c);},"change");
-  root.querySelectorAll("[data-slide]").forEach(
-    (n) =>
-      (n.onclick = () => {
-        selectedSlide = +n.dataset.slide;
-        slideEditor(root, c);
-      }),
-  );
-  for (const key of ["title", "body", "notes"])
-    bind(
-      "slide-" + key,
-      (e) => {
-        s[key] = e.target.value;
-        document.querySelector("#slide-preview").innerHTML =
-          `<h2>${esc(s.title)}</h2><p>${esc(s.body)}</p>`;
-        setDirty();
-      },
-      "input",
-    );
-  bind("add-slide", () => {
-    c.slides.push({ title: "Novo slide", body: "", notes: "" });
-    selectedSlide = c.slides.length - 1;
-    setDirty();
-    slideEditor(root, c);
-  });
-  bind("duplicate-slide", () => {
-    c.slides.splice(selectedSlide + 1, 0, structuredClone(s));
-    selectedSlide++;
-    setDirty();
-    slideEditor(root, c);
-  });
-  bind("remove-slide", () => {
-    if (c.slides.length === 1) return notify("Mantenha pelo menos um slide.");
-    c.slides.splice(selectedSlide, 1);
-    setDirty();
-    slideEditor(root, c);
-  });
-  bind("prev-slide", () => {
-    if (selectedSlide > 0) {
-      [c.slides[selectedSlide - 1], c.slides[selectedSlide]] = [
-        c.slides[selectedSlide],
-        c.slides[selectedSlide - 1],
-      ];
-      selectedSlide--;
-      setDirty();
-      slideEditor(root, c);
-    }
-  });
-  bind("present", () => present(c.slides, c.theme || "light"));
-}
+function slideEditor(root,c){mountSlides(root,c,{dirty:setDirty,notify,present,readOnly:current.role==='read',initialIndex:selectedSlide,onSelect:i=>{selectedSlide=i;}});}
 function present(slides, theme="light") {
   let i = 0;
   const div = document.createElement("section");
@@ -764,7 +714,7 @@ function present(slides, theme="light") {
     document.removeEventListener("keydown", key);
   }
   function render() {
-    div.innerHTML = `<small>${esc(current.title)} · ${i + 1} / ${slides.length}</small><h1>${esc(slides[i].title)}</h1><p>${esc(slides[i].body)}</p><div class="row controls"><button id="previous">← Anterior</button><button id="next-slide">Próximo →</button><button id="close-present">Sair (Esc)</button></div>`;
+    div.innerHTML = `<small>${esc(current.title)} · ${i + 1} / ${slides.length}</small><div class="slide-stage" data-theme="${esc(theme)}">${slideMarkup(slides[i],{heading:'h1'})}</div><div class="row controls"><button id="previous">← Anterior</button><button id="next-slide">Próximo →</button><button id="close-present">Sair (Esc)</button></div>`;
     div.querySelector("#previous").onclick = () => {
       i = Math.max(0, i - 1);
       render();
@@ -1323,8 +1273,8 @@ function coverage() {
       [
         "Apresentações",
         "Disponível",
-        "Slides, temas, duplicação, reordenação, notas, apresentação por teclado, conversão de texto e PPTX.",
-        "Pendentes: mídia, mestre, animações, objetos livres e exportação de vídeo.",
+        "Slides, imagens, caixas de texto, formas, arrastar/redimensionar, camadas, desfazer/refazer, temas, reordenação, notas, apresentação por teclado e PPTX com imagens e objetos editáveis.",
+        "Pendentes: áudio/vídeo, mestre, animações, transições, recorte avançado e exportação de vídeo.",
       ],
       [
         "Projetos e agenda",

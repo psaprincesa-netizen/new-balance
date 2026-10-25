@@ -10,7 +10,7 @@ Manter a plataforma abrindo em https://new-balance-pi.vercel.app e preservar os 
 
 1. Núcleo comum: auditoria administrativa, recuperação de conta e cotas. Rascunhos, comentários e acessos listáveis foram implementados.
 2. Documentos e planilhas: ampliar fidelidade de Office, paginação, imagens, pivôs nativos XLSX e conectores. Abas, motor de fórmulas e intercâmbio Office já foram adicionados.
-3. Apresentações e diagramas: imagens e objetos de apresentação; bibliotecas de diagramas. Temas, conectores e canvas de diagramas foram adicionados.
+3. Apresentações e diagramas: mestre, áudio/vídeo, animações e bibliotecas de diagramas. Imagens, caixas de texto, formas, camadas e PPTX visual foram adicionados aos slides; conectores e canvas aos diagramas.
 4. Projetos, agenda, formulários e tabelas: dependências, convites, quizzes, relacionamentos. Subtarefas, ocorrências repetidas, ICS, coleta pública e tipos de campos foram adicionados.
 5. Colaboração, arquivos e portais: equipes, armazenamento binário, permissões organizacionais e coautoria.
 6. Integrações externas de correio, chamadas, automação e IA: implementar cada provedor com suas credenciais protegidas e fluxos reais.
@@ -28,3 +28,5 @@ Substituída a grade básica por Univer com presets comunitários de núcleo, fi
 Pendências de planilhas: pivôs nativos no XLSX, agrupamentos multinível, tipos avançados de gráficos, importação de gráficos, mais fidelidade de temas/rich text e regras Office, impressão paginada, proteção por célula com autorização no backend, conectores e macros. Não declarar inventário 100% completo.
 
 Tabelas dinâmicas DRAP implementadas em `web/pivot.js` / `web/pivot-ui.js`; exportação e validação em `server/pivots.py`. Fixtures compartilhadas verificam agregação equivalente em JS/Python, e `tests/browser_pivots.py` cobre criação, alteração, fórmulas, registros, XLSX, recuperação JSON e leitura.
+
+Revisão visual: `web/slides.js` monta editor de objetos; `server/slides_io.py` valida imagens/objetos e faz intercâmbio PPTX. `tests/browser_slides.py` verifica uso real. Planilha ganhou ações diretas e sincronização da seleção nos campos auxiliares; a jornada existente cobre essas operações.
