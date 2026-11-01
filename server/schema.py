@@ -8,6 +8,57 @@ from server.document_io import valid_images
 from server.slides_io import valid_objects
 
 
+DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
+
+def valid_task_schedule(t):
+    """Optional scheduling fields of a board task."""
+    # Older and imported boards may hold free-form deadlines; only new fields are strict.
+    start = t.get('start', '')
+    if not isinstance(start, str) or (start and not DATE.match(start)) or len(t.get('due', '')) > 40:
+        return False
+    if 'milestone' in t and type(t['milestone']) is not bool:
+        return False
+    if t.get('milestone') and not t.get('due'):
+        return False
+    if start and DATE.match(t.get('due', '')) and not t.get('milestone') and start > t['due']:
+        return False
+    task_id = t.get('id', '')
+    depends = t.get('depends', [])
+    return (isinstance(task_id, str) and len(task_id) <= 20 and isinstance(depends, list) and len(depends) <= 50
+            and all(isinstance(d, str) and len(d) <= 20 for d in depends))
+
+
+def valid_task_graph(tasks):
+    """Task ids are unique, dependencies point to existing tasks and form no cycle."""
+    ids = [t.get('id') for t in tasks if t.get('id')]
+    if len(ids) != len(set(ids)):
+        return False
+    graph = {t['id']: t.get('depends', []) for t in tasks if t.get('id')}
+    if any(t.get('depends') and not t.get('id') for t in tasks):
+        return False
+    if any(d not in graph or d == node for node, deps in graph.items() for d in deps):
+        return False
+    state = {}
+    for root in graph:
+        if root in state:
+            continue
+        stack = [(root, iter(graph[root]))]
+        state[root] = 1
+        while stack:
+            node, children = stack[-1]
+            child = next(children, None)
+            if child is None:
+                state[node] = 2
+                stack.pop()
+            elif state.get(child) == 1:
+                return False
+            elif child not in state:
+                state[child] = 1
+                stack.append((child, iter(graph[child])))
+    return True
+
+
 def valid_content(kind, c):
     def strings(values, maximum=200):
         return isinstance(values, list) and len(values) <= maximum and all(isinstance(v, str) for v in values)
@@ -57,7 +108,8 @@ def valid_content(kind, c):
                        and t.get('status') in ('A fazer', 'Em andamento', 'Concluído')
                        and t.get('priority', 'Normal') in ('Baixa', 'Normal', 'Alta', 'Urgente')
                        and isinstance(t.get('assignee', ''), str) and len(t.get('assignee', '')) <= 100
-                       and objects(t.get('subtasks', []), lambda s: isinstance(s.get('title'), str) and 1 <= len(s['title']) <= 200 and type(s.get('done')) is bool, 50))
+                       and objects(t.get('subtasks', []), lambda s: isinstance(s.get('title'), str) and 1 <= len(s['title']) <= 200 and type(s.get('done')) is bool, 50)
+                       and valid_task_schedule(t)) and valid_task_graph(c['tasks'])
     if kind == 'calendar':
         return objects(c.get('events'), lambda e: isinstance(e.get('title'), str) and timestamp(e.get('start')) and timestamp(e.get('end')) and event_duration_positive(e['start'],e['end'])
                        and isinstance(e.get('location', ''), str) and len(e.get('location', '')) <= 500

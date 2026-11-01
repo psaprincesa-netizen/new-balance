@@ -2,6 +2,7 @@ import {responseTable,recordsWorkbook,answerError,localDateTime,safeCsv,document
 import {mountSlides,slideMarkup,printSlides,raster} from './slides.js';
 import {mountPivots} from './pivot-ui.js';
 import {chartSvg,chartData} from './chart.js';
+import {ensureTaskIds,findCycle,schedule,taskSpan,isoDay} from './project.js';
 import { cellValue, parseCSV, toCSV } from "./formula.js";
 const app = document.querySelector("#app"),
   modal = document.querySelector("#modal");
@@ -866,25 +867,50 @@ function present(slides, theme="light") {
   render();
   div.querySelector("button").focus();
 }
+let boardView = "kanban";
 function boardEditor(root, c) {
   c.tasks ??= [];
+  ensureTaskIds(c.tasks);
   const statuses=['A fazer','Em andamento','Concluído'];
   const priorities=['Baixa','Normal','Alta','Urgente'];
-  root.innerHTML=`<form id="add-task" class="toolbar"><input name="title" placeholder="O que precisa ser feito?" aria-label="Nome da tarefa" maxlength="200" required><input name="due" type="date" aria-label="Prazo"><select name="priority" aria-label="Prioridade da tarefa">${priorities.map(p=>`<option ${p==='Normal'?'selected':''}>${p}</option>`).join('')}</select><button class="primary">＋ Adicionar tarefa</button></form><div class="board">${statuses.map(status=>`<section class="column"><h3>${status} <span class="badge">${c.tasks.filter(t=>t.status===status).length}</span></h3>${c.tasks.map((t,i)=>t.status===status?`<article class="card"><h3>${esc(t.title)}</h3><span class="badge">${esc(t.priority || 'Normal')}</span><p class="muted">${t.due?'Prazo: '+esc(t.due):'Sem prazo'}${t.assignee?'<br>Responsável: '+esc(t.assignee):''}</p>${(t.subtasks||[]).map((s,j)=>`<label class="checklist"><input type="checkbox" data-subtask="${i}:${j}" ${s.done?'checked':''}>${esc(s.title)}</label>`).join('')}<select data-task="${i}" aria-label="Estado de ${esc(t.title)}">${statuses.map(s=>`<option ${s===status?'selected':''}>${s}</option>`).join('')}</select><div class="row"><button data-edit-task="${i}">Detalhes</button><button data-remove-task="${i}" class="danger">Excluir</button></div></article>`:'').join('')}</section>`).join('')}</div>`;
-  bind('add-task',e=>{e.preventDefault();if(c.tasks.length>=1000)return notify('Limite de 1000 tarefas.');c.tasks.push({...Object.fromEntries(new FormData(e.target)),status:'A fazer',assignee:'',subtasks:[]});setDirty();boardEditor(root,c);},'submit');
+  const byId=new Map(c.tasks.map(t=>[t.id,t]));
+  const deps=t=>(t.depends||[]).map(id=>byId.get(id)?.title).filter(Boolean);
+  const card=(t,i,status)=>`<article class="card"><h3>${t.milestone?'◆ ':''}${esc(t.title)}</h3><span class="badge">${esc(t.priority || 'Normal')}</span><p class="muted">${t.start?'Início: '+esc(t.start)+'<br>':''}${t.due?(t.milestone?'Marco: ':'Prazo: ')+esc(t.due):'Sem prazo'}${t.assignee?'<br>Responsável: '+esc(t.assignee):''}${deps(t).length?'<br>Depende de: '+deps(t).map(esc).join(', '):''}</p>${(t.subtasks||[]).map((s,j)=>`<label class="checklist"><input type="checkbox" data-subtask="${i}:${j}" ${s.done?'checked':''}>${esc(s.title)}</label>`).join('')}<select data-task="${i}" aria-label="Estado de ${esc(t.title)}">${statuses.map(s=>`<option ${s===status?'selected':''}>${s}</option>`).join('')}</select><div class="row"><button data-edit-task="${i}">Detalhes</button><button data-remove-task="${i}" class="danger">Excluir</button></div></article>`;
+  const toolbar=`<form id="add-task" class="toolbar"><input name="title" placeholder="O que precisa ser feito?" aria-label="Nome da tarefa" maxlength="200" required><input name="start" type="date" aria-label="Início"><input name="due" type="date" aria-label="Prazo"><select name="priority" aria-label="Prioridade da tarefa">${priorities.map(p=>`<option ${p==='Normal'?'selected':''}>${p}</option>`).join('')}</select><button class="primary">＋ Adicionar tarefa</button></form><div class="row" role="group" aria-label="Visualização"><button type="button" data-board-view="kanban" aria-pressed="${boardView==='kanban'}" class="${boardView==='kanban'?'primary':''}">Kanban</button><button type="button" data-board-view="timeline" aria-pressed="${boardView==='timeline'}" class="${boardView==='timeline'?'primary':''}">Cronograma</button></div>`;
+  root.innerHTML=toolbar+(boardView==='timeline'?timelineMarkup(c.tasks):`<div class="board">${statuses.map(status=>`<section class="column"><h3>${status} <span class="badge">${c.tasks.filter(t=>t.status===status).length}</span></h3>${c.tasks.map((t,i)=>t.status===status?card(t,i,status):'').join('')}</section>`).join('')}</div>`);
+  root.querySelectorAll('[data-board-view]').forEach(n=>n.onclick=()=>{boardView=n.dataset.boardView;boardEditor(root,c);});
+  bind('add-task',e=>{e.preventDefault();if(c.tasks.length>=1000)return notify('Limite de 1000 tarefas.');const data=Object.fromEntries(new FormData(e.target));if(data.start&&data.due&&data.start>data.due)return notify('O início deve ser antes do prazo.');c.tasks.push({...data,status:'A fazer',assignee:'',subtasks:[],depends:[],milestone:false});ensureTaskIds(c.tasks);setDirty();boardEditor(root,c);},'submit');
   root.querySelectorAll('[data-task]').forEach(n=>n.onchange=()=>{c.tasks[+n.dataset.task].status=n.value;setDirty();boardEditor(root,c);});
-  root.querySelectorAll('[data-remove-task]').forEach(n=>n.onclick=()=>{c.tasks.splice(+n.dataset.removeTask,1);setDirty();boardEditor(root,c);});
+  root.querySelectorAll('[data-remove-task]').forEach(n=>n.onclick=()=>{const [removed]=c.tasks.splice(+n.dataset.removeTask,1);for(const t of c.tasks)t.depends=(t.depends||[]).filter(id=>id!==removed.id);setDirty();boardEditor(root,c);});
   root.querySelectorAll('[data-subtask]').forEach(n=>n.onchange=()=>{const [i,j]=n.dataset.subtask.split(':').map(Number);c.tasks[i].subtasks[j].done=n.checked;setDirty();});
   root.querySelectorAll('[data-edit-task]').forEach(n=>n.onclick=()=>{
     const task=c.tasks[+n.dataset.editTask];
-    showDialog(`<h2>Detalhes da tarefa</h2><form id="task-details"><label class="field">Título da tarefa<input name="title" value="${esc(task.title)}" maxlength="200" required></label><label class="field">Responsável<input name="assignee" value="${esc(task.assignee||'')}" maxlength="100"></label><label class="field">Data limite<input name="due" type="date" value="${esc(task.due)}"></label><label class="field">Prioridade<select name="priority">${priorities.map(p=>`<option ${p===(task.priority||'Normal')?'selected':''}>${p}</option>`).join('')}</select></label><label class="field">Subtarefas, uma por linha<textarea name="subtasks" rows="5">${esc((task.subtasks||[]).map(s=>s.title).join('\n'))}</textarea></label><p id="task-error" class="error" role="alert"></p><button class="primary">Aplicar detalhes</button></form>`,()=>bind('task-details',e=>{
-      e.preventDefault();const data=Object.fromEntries(new FormData(e.target));
+    const others=c.tasks.filter(t=>t!==task);
+    showDialog(`<h2>Detalhes da tarefa</h2><form id="task-details"><label class="field">Título da tarefa<input name="title" value="${esc(task.title)}" maxlength="200" required></label><label class="field">Responsável<input name="assignee" value="${esc(task.assignee||'')}" maxlength="100"></label><label class="field">Início<input name="start" type="date" value="${esc(task.start||'')}"></label><label class="field">Data limite<input name="due" type="date" value="${esc(task.due)}"></label><label class="checklist"><input type="checkbox" name="milestone" ${task.milestone?'checked':''}>Marco (entrega de um dia, sem duração)</label><label class="field">Prioridade<select name="priority">${priorities.map(p=>`<option ${p===(task.priority||'Normal')?'selected':''}>${p}</option>`).join('')}</select></label><fieldset class="task-deps"><legend>Depende de</legend>${others.length?others.map(o=>`<label class="checklist"><input type="checkbox" name="depends" value="${esc(o.id)}" ${(task.depends||[]).includes(o.id)?'checked':''}>${esc(o.title)}</label>`).join(''):'<p class="muted">Nenhuma outra tarefa.</p>'}</fieldset><label class="field">Subtarefas, uma por linha<textarea name="subtasks" rows="5">${esc((task.subtasks||[]).map(s=>s.title).join('\n'))}</textarea></label><p id="task-error" class="error" role="alert"></p><button class="primary">Aplicar detalhes</button></form>`,()=>bind('task-details',e=>{
+      e.preventDefault();const form=new FormData(e.target);const data=Object.fromEntries(form);
+      const error=document.querySelector('#task-error');
       const titles=data.subtasks.split('\n').map(t=>t.trim()).filter(Boolean);
-      if(titles.length>50 || titles.some(t=>t.length>200)){document.querySelector('#task-error').textContent='Até 50 subtarefas, com 200 caracteres cada.';return;}
+      if(titles.length>50 || titles.some(t=>t.length>200)){error.textContent='Até 50 subtarefas, com 200 caracteres cada.';return;}
+      data.milestone=form.has('milestone');data.depends=form.getAll('depends');
+      if(data.start&&data.due&&data.start>data.due&&!data.milestone){error.textContent='O início deve ser antes da data limite.';return;}
+      if(data.milestone&&!data.due){error.textContent='Informe a data do marco.';return;}
+      const trial=c.tasks.map(t=>t===task?{...t,depends:data.depends}:t);
+      if(findCycle(trial)){error.textContent='Essa dependência cria um ciclo entre tarefas.';return;}
       data.subtasks=titles.map(title=>({title,done:task.subtasks?.find(s=>s.title===title)?.done || false}));
       Object.assign(task,data);closeDialog();setDirty();boardEditor(root,c);
     },'submit'));
   });
+}
+function timelineMarkup(tasks) {
+  const plan=schedule(tasks);
+  if(plan.cycle) return `<p class="error" role="alert">As dependências formam um ciclo. Remova uma delas para ver o cronograma.</p>`;
+  const undated=tasks.filter(t=>!taskSpan(t));
+  if(!plan.tasks.length) return `<p class="muted">Defina início e prazo nas tarefas para montar o cronograma.</p>`;
+  const span=Math.max(1,plan.end-plan.start+1);
+  const byId=new Map(tasks.map(t=>[t.id,t]));
+  const days=plan.end-plan.start+1;
+  const path=plan.critical.map(id=>esc(byId.get(id).title)).join(' → ');
+  return `<section class="timeline" aria-label="Cronograma"><p><strong>Período:</strong> ${isoDay(plan.start)} a ${isoDay(plan.end)} (${days} dias) · <strong>Caminho crítico:</strong> <span id="critical-path">${path}</span></p>${plan.conflicts.length?`<p class="error" role="alert">Começam antes de as dependências terminarem: ${plan.conflicts.map(id=>esc(byId.get(id).title)).join(', ')}. O cronograma mostra a data mais cedo possível.</p>`:''}<div class="gantt">${plan.tasks.map(r=>{const left=(r.es-plan.start)/span*100,width=r.milestone?0:(r.duration/span*100);const t=byId.get(r.id);return `<div class="gantt-row${r.critical?' critical':''}" data-gantt="${esc(r.id)}"><div class="gantt-label">${r.milestone?'◆ ':''}${esc(t.title)}<small>${isoDay(r.es)}${r.milestone?'':' a '+isoDay(r.ef)} · ${t.status}${r.critical?' · crítica':` · folga ${r.slack} d`}</small></div><div class="gantt-track"><span class="${r.milestone?'gantt-milestone':'gantt-bar'}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%" title="${esc(t.title)}"></span></div></div>`;}).join('')}</div>${undated.length?`<p class="muted">Sem datas: ${undated.map(t=>esc(t.title)).join(', ')}</p>`:''}</section>`;
 }
 function calendarEditor(root, c) {
   c.events ??= [];

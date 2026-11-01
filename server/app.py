@@ -70,6 +70,7 @@ def handler_for(store):
                           '/pivot.js': ('pivot.js', 'text/javascript; charset=utf-8'),
                           '/pivot-ui.js': ('pivot-ui.js', 'text/javascript; charset=utf-8'),
                           '/chart.js': ('chart.js', 'text/javascript; charset=utf-8'),
+                          '/project.js': ('project.js', 'text/javascript; charset=utf-8'),
                           '/spreadsheet.js': ('spreadsheet.js', 'text/javascript; charset=utf-8'),
                           '/spreadsheet.css': ('spreadsheet.css', 'text/css; charset=utf-8'),
                           '/formula.js': ('formula.js', 'text/javascript; charset=utf-8'),

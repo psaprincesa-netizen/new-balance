@@ -970,3 +970,16 @@ body.offline::before {
 .recovery-fields { border: 1px solid #c8cfbc; border-radius: 8px; padding: 12px 14px; margin: 14px 0 6px; }
 .recovery-fields legend { padding: 0 6px; font-weight: 600; color: var(--green); }
 .recovery-fields select { width: 100%; }
+
+/* Project timeline (Gantt) */
+.timeline { margin-top: 16px; }
+.gantt { display: grid; gap: 6px; }
+.gantt-row { display: grid; grid-template-columns: minmax(160px, 28%) 1fr; gap: 12px; align-items: center; }
+.gantt-label small { display: block; color: #5d6657; font-weight: normal; }
+.gantt-track { position: relative; height: 22px; background: #eef1e6; border-radius: 4px; }
+.gantt-bar { position: absolute; top: 3px; bottom: 3px; min-width: 4px; background: #8a9a5b; border-radius: 3px; }
+.gantt-row.critical .gantt-bar { background: #b3261e; }
+.gantt-milestone { position: absolute; top: 4px; width: 14px !important; height: 14px; margin-left: -7px; background: #4b5320; transform: rotate(45deg); }
+.gantt-row.critical .gantt-milestone { background: #b3261e; }
+.task-deps { border: 1px solid #c8cfbc; border-radius: 8px; padding: 8px 12px; max-height: 180px; overflow: auto; }
+@media (max-width: 700px) { .gantt-row { grid-template-columns: 1fr; gap: 4px; } }
