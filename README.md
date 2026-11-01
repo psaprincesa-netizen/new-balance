@@ -31,6 +31,7 @@ Configurações opcionais: `HOST` (padrão `127.0.0.1`), `PORT` (8000), `DATABAS
 
 ## Recursos ampliados
 
+- App instalável (PWA) no computador, tablet e celular. A interface abre sem internet; sem conexão, salvar guarda a alteração como rascunho local. Dados das contas nunca são guardados no cache do navegador. Detalhes em [recursos](docs/recursos.md#app-instalável-e-modo-offline-pwa).
 - DOCX, XLSX e PPTX reais para importar/exportar texto, células, abas, slides e notas. Slides incluem imagens, caixas de texto e formas editáveis no PPTX. A importação informa perdas de layout, gráficos e mídia avançada; não promete fidelidade completa ao Office.
 - Até 20 abas por pasta, fórmulas entre abas e motor de expressões com funções de busca, datas, texto, estatística e finanças. Funções de rede são bloqueadas; macros não são executadas. Importação Office: até 2,5 MB e 24 MB expandidos, conteúdo de cada arquivo limitado a 2 MB.
 - Comentários privados por arquivo, lista de acessos para o proprietário e recuperação de rascunhos no mesmo navegador. Os rascunhos não substituem o salvamento no servidor.

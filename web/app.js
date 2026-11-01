@@ -126,12 +126,21 @@ function notify(text) {
     6500,
   );
 }
+const OFFLINE_MESSAGE = "Sem conexão com a internet. Tente novamente quando a conexão voltar.";
 async function api(path, data) {
-  const r = await fetch(path, {
-    method: data === undefined ? "GET" : "POST",
-    headers: data === undefined ? {} : { "Content-Type": "application/json" },
-    body: data === undefined ? undefined : JSON.stringify(data),
-  });
+  let r;
+  try {
+    r = await fetch(path, {
+      method: data === undefined ? "GET" : "POST",
+      headers: data === undefined ? {} : { "Content-Type": "application/json" },
+      body: data === undefined ? undefined : JSON.stringify(data),
+    });
+  } catch {
+    // fetch only rejects on network failure: report it plainly instead of "Failed to fetch".
+    const e = Error(OFFLINE_MESSAGE);
+    e.offline = true;
+    throw e;
+  }
   let result;
   try { result=await r.json(); }
   catch { throw Error('O servidor não respondeu corretamente (HTTP '+r.status+'). Tente novamente.'); }
@@ -490,6 +499,12 @@ async function save() {
     if (keepSheet) document.querySelector('#save-state').textContent = `Versão ${current.version} · ${date(current.updated)}`;
     else editor();
   } catch (e) {
+    if (e.offline) {
+      // Keep the edit in this browser so it survives a reload while offline.
+      clearTimeout(stashDraft.timer);
+      stashDraft();
+      e.message = "Sem conexão: as alterações ficaram como rascunho neste navegador. Salve de novo quando a internet voltar.";
+    }
     notify(e.message);
     const status = document.querySelector("#save-state");
     if (status) status.textContent = e.message;
@@ -1319,7 +1334,7 @@ function coverage() {
         "Arquivos e colaboração",
         "Disponível",
         "Histórico, lixeira, rascunhos locais recuperáveis, comentários, acessos listáveis e conflitos de versões.",
-        "Pendentes: armazenamento binário geral, sincronização offline completa, coautoria em tempo real e criptografia de arquivos.",
+        "Pendentes: armazenamento binário geral, leitura e sincronização de arquivos sem internet, coautoria em tempo real e criptografia de arquivos.",
       ],
       [
         "BI e automação",
@@ -1366,9 +1381,26 @@ try {
   else { user = await api("/api/me"); await refresh(); render(); }
 } catch (e) {
   if (e.status === 401) auth();
-  else
+  else if (e.offline) {
+    app.textContent =
+      "Você está sem conexão. O DRAP office vai abrir automaticamente quando a internet voltar.";
+    addEventListener("online", () => location.reload(), { once: true });
+  } else
     app.textContent =
       "Não foi possível conectar à plataforma. Recarregue a página para tentar novamente.";
+}
+function connectionNotice() {
+  document.body.classList.toggle("offline", !navigator.onLine);
+  notify(navigator.onLine
+    ? "Conexão restabelecida. Salve as alterações pendentes."
+    : "Sem conexão. Você pode continuar editando; salve quando a internet voltar.");
+}
+addEventListener("online", connectionNotice);
+addEventListener("offline", connectionNotice);
+if (!navigator.onLine) document.body.classList.add("offline");
+// isSecureContext covers HTTPS and localhost; the worker only caches the app shell.
+if ("serviceWorker" in navigator && window.isSecureContext) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
 
 async function importOffice() {
