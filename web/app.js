@@ -1510,14 +1510,14 @@ function coverage() {
       [
         "Projetos e agenda",
         "Disponível",
-        "Kanban, responsáveis, prioridades, subtarefas, agenda, geração de repetições e arquivos ICS.",
-        "Pendentes: dependências, caminho crítico, notificações e convites externos.",
+        "Kanban, cronograma (Gantt), dependências, marcos, caminho crítico e folga, responsáveis, prioridades, subtarefas, agenda, geração de repetições e arquivos ICS.",
+        "Pendentes: recursos e custos, linhas de base, notificações e convites externos.",
       ],
       [
         "Formulários e tabelas",
         "Disponível",
-        "Formulários tipados, coleta pública revogável, respostas persistentes; tabelas com tipos, ordenação, filtro e deduplicação.",
-        "Pendentes: quizzes, anexos, ramificação condicional, relacionamentos e consultas entre tabelas.",
+        "Formulários tipados com múltipla seleção, escala e quizzes com nota automática (gabarito privado), coleta pública revogável, respostas persistentes; tabelas com tipos, ordenação, filtro e deduplicação.",
+        "Pendentes: anexos, ramificação condicional, relacionamentos e consultas entre tabelas.",
       ],
       [
         "Diagramas e portais",
@@ -1546,7 +1546,7 @@ function coverage() {
       [
         "Segurança e operação",
         "Parcial",
-        "Senhas scrypt, sessões HttpOnly, rate limit no banco, autorização por arquivo, Vercel e Neon.",
+        "Senhas scrypt, verificação em duas etapas (app autenticador e códigos de backup), recuperação por pergunta secreta, registro de atividade da conta, sessões HttpOnly, rate limit no banco, autorização por arquivo, Vercel e Neon.",
         "Pendentes: auditoria administrativa da organização, alertas e testes de carga.",
       ],
     ]
