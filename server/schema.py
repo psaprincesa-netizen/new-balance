@@ -59,6 +59,25 @@ def valid_task_graph(tasks):
     return True
 
 
+def valid_form_field(f):
+    kind = f.get('type')
+    if kind not in ('text', 'email', 'number', 'date', 'choice', 'multiple', 'scale') or type(f.get('required')) is not bool:
+        return False
+    options = f.get('options', [])
+    if not isinstance(options, list) or len(options) > 50 or not all(isinstance(o, str) and len(o) <= 200 for o in options):
+        return False
+    if kind == 'multiple' and any(';' in o for o in options):
+        return False
+    if 'max' in f and not (type(f['max']) is int and 2 <= f['max'] <= 10):
+        return False
+    if 'points' in f and not (type(f['points']) is int and 0 <= f['points'] <= 100):
+        return False
+    correct = f.get('correct', '')
+    if kind == 'multiple':
+        return isinstance(correct, list) and len(correct) <= 50 and all(o in options for o in correct) if 'correct' in f else True
+    return isinstance(correct, str) and len(correct) <= 4000
+
+
 def valid_content(kind, c):
     def strings(values, maximum=200):
         return isinstance(values, list) and len(values) <= maximum and all(isinstance(v, str) for v in values)
@@ -116,10 +135,10 @@ def valid_content(kind, c):
                        and isinstance(e.get('description', ''), str) and len(e.get('description', '')) <= 4000)
     if kind == 'form':
         return (strings(c.get('questions'), 100)
-                and ('fields' not in c or (isinstance(c['fields'], list) and len(c['fields']) == len(c['questions']) and objects(c['fields'], lambda f:
-                    f.get('type') in ('text', 'email', 'number', 'date', 'choice') and type(f.get('required')) is bool
-                    and strings(f.get('options', []), 50), 100)))
-                and objects(c.get('responses'), lambda r: type(r.get('at')) in (int, float) and strings(r.get('answers'), 100) and strings(r.get('questions'), 100) and len(r['answers']) == len(r['questions'])))
+                and type(c.get('quiz', False)) is bool
+                and ('fields' not in c or (isinstance(c['fields'], list) and len(c['fields']) == len(c['questions']) and objects(c['fields'], valid_form_field, 100)))
+                and objects(c.get('responses'), lambda r: type(r.get('at')) in (int, float) and strings(r.get('answers'), 100) and strings(r.get('questions'), 100) and len(r['answers']) == len(r['questions'])
+                            and all(k not in r or (type(r[k]) in (int, float) and math.isfinite(r[k]) and 0 <= r[k] <= 10000) for k in ('score', 'total'))))
     if kind == 'table':
         if not (strings(c.get('columns'), 26) and bool(c['columns']) and matrix(c.get('rows')) and all(len(r) == len(c['columns']) for r in c['rows'])):
             return False

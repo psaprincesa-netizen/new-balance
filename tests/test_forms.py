@@ -18,7 +18,7 @@ class PublicFormTest(unittest.TestCase):
 
     def test_public_collection_has_no_private_content_and_can_be_revoked(self):
         schema=self.ws.public_form(self.token)
-        self.assertEqual(set(schema),{'title','questions','fields','schema_id'})
+        self.assertEqual(set(schema),{'title','questions','fields','schema_id','quiz'})
         self.ws.submit_form(self.token,['a@example.org','A'],schema['schema_id'])
         self.assertNotIn('responses',self.ws.public_form(self.token))
         with self.assertRaises(LookupError):self.ws.publication(self.other,self.item['id'],True)
@@ -43,3 +43,40 @@ class PublicFormTest(unittest.TestCase):
         self.assertEqual(len(current['content']['responses']),6)
         self.assertEqual(current['version'],7)
         with self.assertRaises(Conflict):self.ws.update(self.user,self.item['id'],self.item)
+
+
+class QuizFormTest(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.store=Store(Path(self.temp.name)/'db')
+        self.ws=Workspace(self.store)
+        self.user=self.store.register('owner@example.org','Owner','a-long-test-password')['id']
+        fields=[{'type':'choice','required':True,'options':['Brasília','Rio'],'correct':'Brasília','points':2},
+                {'type':'multiple','required':True,'options':['2','3','4','5'],'correct':['2','3','5']},
+                {'type':'scale','required':False,'options':[],'max':10},
+                {'type':'text','required':False,'options':[],'correct':'São Paulo'}]
+        self.item=self.ws.create(self.user,{'kind':'form','title':'Quiz','content':{'quiz':True,'questions':['Capital','Primos','Satisfação','Maior cidade'],'fields':fields,'responses':[]}})
+        self.token=self.ws.publication(self.user,self.item['id'],True)['token']
+
+    def test_public_schema_hides_the_answer_key_and_server_scores(self):
+        schema=self.ws.public_form(self.token)
+        self.assertTrue(schema['quiz'])
+        self.assertTrue(all('correct' not in f and 'points' not in f for f in schema['fields']))
+        result=self.ws.submit_form(self.token,['Brasília','5; 2; 3','9','sao  paulo'],schema['schema_id'])
+        self.assertEqual((result['score'],result['total']),(4,4))
+        result=self.ws.submit_form(self.token,['Rio','2; 3','',''],schema['schema_id'])
+        self.assertEqual((result['score'],result['total']),(0,4))
+        responses=self.ws.get(self.user,self.item['id'])['content']['responses']
+        self.assertEqual([r['score'] for r in responses],[4,0])
+
+    def test_new_answer_types_are_validated(self):
+        schema=self.ws.public_form(self.token)
+        for bad in (['Brasília','2; 7','',''],['Brasília','2; 2','',''],['Brasília','2','11','']):
+            with self.assertRaises(InvalidInput):self.ws.submit_form(self.token,bad,schema['schema_id'])
+
+    def test_invalid_quiz_definitions_are_rejected(self):
+        content=self.ws.get(self.user,self.item['id'])['content']
+        for change in ({'correct':['9']},{'options':['a;b'],'correct':[]},{'points':101},{'max':11}):
+            broken={**content,'fields':[content['fields'][0],{**content['fields'][1],**change},*content['fields'][2:]]}
+            with self.assertRaises(ValueError):
+                self.ws.update(self.user,self.item['id'],{'title':'Quiz','content':broken,'version':1,'deleted':False})
