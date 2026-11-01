@@ -101,7 +101,7 @@ Confira contas e arquivos antes de trocar o caminho da instância principal. Pre
 
 A interface não envia conteúdo para ferramentas de IA ou serviços Office. No modo Vercel, o backend persiste os dados no PostgreSQL configurado. Requisições `POST /api/items` criam arquivos; `POST /api/items/{id}` altera usando a versão atual; `GET /api/items/{id}/history` retorna versões autorizadas; `POST /api/items/{id}/share` administra permissões. Listagem e histórico HTTP usam páginas de até quatro arquivos/versões, ajustadas ao limite de bytes (`items`, `next_offset`). Cada edição e sua versão são gravadas na mesma transação. Limites: 2 MB por conteúdo; planilhas com até 20 abas e 50 mil células preenchidas; tabelas com 200 linhas × 26 colunas; 100 slides. Falhas de salvamento mantêm o rascunho. Há recuperação de rascunhos locais no mesmo navegador e conta, sujeita à disponibilidade do armazenamento do navegador.
 
-O servidor da biblioteca padrão é para desenvolvimento. A Vercel fornece HTTPS e o runtime de produção. Ainda faltam recuperação de conta, auditoria administrativa, observabilidade, backups ensaiados e testes de carga. A preparação do schema foi validada no build remoto Vercel. Testes de carga e restauração do banco gerenciado ainda não foram realizados.
+O servidor da biblioteca padrão é para desenvolvimento. A Vercel fornece HTTPS e o runtime de produção. Ainda faltam auditoria administrativa, observabilidade, backups ensaiados e testes de carga. A preparação do schema foi validada no build remoto Vercel. Testes de carga e restauração do banco gerenciado ainda não foram realizados.
 
 A verificação automatizada está em `.github/workflows/verify.yml`: build, testes de domínio/API e oito jornadas reais no Chromium. O ZIP inclui essa configuração.
 
