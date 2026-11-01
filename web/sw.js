@@ -2,7 +2,7 @@
 // Keeps the application shell available offline. Account data is never cached:
 // /api/ and downloads always go to the network, so private files are not
 // stored in Cache Storage and logging out leaves nothing readable behind.
-const CACHE = 'drap-shell-v1';
+const CACHE = 'drap-shell-v2';
 const SHELL = [
   '/',
   '/style.css',
@@ -12,6 +12,7 @@ const SHELL = [
   '/pivot-ui.js',
   '/pivot.js',
   '/chart.js',
+  '/project.js',
   '/formula.js',
   '/formula-engine.js',
   '/manifest.webmanifest',

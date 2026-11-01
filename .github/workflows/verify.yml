@@ -36,3 +36,6 @@ jobs:
           python -m tests.browser_document
           python -m tests.browser_pwa
           python -m tests.browser_recovery
+          python -m tests.browser_projects
+          python -m tests.browser_quiz
+          python -m tests.browser_security

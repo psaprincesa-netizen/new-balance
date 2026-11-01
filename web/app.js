@@ -1,7 +1,8 @@
-import {responseTable,recordsWorkbook,answerError,localDateTime,safeCsv,documentSlides} from './workflows.js';
+import {responseTable,recordsWorkbook,answerError,localDateTime,safeCsv,documentSlides,scoreResponse,MULTI_SEPARATOR} from './workflows.js';
 import {mountSlides,slideMarkup,printSlides,raster} from './slides.js';
 import {mountPivots} from './pivot-ui.js';
 import {chartSvg,chartData} from './chart.js';
+import {ensureTaskIds,findCycle,schedule,taskSpan,isoDay} from './project.js';
 import { cellValue, parseCSV, toCSV } from "./formula.js";
 const app = document.querySelector("#app"),
   modal = document.querySelector("#modal");
@@ -147,6 +148,7 @@ async function api(path, data) {
   if (!r.ok) {
     const e = Error(result.error || "Não foi possível concluir.");
     e.status = r.status;
+    e.data = result;
     throw e;
   }
   return result;
@@ -219,7 +221,17 @@ function auth(register = false) {
       const data = Object.fromEntries(new FormData(e.target));
       try {
         if (register) await api("/api/register", data);
-        user = await api("/api/login", data);
+        try {
+          user = await api("/api/login", data);
+        } catch (err) {
+          if (!err.data?.mfa_required) throw err;
+          // Password accepted: ask for the authenticator code in the same form.
+          if (!e.target.querySelector('[name="code"]')) {
+            e.target.querySelector('#auth-error').insertAdjacentHTML('beforebegin', '<label class="field">Código de verificação<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="20" required></label><small>Digite os 6 dígitos do app autenticador ou um código de backup.</small>');
+            e.target.querySelector('[name="code"]').focus();
+          }
+          throw err;
+        }
         await refresh();
         render();
         askRecoverySetup();
@@ -306,6 +318,58 @@ function recoveryDialog(required = false) {
     }, "submit");
   });
 }
+// Account security: two-step verification and recent activity.
+async function securityDialog() {
+  let events = [];
+  try { events = (await api("/api/account/events")).items; } catch (e) { notify(e.message); }
+  showDialog(`<h2>Segurança da conta</h2><section class="card"><h3>Verificação em duas etapas</h3><p id="mfa-status">${user.mfa_enabled ? "Ativa: ao entrar, além da senha, é pedido um código do app autenticador." : "Desativada. Ative para exigir um código do celular além da senha."}</p><button id="mfa-toggle" class="${user.mfa_enabled ? "danger" : "primary"}">${user.mfa_enabled ? "Desativar" : "Ativar verificação em duas etapas"}</button></section><section class="card"><h3>Pergunta secreta</h3><p>${user.recovery_question ? "Cadastrada." : "Não cadastrada: sem ela não é possível recuperar a senha."}</p><button id="security-recovery">${user.recovery_question ? "Alterar" : "Cadastrar"}</button></section><section class="card"><h3>Atividade recente</h3><ul class="activity" id="activity-list">${events.map(ev => `<li><strong>${esc(ev.label)}</strong>${ev.detail ? " · " + esc(ev.detail) : ""}<small> · ${date(ev.at)}${ev.ip ? " · IP " + esc(ev.ip) : ""}</small></li>`).join("") || "<li>Nenhuma atividade registrada.</li>"}</ul></section><div class="row"><button id="security-close">Fechar</button></div>`, () => {
+    bind("security-close", closeDialog);
+    bind("security-recovery", () => recoveryDialog(false));
+    bind("mfa-toggle", () => (user.mfa_enabled ? mfaDisableDialog() : mfaSetupDialog()));
+  });
+}
+function mfaSetupDialog() {
+  showDialog(`<form id="mfa-password"><h2>Ativar verificação em duas etapas</h2><p>Você vai precisar de um app autenticador no celular, como Google Authenticator, Microsoft Authenticator ou Authy.</p><label class="field">Senha atual<input name="password" type="password" autocomplete="current-password" maxlength="128" required></label><p id="mfa-error" class="error" role="alert"></p><div class="row"><button type="button" id="mfa-cancel">Cancelar</button><button class="primary">Continuar</button></div></form>`, () => {
+    bind("mfa-cancel", securityDialog);
+    bind("mfa-password", async (e) => {
+      e.preventDefault();
+      try {
+        const setup = await api("/api/account/mfa/setup", Object.fromEntries(new FormData(e.target)));
+        let qr = "";
+        try { qr = (await import("/qr.js")).qrSvg(setup.uri); } catch {}
+        const key = setup.secret.match(/.{1,4}/g).join(" ");
+        showDialog(`<form id="mfa-enable"><h2>Escaneie o QR code</h2><p>No app autenticador, adicione uma conta e escaneie o código abaixo.</p><div class="mfa-qr" role="img" aria-label="QR code para o app autenticador">${qr}</div><p>Se não conseguir escanear, digite esta chave no app: <code id="mfa-secret">${esc(key)}</code></p><p><a href="${esc(setup.uri)}">Abrir no app autenticador deste aparelho</a></p><label class="field">Código de 6 dígitos mostrado no app<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required></label><p id="mfa-error" class="error" role="alert"></p><div class="row"><button type="button" id="mfa-cancel">Cancelar</button><button class="primary">Ativar</button></div></form>`, () => {
+          bind("mfa-cancel", securityDialog);
+          bind("mfa-enable", async (ev) => {
+            ev.preventDefault();
+            try {
+              const { backup_codes } = await api("/api/account/mfa/enable", Object.fromEntries(new FormData(ev.target)));
+              user = { ...user, mfa_enabled: true };
+              showDialog(`<h2>Verificação ativada</h2><p>Guarde estes códigos de backup em local seguro. Cada um funciona uma única vez, caso você perca o celular. Eles não serão mostrados de novo.</p><ul class="backup-codes" id="backup-codes">${backup_codes.map(c => `<li><code>${esc(c)}</code></li>`).join("")}</ul><div class="row"><button id="backup-download">Baixar códigos</button><button class="primary" id="backup-done">Já guardei</button></div>`, () => {
+                bind("backup-download", () => download("drap-office-codigos-de-backup.txt", "Códigos de backup do DRAP office (" + user.email + ")\nCada código funciona uma vez.\n\n" + backup_codes.join("\n") + "\n", "text/plain"));
+                bind("backup-done", securityDialog);
+              });
+            } catch (err) { document.querySelector("#mfa-error").textContent = err.message; }
+          }, "submit");
+        });
+      } catch (err) { document.querySelector("#mfa-error").textContent = err.message; }
+    }, "submit");
+  });
+}
+function mfaDisableDialog() {
+  showDialog(`<form id="mfa-disable"><h2>Desativar verificação em duas etapas</h2><p>Sua conta voltará a ser protegida apenas pela senha.</p><label class="field">Senha atual<input name="password" type="password" autocomplete="current-password" maxlength="128" required></label><label class="field">Código do app ou de backup<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="20" required></label><p id="mfa-error" class="error" role="alert"></p><div class="row"><button type="button" id="mfa-cancel">Cancelar</button><button class="danger">Desativar</button></div></form>`, () => {
+    bind("mfa-cancel", securityDialog);
+    bind("mfa-disable", async (e) => {
+      e.preventDefault();
+      try {
+        await api("/api/account/mfa/disable", Object.fromEntries(new FormData(e.target)));
+        user = { ...user, mfa_enabled: false };
+        notify("Verificação em duas etapas desativada.");
+        securityDialog();
+      } catch (err) { document.querySelector("#mfa-error").textContent = err.message; }
+    }, "submit");
+  });
+}
 function askRecoverySetup() {
   // Older accounts were created before the secret question existed; ask once per session.
   if (!user || user.recovery_question) return;
@@ -343,12 +407,13 @@ function shell(body) {
     )
     .join(
       "",
-    )}</nav><footer>FEITO PARA CONECTAR<br>Uma conta. Todas as suas ideias.<br><button id="backup">Exportar meu espaço</button><button id="import">Importar JSON</button><button id="import-office">Importar Office / Agenda</button><button id="recovery-settings">Pergunta secreta</button><a class="download-platform" href="/downloads/drap-office.zip" download="drap-office.zip">Baixar plataforma ↓</a></footer></aside><main class="main"><header class="topbar"><input class="search" id="search" type="search" placeholder="Buscar em todos os arquivos…" aria-label="Buscar arquivos" value="${esc(query)}"><div class="row"><span class="user-name muted">${esc(user.name)}</span><span class="avatar">${esc(user.name.slice(0, 2).toUpperCase())}</span><a class="download-top" href="/downloads/drap-office.zip" download="drap-office.zip" aria-label="Baixar plataforma" title="Baixar código da plataforma">↓</a><button id="logout" title="Sair da conta">Sair</button></div></header><div class="content">${body}</div></main></div>`;
+    )}</nav><footer>FEITO PARA CONECTAR<br>Uma conta. Todas as suas ideias.<br><button id="backup">Exportar meu espaço</button><button id="import">Importar JSON</button><button id="import-office">Importar Office / Agenda</button><button id="recovery-settings">Pergunta secreta</button><button id="security-settings">Segurança da conta</button><a class="download-platform" href="/downloads/drap-office.zip" download="drap-office.zip">Baixar plataforma ↓</a></footer></aside><main class="main"><header class="topbar"><input class="search" id="search" type="search" placeholder="Buscar em todos os arquivos…" aria-label="Buscar arquivos" value="${esc(query)}"><div class="row"><span class="user-name muted">${esc(user.name)}</span><span class="avatar">${esc(user.name.slice(0, 2).toUpperCase())}</span><a class="download-top" href="/downloads/drap-office.zip" download="drap-office.zip" aria-label="Baixar plataforma" title="Baixar código da plataforma">↓</a><button id="logout" title="Sair da conta">Sair</button></div></header><div class="content">${body}</div></main></div>`;
   document
     .querySelectorAll("[data-nav]")
     .forEach((n) => (n.onclick = () => navigate(n.dataset.nav)));
   bind("import-office", importOffice);
   bind("recovery-settings", () => recoveryDialog(false));
+  bind("security-settings", securityDialog);
   bind("logout", async () => {
     if (!(await leave())) return;
     await api("/api/logout", {});
@@ -866,25 +931,50 @@ function present(slides, theme="light") {
   render();
   div.querySelector("button").focus();
 }
+let boardView = "kanban";
 function boardEditor(root, c) {
   c.tasks ??= [];
+  ensureTaskIds(c.tasks);
   const statuses=['A fazer','Em andamento','Concluído'];
   const priorities=['Baixa','Normal','Alta','Urgente'];
-  root.innerHTML=`<form id="add-task" class="toolbar"><input name="title" placeholder="O que precisa ser feito?" aria-label="Nome da tarefa" maxlength="200" required><input name="due" type="date" aria-label="Prazo"><select name="priority" aria-label="Prioridade da tarefa">${priorities.map(p=>`<option ${p==='Normal'?'selected':''}>${p}</option>`).join('')}</select><button class="primary">＋ Adicionar tarefa</button></form><div class="board">${statuses.map(status=>`<section class="column"><h3>${status} <span class="badge">${c.tasks.filter(t=>t.status===status).length}</span></h3>${c.tasks.map((t,i)=>t.status===status?`<article class="card"><h3>${esc(t.title)}</h3><span class="badge">${esc(t.priority || 'Normal')}</span><p class="muted">${t.due?'Prazo: '+esc(t.due):'Sem prazo'}${t.assignee?'<br>Responsável: '+esc(t.assignee):''}</p>${(t.subtasks||[]).map((s,j)=>`<label class="checklist"><input type="checkbox" data-subtask="${i}:${j}" ${s.done?'checked':''}>${esc(s.title)}</label>`).join('')}<select data-task="${i}" aria-label="Estado de ${esc(t.title)}">${statuses.map(s=>`<option ${s===status?'selected':''}>${s}</option>`).join('')}</select><div class="row"><button data-edit-task="${i}">Detalhes</button><button data-remove-task="${i}" class="danger">Excluir</button></div></article>`:'').join('')}</section>`).join('')}</div>`;
-  bind('add-task',e=>{e.preventDefault();if(c.tasks.length>=1000)return notify('Limite de 1000 tarefas.');c.tasks.push({...Object.fromEntries(new FormData(e.target)),status:'A fazer',assignee:'',subtasks:[]});setDirty();boardEditor(root,c);},'submit');
+  const byId=new Map(c.tasks.map(t=>[t.id,t]));
+  const deps=t=>(t.depends||[]).map(id=>byId.get(id)?.title).filter(Boolean);
+  const card=(t,i,status)=>`<article class="card"><h3>${t.milestone?'◆ ':''}${esc(t.title)}</h3><span class="badge">${esc(t.priority || 'Normal')}</span><p class="muted">${t.start?'Início: '+esc(t.start)+'<br>':''}${t.due?(t.milestone?'Marco: ':'Prazo: ')+esc(t.due):'Sem prazo'}${t.assignee?'<br>Responsável: '+esc(t.assignee):''}${deps(t).length?'<br>Depende de: '+deps(t).map(esc).join(', '):''}</p>${(t.subtasks||[]).map((s,j)=>`<label class="checklist"><input type="checkbox" data-subtask="${i}:${j}" ${s.done?'checked':''}>${esc(s.title)}</label>`).join('')}<select data-task="${i}" aria-label="Estado de ${esc(t.title)}">${statuses.map(s=>`<option ${s===status?'selected':''}>${s}</option>`).join('')}</select><div class="row"><button data-edit-task="${i}">Detalhes</button><button data-remove-task="${i}" class="danger">Excluir</button></div></article>`;
+  const toolbar=`<form id="add-task" class="toolbar"><input name="title" placeholder="O que precisa ser feito?" aria-label="Nome da tarefa" maxlength="200" required><input name="start" type="date" aria-label="Início"><input name="due" type="date" aria-label="Prazo"><select name="priority" aria-label="Prioridade da tarefa">${priorities.map(p=>`<option ${p==='Normal'?'selected':''}>${p}</option>`).join('')}</select><button class="primary">＋ Adicionar tarefa</button></form><div class="row" role="group" aria-label="Visualização"><button type="button" data-board-view="kanban" aria-pressed="${boardView==='kanban'}" class="${boardView==='kanban'?'primary':''}">Kanban</button><button type="button" data-board-view="timeline" aria-pressed="${boardView==='timeline'}" class="${boardView==='timeline'?'primary':''}">Cronograma</button></div>`;
+  root.innerHTML=toolbar+(boardView==='timeline'?timelineMarkup(c.tasks):`<div class="board">${statuses.map(status=>`<section class="column"><h3>${status} <span class="badge">${c.tasks.filter(t=>t.status===status).length}</span></h3>${c.tasks.map((t,i)=>t.status===status?card(t,i,status):'').join('')}</section>`).join('')}</div>`);
+  root.querySelectorAll('[data-board-view]').forEach(n=>n.onclick=()=>{boardView=n.dataset.boardView;boardEditor(root,c);});
+  bind('add-task',e=>{e.preventDefault();if(c.tasks.length>=1000)return notify('Limite de 1000 tarefas.');const data=Object.fromEntries(new FormData(e.target));if(data.start&&data.due&&data.start>data.due)return notify('O início deve ser antes do prazo.');c.tasks.push({...data,status:'A fazer',assignee:'',subtasks:[],depends:[],milestone:false});ensureTaskIds(c.tasks);setDirty();boardEditor(root,c);},'submit');
   root.querySelectorAll('[data-task]').forEach(n=>n.onchange=()=>{c.tasks[+n.dataset.task].status=n.value;setDirty();boardEditor(root,c);});
-  root.querySelectorAll('[data-remove-task]').forEach(n=>n.onclick=()=>{c.tasks.splice(+n.dataset.removeTask,1);setDirty();boardEditor(root,c);});
+  root.querySelectorAll('[data-remove-task]').forEach(n=>n.onclick=()=>{const [removed]=c.tasks.splice(+n.dataset.removeTask,1);for(const t of c.tasks)t.depends=(t.depends||[]).filter(id=>id!==removed.id);setDirty();boardEditor(root,c);});
   root.querySelectorAll('[data-subtask]').forEach(n=>n.onchange=()=>{const [i,j]=n.dataset.subtask.split(':').map(Number);c.tasks[i].subtasks[j].done=n.checked;setDirty();});
   root.querySelectorAll('[data-edit-task]').forEach(n=>n.onclick=()=>{
     const task=c.tasks[+n.dataset.editTask];
-    showDialog(`<h2>Detalhes da tarefa</h2><form id="task-details"><label class="field">Título da tarefa<input name="title" value="${esc(task.title)}" maxlength="200" required></label><label class="field">Responsável<input name="assignee" value="${esc(task.assignee||'')}" maxlength="100"></label><label class="field">Data limite<input name="due" type="date" value="${esc(task.due)}"></label><label class="field">Prioridade<select name="priority">${priorities.map(p=>`<option ${p===(task.priority||'Normal')?'selected':''}>${p}</option>`).join('')}</select></label><label class="field">Subtarefas, uma por linha<textarea name="subtasks" rows="5">${esc((task.subtasks||[]).map(s=>s.title).join('\n'))}</textarea></label><p id="task-error" class="error" role="alert"></p><button class="primary">Aplicar detalhes</button></form>`,()=>bind('task-details',e=>{
-      e.preventDefault();const data=Object.fromEntries(new FormData(e.target));
+    const others=c.tasks.filter(t=>t!==task);
+    showDialog(`<h2>Detalhes da tarefa</h2><form id="task-details"><label class="field">Título da tarefa<input name="title" value="${esc(task.title)}" maxlength="200" required></label><label class="field">Responsável<input name="assignee" value="${esc(task.assignee||'')}" maxlength="100"></label><label class="field">Início<input name="start" type="date" value="${esc(task.start||'')}"></label><label class="field">Data limite<input name="due" type="date" value="${esc(task.due)}"></label><label class="checklist"><input type="checkbox" name="milestone" ${task.milestone?'checked':''}>Marco (entrega de um dia, sem duração)</label><label class="field">Prioridade<select name="priority">${priorities.map(p=>`<option ${p===(task.priority||'Normal')?'selected':''}>${p}</option>`).join('')}</select></label><fieldset class="task-deps"><legend>Depende de</legend>${others.length?others.map(o=>`<label class="checklist"><input type="checkbox" name="depends" value="${esc(o.id)}" ${(task.depends||[]).includes(o.id)?'checked':''}>${esc(o.title)}</label>`).join(''):'<p class="muted">Nenhuma outra tarefa.</p>'}</fieldset><label class="field">Subtarefas, uma por linha<textarea name="subtasks" rows="5">${esc((task.subtasks||[]).map(s=>s.title).join('\n'))}</textarea></label><p id="task-error" class="error" role="alert"></p><button class="primary">Aplicar detalhes</button></form>`,()=>bind('task-details',e=>{
+      e.preventDefault();const form=new FormData(e.target);const data=Object.fromEntries(form);
+      const error=document.querySelector('#task-error');
       const titles=data.subtasks.split('\n').map(t=>t.trim()).filter(Boolean);
-      if(titles.length>50 || titles.some(t=>t.length>200)){document.querySelector('#task-error').textContent='Até 50 subtarefas, com 200 caracteres cada.';return;}
+      if(titles.length>50 || titles.some(t=>t.length>200)){error.textContent='Até 50 subtarefas, com 200 caracteres cada.';return;}
+      data.milestone=form.has('milestone');data.depends=form.getAll('depends');
+      if(data.start&&data.due&&data.start>data.due&&!data.milestone){error.textContent='O início deve ser antes da data limite.';return;}
+      if(data.milestone&&!data.due){error.textContent='Informe a data do marco.';return;}
+      const trial=c.tasks.map(t=>t===task?{...t,depends:data.depends}:t);
+      if(findCycle(trial)){error.textContent='Essa dependência cria um ciclo entre tarefas.';return;}
       data.subtasks=titles.map(title=>({title,done:task.subtasks?.find(s=>s.title===title)?.done || false}));
       Object.assign(task,data);closeDialog();setDirty();boardEditor(root,c);
     },'submit'));
   });
+}
+function timelineMarkup(tasks) {
+  const plan=schedule(tasks);
+  if(plan.cycle) return `<p class="error" role="alert">As dependências formam um ciclo. Remova uma delas para ver o cronograma.</p>`;
+  const undated=tasks.filter(t=>!taskSpan(t));
+  if(!plan.tasks.length) return `<p class="muted">Defina início e prazo nas tarefas para montar o cronograma.</p>`;
+  const span=Math.max(1,plan.end-plan.start+1);
+  const byId=new Map(tasks.map(t=>[t.id,t]));
+  const days=plan.end-plan.start+1;
+  const path=plan.critical.map(id=>esc(byId.get(id).title)).join(' → ');
+  return `<section class="timeline" aria-label="Cronograma"><p><strong>Período:</strong> ${isoDay(plan.start)} a ${isoDay(plan.end)} (${days} dias) · <strong>Caminho crítico:</strong> <span id="critical-path">${path}</span></p>${plan.conflicts.length?`<p class="error" role="alert">Começam antes de as dependências terminarem: ${plan.conflicts.map(id=>esc(byId.get(id).title)).join(', ')}. O cronograma mostra a data mais cedo possível.</p>`:''}<div class="gantt">${plan.tasks.map(r=>{const left=(r.es-plan.start)/span*100,width=r.milestone?0:(r.duration/span*100);const t=byId.get(r.id);return `<div class="gantt-row${r.critical?' critical':''}" data-gantt="${esc(r.id)}"><div class="gantt-label">${r.milestone?'◆ ':''}${esc(t.title)}<small>${isoDay(r.es)}${r.milestone?'':' a '+isoDay(r.ef)} · ${t.status}${r.critical?' · crítica':` · folga ${r.slack} d`}</small></div><div class="gantt-track"><span class="${r.milestone?'gantt-milestone':'gantt-bar'}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%" title="${esc(t.title)}"></span></div></div>`;}).join('')}</div>${undated.length?`<p class="muted">Sem datas: ${undated.map(t=>esc(t.title)).join(', ')}</p>`:''}</section>`;
 }
 function calendarEditor(root, c) {
   c.events ??= [];
@@ -936,20 +1026,41 @@ function calendarEditor(root, c) {
 }
 function answerField(question, field, index) {
   const attrs=`name="q${index}" ${field.required?'required':''}`;
-  return `<label class="field">${esc(question)}${field.required?' *':''}${field.type==='choice'?`<select ${attrs}><option value="">Selecione…</option>${(field.options||[]).map(o=>`<option>${esc(o)}</option>`).join('')}</select>`:`<input ${attrs} type="${field.type}" ${field.type==='number'?'step="any"':''} maxlength="4000">`}</label>`;
+  const label=`${esc(question)}${field.required?' *':''}`;
+  if(field.type==='multiple') return `<fieldset class="field answer-group" data-answer="${index}"><legend>${label}</legend>${(field.options||[]).map(o=>`<label class="checklist"><input type="checkbox" name="q${index}" value="${esc(o)}">${esc(o)}</label>`).join('')}</fieldset>`;
+  if(field.type==='scale') return `<fieldset class="field answer-group scale" data-answer="${index}"><legend>${label}</legend>${Array.from({length:field.max||5},(_,n)=>`<label><input type="radio" ${attrs} value="${n+1}">${n+1}</label>`).join('')}</fieldset>`;
+  return `<label class="field">${label}${field.type==='choice'?`<select ${attrs}><option value="">Selecione…</option>${(field.options||[]).map(o=>`<option>${esc(o)}</option>`).join('')}</select>`:`<input ${attrs} type="${field.type}" ${field.type==='number'?'step="any"':''} maxlength="4000">`}</label>`;
+}
+function collectAnswers(form, fields) {
+  const values=new FormData(form);
+  return fields.map((field,i)=>field.type==='multiple'?values.getAll('q'+i).join(MULTI_SEPARATOR):(values.get('q'+i)||''));
+}
+function correctAnswerField(field, i) {
+  const options=field.type==='scale'?Array.from({length:field.max||5},(_,n)=>String(n+1)):(field.options||[]);
+  let input;
+  if(field.type==='multiple') input=`<div class="row">${options.map(o=>`<label class="checklist"><input type="checkbox" data-correct-multi="${i}" value="${esc(o)}" ${(field.correct||[]).includes(o)?'checked':''}>${esc(o)}</label>`).join('')}</div>`;
+  else if(field.type==='choice'||field.type==='scale') input=`<select data-correct="${i}" aria-label="Resposta correta da pergunta ${i+1}"><option value="">Sem resposta correta</option>${options.map(o=>`<option ${o===field.correct?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
+  else input=`<input data-correct="${i}" type="${field.type==='number'?'number':'text'}" step="any" value="${esc(field.correct||'')}" aria-label="Resposta correta da pergunta ${i+1}" maxlength="4000">`;
+  return `<div class="quiz-key"><span>Resposta correta</span>${input}<label>Pontos <input data-points="${i}" type="number" min="0" max="100" step="1" value="${field.points??1}" aria-label="Pontos da pergunta ${i+1}"></label></div>`;
 }
 function formEditor(root,c) {
   c.questions ??=[];c.responses ??=[];
   c.fields ??=c.questions.map(()=>({type:'text',required:true,options:[]}));
-  const fieldTypes={text:'Texto',email:'E-mail',number:'Número',date:'Data',choice:'Escolha única'};
-  root.innerHTML=`<div class="toolbar"><button id="add-question">＋ Pergunta de texto</button><button id="form-table">Respostas → Tabela</button><button id="form-sheet">Respostas → Planilha</button><button id="form-csv">Baixar respostas CSV</button>${current.role==='owner'?'<button id="form-publish">Link de coleta</button>':''}<span>${c.responses.length} respostas</span></div><h3>Perguntas</h3>${c.questions.map((q,i)=>`<article class="card"><div class="row"><input data-question="${i}" value="${esc(q)}" aria-label="Pergunta ${i+1}" maxlength="300"><select data-field-type="${i}" aria-label="Tipo da pergunta ${i+1}">${Object.entries(fieldTypes).map(([type,label])=>`<option value="${type}" ${c.fields[i].type===type?'selected':''}>${label}</option>`).join('')}</select><button data-remove-question="${i}">Excluir</button></div><label class="checklist"><input type="checkbox" data-field-required="${i}" ${c.fields[i].required?'checked':''}>Obrigatória</label>${c.fields[i].type==='choice'?`<label class="field">Opções, uma por linha<textarea data-field-options="${i}">${esc(c.fields[i].options.join('\n'))}</textarea></label>`:''}</article>`).join('')}<hr><h3>Responder neste espaço</h3><form id="respond-form">${c.questions.map((q,i)=>answerField(q,c.fields[i],i)).join('')}<button class="primary" ${c.questions.length?'':'disabled'}>Registrar resposta</button></form><h3 class="section-head">Respostas registradas</h3>${c.responses.map(r=>`<div class="card"><small>${date(r.at)}</small>${r.answers.map((a,i)=>`<p>${esc(r.questions?.[i]||'Pergunta '+(i+1))}: ${esc(a)}</p>`).join('')}</div>`).join('')}`;
-  root.querySelectorAll('[data-question]').forEach(n=>n.oninput=()=>{const i=+n.dataset.question;c.questions[i]=n.value;const label=root.querySelector(`[name="q${i}"]`).closest('label');label.firstChild.textContent=n.value+(c.fields[i].required?' *':'');setDirty();});
+  const fieldTypes={text:'Texto',email:'E-mail',number:'Número',date:'Data',choice:'Escolha única',multiple:'Múltipla seleção',scale:'Escala'};
+  const grade=r=>typeof r.total==='number'&&r.total>0?`<p><strong>Nota: ${r.score} de ${r.total}</strong></p>`:'';
+  root.innerHTML=`<div class="toolbar"><button id="add-question">＋ Pergunta de texto</button><button id="form-table">Respostas → Tabela</button><button id="form-sheet">Respostas → Planilha</button><button id="form-csv">Baixar respostas CSV</button>${current.role==='owner'?'<button id="form-publish">Link de coleta</button>':''}<label class="checklist"><input type="checkbox" id="form-quiz" ${c.quiz?'checked':''}>Modo quiz (nota automática)</label><span>${c.responses.length} respostas</span></div><h3>Perguntas</h3>${c.questions.map((q,i)=>`<article class="card"><div class="row"><input data-question="${i}" value="${esc(q)}" aria-label="Pergunta ${i+1}" maxlength="300"><select data-field-type="${i}" aria-label="Tipo da pergunta ${i+1}">${Object.entries(fieldTypes).map(([type,label])=>`<option value="${type}" ${c.fields[i].type===type?'selected':''}>${label}</option>`).join('')}</select><button data-remove-question="${i}">Excluir</button></div><label class="checklist"><input type="checkbox" data-field-required="${i}" ${c.fields[i].required?'checked':''}>Obrigatória</label>${['choice','multiple'].includes(c.fields[i].type)?`<label class="field">Opções, uma por linha<textarea data-field-options="${i}" aria-label="Opções da pergunta ${i+1}">${esc(c.fields[i].options.join('\n'))}</textarea></label>`:''}${c.fields[i].type==='scale'?`<label class="field">Escala de 1 até<select data-field-max="${i}" aria-label="Máximo da escala da pergunta ${i+1}">${[2,3,4,5,6,7,8,9,10].map(n=>`<option ${n===(c.fields[i].max||5)?'selected':''}>${n}</option>`).join('')}</select></label>`:''}${c.quiz?correctAnswerField(c.fields[i],i):''}</article>`).join('')}<hr><h3>Responder neste espaço</h3><form id="respond-form">${c.questions.map((q,i)=>answerField(q,c.fields[i],i)).join('')}<button class="primary" ${c.questions.length?'':'disabled'}>Registrar resposta</button></form><h3 class="section-head">Respostas registradas</h3>${c.responses.map(r=>`<div class="card"><small>${date(r.at)}</small>${grade(r)}${r.answers.map((a,i)=>`<p>${esc(r.questions?.[i]||'Pergunta '+(i+1))}: ${esc(a)}</p>`).join('')}</div>`).join('')}`;
+  root.querySelectorAll('[data-question]').forEach(n=>n.oninput=()=>{const i=+n.dataset.question;c.questions[i]=n.value;const group=root.querySelector(`[data-answer="${i}"] legend`);if(group)group.textContent=n.value+(c.fields[i].required?' *':'');else{const label=root.querySelector(`[name="q${i}"]`).closest('label');label.firstChild.textContent=n.value+(c.fields[i].required?' *':'');}setDirty();});
   root.querySelectorAll('[data-remove-question]').forEach(n=>n.onclick=()=>{c.questions.splice(+n.dataset.removeQuestion,1);c.fields.splice(+n.dataset.removeQuestion,1);setDirty();formEditor(root,c);});
-  root.querySelectorAll('[data-field-type]').forEach(n=>n.onchange=()=>{c.fields[+n.dataset.fieldType].type=n.value;setDirty();formEditor(root,c);});
-  root.querySelectorAll('[data-field-required]').forEach(n=>n.onchange=()=>{const i=+n.dataset.fieldRequired;c.fields[i].required=n.checked;const field=root.querySelector(`[name="q${i}"]`);field.required=n.checked;field.closest('label').firstChild.textContent=c.questions[i]+(n.checked?' *':'');setDirty();});
-  root.querySelectorAll('[data-field-options]').forEach(n=>n.onchange=()=>{const options=n.value.split('\n').map(s=>s.trim()).filter(Boolean);if(options.length>50)return notify('Até 50 opções.');c.fields[+n.dataset.fieldOptions].options=options;setDirty();formEditor(root,c);});
+  root.querySelectorAll('[data-field-type]').forEach(n=>n.onchange=()=>{const f=c.fields[+n.dataset.fieldType];f.type=n.value;delete f.correct;if(n.value==='multiple')f.options=f.options.filter(o=>!o.includes(';'));setDirty();formEditor(root,c);});
+  root.querySelectorAll('[data-field-required]').forEach(n=>n.onchange=()=>{c.fields[+n.dataset.fieldRequired].required=n.checked;setDirty();formEditor(root,c);});
+  root.querySelectorAll('[data-field-options]').forEach(n=>n.onchange=()=>{const f=c.fields[+n.dataset.fieldOptions];const options=[...new Set(n.value.split('\n').map(s=>s.trim()).filter(Boolean))];if(options.length>50)return notify('Até 50 opções.');if(f.type==='multiple'&&options.some(o=>o.includes(';')))return notify('Em múltipla seleção, as opções não podem conter ponto e vírgula.');f.options=options;if(Array.isArray(f.correct))f.correct=f.correct.filter(o=>options.includes(o));else if(f.correct&&!options.includes(f.correct))delete f.correct;setDirty();formEditor(root,c);});
+  root.querySelectorAll('[data-field-max]').forEach(n=>n.onchange=()=>{const f=c.fields[+n.dataset.fieldMax];f.max=+n.value;if(f.correct&&+f.correct>f.max)delete f.correct;setDirty();formEditor(root,c);});
+  root.querySelectorAll('[data-correct]').forEach(n=>n.onchange=()=>{const f=c.fields[+n.dataset.correct];if(n.value)f.correct=n.value;else delete f.correct;setDirty();});
+  root.querySelectorAll('[data-correct-multi]').forEach(n=>n.onchange=()=>{const i=+n.dataset.correctMulti;c.fields[i].correct=[...root.querySelectorAll(`[data-correct-multi="${i}"]:checked`)].map(x=>x.value);setDirty();});
+  root.querySelectorAll('[data-points]').forEach(n=>n.onchange=()=>{const v=Math.round(Number(n.value));if(!(v>=0&&v<=100)){n.value=c.fields[+n.dataset.points].points??1;return notify('Use de 0 a 100 pontos.');}c.fields[+n.dataset.points].points=v;setDirty();});
+  bind('form-quiz',e=>{c.quiz=e.target.checked;setDirty();formEditor(root,c);},'change');
   bind('add-question',()=>{if(c.questions.length>=100)return notify('Limite de 100 perguntas.');c.questions.push('Nova pergunta');c.fields.push({type:'text',required:true,options:[]});setDirty();formEditor(root,c);});
-  bind('respond-form',e=>{e.preventDefault();if(c.responses.length>=1000)return notify('Limite de 1000 respostas.');const d=new FormData(e.target),answers=c.questions.map((_,i)=>d.get('q'+i)||'');for(let i=0;i<answers.length;i++){const error=answerError(answers[i],c.fields[i]);if(error){notify('Pergunta '+(i+1)+': '+error);return;}}c.responses.push({at:Date.now(),questions:[...c.questions],answers});setDirty();formEditor(root,c);},'submit');
+  bind('respond-form',e=>{e.preventDefault();if(c.responses.length>=1000)return notify('Limite de 1000 respostas.');const answers=collectAnswers(e.target,c.fields);for(let i=0;i<answers.length;i++){const error=answerError(answers[i],c.fields[i]);if(error){notify('Pergunta '+(i+1)+': '+error);return;}}const response={at:Date.now(),questions:[...c.questions],answers};if(c.quiz){const g=scoreResponse(c.fields,answers);if(g.total){Object.assign(response,g);notify(`Nota: ${g.score} de ${g.total}.`);}}c.responses.push(response);setDirty();formEditor(root,c);},'submit');
   const responseRows=()=>responseTable(c,date);
   bind('form-csv',()=>{const data=responseRows();download(current.title+'-respostas.csv',toCSV(safeCsv([data.columns,...data.rows])),'text/csv');});
   bind('form-table',()=>{if(!c.responses.length)return notify('Registre uma resposta primeiro.');const data=responseRows();if(data.columns.length>26||data.rows.length>200)return notify('A tabela aceita 26 campos e 200 registros. Use Respostas → Planilha ou Baixar respostas CSV para levar todos os dados.');convert('table',data,' — Respostas');});
@@ -971,7 +1082,7 @@ async function publicationDialog() {
 async function publicForm(token) {
   const data=await api('/api/forms/'+encodeURIComponent(token));
   app.innerHTML=`<main class="public-form"><div class="brand"><span class="brand-name">DRAP <span>office</span></span></div><h1>${esc(data.title)}</h1><form id="public-response">${data.questions.map((q,i)=>answerField(q,data.fields[i],i)).join('')}<p id="public-response-error" class="error" role="alert"></p><button class="primary">Enviar resposta</button></form></main>`;
-  bind('public-response',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;const values=new FormData(e.target);try{await api('/api/forms/'+encodeURIComponent(token),{answers:data.questions.map((_,i)=>values.get('q'+i)||''),schema_id:data.schema_id});e.target.innerHTML='<h2>Resposta enviada</h2><p>Sua resposta foi registrada. Obrigado!</p>';}catch(err){document.querySelector('#public-response-error').textContent=err.message;button.disabled=false;}},'submit');
+  bind('public-response',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;const answers=collectAnswers(e.target,data.fields);const invalid=answers.map((a,i)=>answerError(a,data.fields[i])).findIndex(Boolean);if(invalid>=0){document.querySelector('#public-response-error').textContent='Pergunta '+(invalid+1)+': '+answerError(answers[invalid],data.fields[invalid]);button.disabled=false;return;}try{const result=await api('/api/forms/'+encodeURIComponent(token),{answers,schema_id:data.schema_id});e.target.innerHTML='<h2>Resposta enviada</h2><p>Sua resposta foi registrada. Obrigado!</p>'+(result.total?`<p id="quiz-score"><strong>Sua nota: ${result.score} de ${result.total}</strong></p>`:'');}catch(err){document.querySelector('#public-response-error').textContent=err.message;button.disabled=false;}},'submit');
 }
 const tableStates=new Map();
 function tableEditor(root, c) {
@@ -1399,14 +1510,14 @@ function coverage() {
       [
         "Projetos e agenda",
         "Disponível",
-        "Kanban, responsáveis, prioridades, subtarefas, agenda, geração de repetições e arquivos ICS.",
-        "Pendentes: dependências, caminho crítico, notificações e convites externos.",
+        "Kanban, cronograma (Gantt), dependências, marcos, caminho crítico e folga, responsáveis, prioridades, subtarefas, agenda, geração de repetições e arquivos ICS.",
+        "Pendentes: recursos e custos, linhas de base, notificações e convites externos.",
       ],
       [
         "Formulários e tabelas",
         "Disponível",
-        "Formulários tipados, coleta pública revogável, respostas persistentes; tabelas com tipos, ordenação, filtro e deduplicação.",
-        "Pendentes: quizzes, anexos, ramificação condicional, relacionamentos e consultas entre tabelas.",
+        "Formulários tipados com múltipla seleção, escala e quizzes com nota automática (gabarito privado), coleta pública revogável, respostas persistentes; tabelas com tipos, ordenação, filtro e deduplicação.",
+        "Pendentes: anexos, ramificação condicional, relacionamentos e consultas entre tabelas.",
       ],
       [
         "Diagramas e portais",
@@ -1435,8 +1546,8 @@ function coverage() {
       [
         "Segurança e operação",
         "Parcial",
-        "Senhas scrypt, sessões HttpOnly, rate limit no banco, autorização por arquivo, Vercel e Neon.",
-        "Pendentes: MFA, auditoria administrativa, alertas e testes de carga.",
+        "Senhas scrypt, verificação em duas etapas (app autenticador e códigos de backup), recuperação por pergunta secreta, registro de atividade da conta, sessões HttpOnly, rate limit no banco, autorização por arquivo, Vercel e Neon.",
+        "Pendentes: auditoria administrativa da organização, alertas e testes de carga.",
       ],
     ]
       .map(

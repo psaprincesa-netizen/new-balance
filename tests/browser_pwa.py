@@ -37,7 +37,7 @@ def exercise(context, base):
     # Wait until the worker controls the page and the shell is cached.
     page.evaluate("navigator.serviceWorker.ready")
     page.wait_for_function("navigator.serviceWorker.controller !== null", timeout=15000)
-    cached = page.evaluate("caches.open('drap-shell-v1').then(c => c.keys()).then(k => k.map(r => new URL(r.url).pathname))")
+    cached = page.evaluate("caches.open('drap-shell-v2').then(c => c.keys()).then(k => k.map(r => new URL(r.url).pathname))")
     assert '/' in cached and '/app.js' in cached, cached
     assert not any(path.startswith('/api/') for path in cached), cached
 
@@ -58,7 +58,7 @@ def exercise(context, base):
     # Offline reload: the cached shell loads and explains the missing connection.
     page.reload()
     expect(page.get_by_text('Você está sem conexão.', exact=False)).to_be_visible()
-    cached_api = page.evaluate("caches.open('drap-shell-v1').then(c => c.keys()).then(k => k.filter(r => new URL(r.url).pathname.startsWith('/api/')).length)")
+    cached_api = page.evaluate("caches.open('drap-shell-v2').then(c => c.keys()).then(k => k.filter(r => new URL(r.url).pathname.startsWith('/api/')).length)")
     assert cached_api == 0
 
     # Back online: the page reopens on its own.

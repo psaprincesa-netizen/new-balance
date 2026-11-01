@@ -970,3 +970,28 @@ body.offline::before {
 .recovery-fields { border: 1px solid #c8cfbc; border-radius: 8px; padding: 12px 14px; margin: 14px 0 6px; }
 .recovery-fields legend { padding: 0 6px; font-weight: 600; color: var(--green); }
 .recovery-fields select { width: 100%; }
+
+/* Project timeline (Gantt) */
+.timeline { margin-top: 16px; }
+.gantt { display: grid; gap: 6px; }
+.gantt-row { display: grid; grid-template-columns: minmax(160px, 28%) 1fr; gap: 12px; align-items: center; }
+.gantt-label small { display: block; color: #5d6657; font-weight: normal; }
+.gantt-track { position: relative; height: 22px; background: #eef1e6; border-radius: 4px; }
+.gantt-bar { position: absolute; top: 3px; bottom: 3px; min-width: 4px; background: #8a9a5b; border-radius: 3px; }
+.gantt-row.critical .gantt-bar { background: #b3261e; }
+.gantt-milestone { position: absolute; top: 4px; width: 14px !important; height: 14px; margin-left: -7px; background: #4b5320; transform: rotate(45deg); }
+.gantt-row.critical .gantt-milestone { background: #b3261e; }
+.task-deps { border: 1px solid #c8cfbc; border-radius: 8px; padding: 8px 12px; max-height: 180px; overflow: auto; }
+@media (max-width: 700px) { .gantt-row { grid-template-columns: 1fr; gap: 4px; } }
+
+/* Account security */
+.mfa-qr { width: 200px; height: 200px; margin: 8px 0; background: #fff; }
+.mfa-qr svg { width: 100%; height: 100%; display: block; }
+.backup-codes { columns: 2; font-size: 16px; }
+.activity { max-height: 260px; overflow: auto; padding-left: 18px; }
+.activity li { margin: 4px 0; }
+.answer-group { border: 0; padding: 0; }
+.answer-group.scale { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.answer-group.scale legend { width: 100%; }
+.quiz-key { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 8px; padding: 8px; background: #f3f5ec; border-radius: 6px; }
+.quiz-key input[type="number"] { width: 70px; }
