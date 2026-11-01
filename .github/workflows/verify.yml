@@ -35,3 +35,4 @@ jobs:
           python -m tests.browser_workflows
           python -m tests.browser_document
           python -m tests.browser_pwa
+          python -m tests.browser_recovery

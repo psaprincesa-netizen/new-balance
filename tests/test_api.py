@@ -32,7 +32,7 @@ class ApiTest(unittest.TestCase):
         return result
 
     def test_account_journey(self):
-        account = {'email': 'ana@example.org', 'name': 'Ana', 'password': 'uma-senha-segura-123'}
+        account = {'email': 'ana@example.org', 'name': 'Ana', 'password': 'uma-senha-segura-123', 'question': 'pet', 'answer': 'Rex'}
         self.assertEqual(self.request('GET', '/api/health')[0], 200)
         self.assertEqual(self.request('GET', '/api/me')[0], 401)
         self.assertEqual(self.request('POST', '/api/register', account)[0], 201)
@@ -53,7 +53,7 @@ class ApiTest(unittest.TestCase):
     def test_workspace_permissions_and_conflict_over_http(self):
         cookies = []
         for name in ('ana', 'bia'):
-            data = {'email': name + '@example.org', 'name': name, 'password': 'uma-senha-segura-123'}
+            data = {'email': name + '@example.org', 'name': name, 'password': 'uma-senha-segura-123', 'question': 'pet', 'answer': 'Rex'}
             self.assertEqual(self.request('POST', '/api/register', data)[0], 201)
             cookies.append(self.request('POST', '/api/login', data)[2].split(';')[0])
         owner = {'Cookie': cookies[0], 'Content-Type': 'application/json'}

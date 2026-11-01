@@ -11,7 +11,7 @@ from server.store import Store
 def exercise(page,base,title='Barra de ferramentas'):
     errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
     page.goto(base);page.get_by_role('button',name='Criar minha conta').click()
-    page.get_by_label('Nome',exact=True).fill('Ana Teste');page.get_by_label('E-mail',exact=True).fill(uuid.uuid4().hex+'@example.org');page.get_by_label('Senha',exact=True).fill(uuid.uuid4().hex+'-Teste12')
+    page.get_by_label('Nome',exact=True).fill('Ana Teste');page.get_by_label('E-mail',exact=True).fill(uuid.uuid4().hex+'@example.org');page.get_by_label('Senha',exact=True).fill(uuid.uuid4().hex+'-Teste12');page.get_by_label('Pergunta secreta',exact=True).select_option(index=1);page.get_by_label('Resposta secreta',exact=True).fill('resposta de teste')
     page.get_by_role('button',name='Criar conta',exact=False).click();page.get_by_role('button',name='＋ Criar novo').click();page.locator('#create-form select').select_option('sheet');page.get_by_label('Nome do arquivo',exact=True).last.fill(title);page.get_by_role('button',name='Criar arquivo',exact=True).click()
     expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true')
     def command(name):return page.locator('[data-u-command="'+name+'"]:visible')
