@@ -25,7 +25,7 @@ A lista recebida inclui centenas de funções de produtos maduros. Esta entrega 
 | Portais / SharePoint | Página com texto e links para arquivos respeitando permissões | Sites públicos/intranet, listas avançadas, aprovações, biblioteca corporativa e políticas |
 | IA / Copilot | Não conectado | Seleção de provedor, chaves seguras, políticas de dados, geração/resumo/análise e avaliações |
 | Colaboração | Permissões de leitura/edição, revogação, versões e detecção de conflitos | Comentários, menções, alterações rastreadas e coautoria em tempo real |
-| Segurança | scrypt, cookies HttpOnly/SameSite, origem, rate limit persistido no banco, autorização no servidor | Recuperação, MFA, SSO/OAuth, assinaturas, criptografia gerenciada e auditoria |
+| Segurança | scrypt, cookies HttpOnly/SameSite, origem, rate limit persistido no banco, autorização no servidor | MFA, SSO/OAuth, assinaturas, criptografia gerenciada e auditoria |
 | Automação de código | Fórmulas analisadas por parser limitado, sem executar código do usuário | VBA, Office Scripts e ambientes de execução isolados |
 | Acessibilidade | Labels, controles nativos, foco visível, status anunciados e teclado no apresentador | Auditoria WCAG, testes com leitores de tela, textos alternativos e legendas |
 | Publicação | Aplicação executável em desenvolvimento; backup e restauração locais testados | Hospedagem HTTPS, observabilidade, operação, recuperação e teste no ambiente publicado |
@@ -42,13 +42,13 @@ A lista recebida inclui centenas de funções de produtos maduros. Esta entrega 
 | Formulários | Tipos de campo, validação e links públicos revogáveis | Sem quizzes/ramificação; até 1000 respostas e limite de conteúdo |
 | Tabelas | Tipos, validação, ordenação e remoção de duplicatas | Sem banco relacional configurável |
 | Diagramas | Canvas, arraste, teclado, conectores e SVG | Sem bibliotecas BPMN/engenharia |
-| Colaboração | Comentários, listagem de acessos e rascunhos locais recuperáveis | Sem coautoria em tempo real ou recuperação de senha |
+| Colaboração | Comentários, listagem de acessos e rascunhos locais recuperáveis | Sem coautoria em tempo real |
 
 Esta tabela atualiza os itens básicos da matriz acima. Correio, reuniões, IA e integrações de provedor continuam pendentes; a existência de um plano não os torna implementados.
 
 ## Sequência de evolução
 
-1. Estabilizar o núcleo: recuperação de conta, rascunhos recuperáveis, auditoria, compartilhamentos listáveis e testes ampliados de acesso.
+1. Estabilizar o núcleo: rascunhos recuperáveis, auditoria, compartilhamentos listáveis e testes ampliados de acesso.
 2. Profundidade dos editores: arquivos Office com bibliotecas especializadas, texto estruturado e paginação, planilhas com múltiplas abas e fórmulas adicionais, canvas de slides e diagramas.
 3. Colaboração e arquivos: armazenamento de binários, comentários, equipes, permissões organizacionais e coautoria.
 4. Serviços: correio e calendário via OAuth, chamadas via serviço de mídia, conectores de dados e automações com execução em filas.
@@ -104,3 +104,13 @@ Editor visual com títulos, parágrafos, negrito/itálico combinados, listas/che
 Salvar preserva a instância do editor: célula selecionada, aba da barra, rolagem e histórico de desfazer/refazer da sessão. Alterações posteriores continuam sendo persistidas e geram novas versões. A caixa de endereço nativa atualiza os controles para a seleção atual; valores colados também atualizam o campo auxiliar. `tests/browser_ribbon.py` verifica comandos reais da barra e o XLSX, sem usar a API do editor para aplicar formatação. A memória de desfazer continua restrita à sessão aberta; reabrir o arquivo usa o histórico de versões do DRAP.
 
 O menu Colar e as variantes de colagem usam os comandos nativos registrados, mantendo permissões, valores e estilos. A leitura de intervalos para edição auxiliar, gráficos e tabelas dinâmicas usa os valores numéricos originais, mesmo quando a grade mostra moeda ou percentual. Os testes de gráficos e resumos incluem fontes formatadas como moeda.
+
+## App instalável e modo offline (PWA)
+
+O DRAP office pode ser instalado pelo navegador (Chrome/Edge: ícone de instalar na barra de endereço; Android: "Adicionar à tela inicial"; iPhone: Compartilhar → "Adicionar à Tela de Início"). `web/manifest.webmanifest` define nome, cor #4B5320 e ícones; `web/sw.js` guarda a interface do aplicativo (HTML, CSS e scripts) para abrir sem internet.
+
+Política de cache: rede primeiro, com o cache usado apenas como reserva, porque os nomes dos arquivos não têm hash de versão. Nada de `/api/` nem de `/downloads/` é guardado: arquivos, contas e respostas de formulários nunca ficam no Cache Storage, e sair da conta não deixa dados legíveis no aparelho. Links com parâmetros (como `?form=`) também não são guardados.
+
+Sem conexão: aparece um aviso no topo; ao salvar, a alteração fica como rascunho local (o mesmo mecanismo de rascunhos já existente) e o usuário salva novamente quando a internet voltar. Se o aplicativo for aberto sem internet, a interface carrega, explica a falta de conexão e reabre sozinha quando a rede volta.
+
+Limites: não há leitura de arquivos sem internet nem sincronização automática em segundo plano; o editor de planilhas e o editor visual de documentos só ficam disponíveis offline depois de terem sido abertos uma vez com internet. O ícone atual usa apenas o nome DRAP office e deve ser substituído quando houver o arquivo original da logo. `tests/browser_pwa.py` verifica manifesto, ícones, cache sem dados da API, aviso offline, rascunho e reabertura.

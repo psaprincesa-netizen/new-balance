@@ -74,7 +74,13 @@ def handler_for(store):
                           '/spreadsheet.css': ('spreadsheet.css', 'text/css; charset=utf-8'),
                           '/formula.js': ('formula.js', 'text/javascript; charset=utf-8'),
                           '/formula-engine.js': ('formula-engine.js', 'text/javascript; charset=utf-8'),
-                          '/style.css': ('style.css', 'text/css; charset=utf-8')}
+                          '/style.css': ('style.css', 'text/css; charset=utf-8'),
+                          '/sw.js': ('sw.js', 'text/javascript; charset=utf-8'),
+                          '/manifest.webmanifest': ('manifest.webmanifest', 'application/manifest+json'),
+                          '/icons/icon.svg': ('icons/icon.svg', 'image/svg+xml'),
+                          '/icons/icon-192.png': ('icons/icon-192.png', 'image/png'),
+                          '/icons/icon-512.png': ('icons/icon-512.png', 'image/png'),
+                          '/icons/apple-touch-icon.png': ('icons/apple-touch-icon.png', 'image/png')}
                 if path in ('/downloads/nexo.zip', '/downloads/drap-office.zip'):
                     package = WEB.parent / 'public' / 'downloads' / path.rsplit('/', 1)[1]
                     if package.is_file():

@@ -8,7 +8,7 @@ Manter a plataforma abrindo em https://new-balance-pi.vercel.app e preservar os 
 
 ## Próximas entregas por módulo
 
-1. Núcleo comum: auditoria administrativa, recuperação de conta e cotas. Rascunhos, comentários e acessos listáveis foram implementados.
+1. Núcleo comum: auditoria administrativa e cotas. Rascunhos, comentários e acessos listáveis foram implementados.
 2. Documentos e planilhas: ampliar fidelidade de Office, paginação, fidelidade avançada de imagens/Office, pivôs nativos XLSX e conectores. Abas, motor de fórmulas e intercâmbio Office já foram adicionados.
 3. Apresentações e diagramas: mestre, áudio/vídeo, animações e bibliotecas de diagramas. Imagens, caixas de texto, formas, camadas e PPTX visual foram adicionados aos slides; conectores e canvas aos diagramas.
 4. Projetos, agenda, formulários e tabelas: dependências, convites, quizzes, relacionamentos. Subtarefas, ocorrências repetidas, ICS, coleta pública e tipos de campos foram adicionados.

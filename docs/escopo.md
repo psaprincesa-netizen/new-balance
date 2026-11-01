@@ -14,7 +14,7 @@ Jornada: criar um arquivo, editar, salvar, reabrir, transformar em outro tipo, c
 | --- | --- | --- |
 | P001 Jornada | Direção do produto confirmada pelo usuário; jornada implementada | Entrevistas e testes com público real |
 | P002 Continuidade | SQLite, versões, restauração, lixeira, reabertura e teste de concorrência real | Sincronização offline completa; rascunhos locais recuperáveis foram implementados |
-| P003 Acesso | Cadastro, login/logout, expiração, isolamento de conta/arquivo, compartilhamento e revogação testados | Recuperação de senha, MFA, auditoria |
+| P003 Acesso | Cadastro, login/logout, expiração, isolamento de conta/arquivo, compartilhamento e revogação testados | MFA, auditoria |
 | P004 Integrações | Quatro conversões internas sem envio externo | OAuth, serviços externos, retry e sincronização |
 | P005 Navegação | Interface responsiva e jornada no Chromium; teclado em apresentações | Auditoria completa WCAG, testes com usuários |
 | P006 Estrutura | API, domínio, contratos e persistência separados; testes automatizados | Monitoramento contínuo e processo operacional de releases |
