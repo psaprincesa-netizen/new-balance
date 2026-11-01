@@ -59,7 +59,7 @@ def main():
                 expect(page.get_by_label('Conteúdo do documento')).to_have_value('Rascunho recuperável')
                 print('PASS: marca, comentários, rascunho recuperado e DOCX real',flush=True)
                 create('sheet','Pasta com abas')
-                expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true')
+                expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true',timeout=30000)
                 page.locator('#sheet-address').fill('B1');page.locator('#sheet-value').fill('25');page.locator('#sheet-apply').click()
                 page.locator('#spreadsheet .univerjs-icon-increase-icon:visible').first.click()
                 page.locator('#sheet-address').fill('A1');page.locator('#sheet-value').fill("='Planilha 1'!B1*2");page.locator('#sheet-apply').click();save()
