@@ -95,6 +95,9 @@ def handler_for(store):
                         db.execute('SELECT id FROM users LIMIT 1').fetchone()
                         db.execute('SELECT id FROM items LIMIT 1').fetchone()
                     return self.respond(200, {'status': 'ok'})
+                if path == '/api/recovery/questions':
+                    from server.store import SECURITY_QUESTIONS
+                    return self.respond(200, {'items': [{'id': key, 'text': text} for key, text in SECURITY_QUESTIONS.items()]})
                 if path.startswith('/api/forms/'):
                     return self.respond(200, workspace().public_form(path.removeprefix('/api/forms/')))
                 user = store.session_user(self.token())
@@ -144,6 +147,20 @@ def handler_for(store):
                 if not store.auth_allowed('public-form:' + ip, limit=20):
                     return self.respond(429, {'error': 'Muitas respostas. Aguarde um minuto.'})
                 return self.respond(201, workspace().submit_form(path.removeprefix('/api/forms/'), data.get('answers'), data.get('schema_id')))
+            if path in ('/api/recovery/question', '/api/recovery/reset'):
+                if any(not isinstance(v, str) for v in data.values()):
+                    raise InvalidInput('Campos devem ser textos.')
+                if len(data.get('password', '')) > 128 or len(data.get('answer', '')) > 100:
+                    raise InvalidInput('Dados muito longos.')
+                ip = self.client_address[0]
+                if os.environ.get('VERCEL'):
+                    ip = self.headers.get('x-forwarded-for', ip).split(',')[0].strip()
+                email_key = 'recovery:' + data.get('email', '')
+                if not store.auth_allowed('recovery-ip:' + ip, limit=20) or not store.auth_allowed(email_key, limit=10):
+                    return self.respond(429, {'error': 'Muitas tentativas. Aguarde um minuto.'})
+                if path == '/api/recovery/question':
+                    return self.respond(200, store.recovery_question(data.get('email', '')))
+                return self.respond(200, store.recover(data.get('email', ''), data.get('answer', ''), data.get('password', '')))
             if path in ('/api/register', '/api/login'):
                 if any(not isinstance(v, str) for v in data.values()):
                     raise InvalidInput('Campos devem ser textos.')
@@ -156,7 +173,8 @@ def handler_for(store):
                 if not store.auth_allowed('ip:' + ip, limit=60) or not store.auth_allowed(email_key):
                     return self.respond(429, {'error': 'Muitas tentativas. Aguarde um minuto.'})
                 if path == '/api/register':
-                    return self.respond(201, store.register(data.get('email', ''), data.get('name', ''), data.get('password', '')))
+                    return self.respond(201, store.register(data.get('email', ''), data.get('name', ''), data.get('password', ''),
+                                                            data.get('question'), data.get('answer'), require_recovery=True))
                 token = store.login(data.get('email', ''), data.get('password', ''))
                 if not token:
                     return self.respond(401, {'error': 'E-mail ou senha incorretos.'})
@@ -169,6 +187,11 @@ def handler_for(store):
             user = store.session_user(self.token())
             if not user:
                 return self.respond(401, {'error': 'Entre na sua conta.'})
+            if path == '/api/account/recovery':
+                if not store.auth_allowed('recovery-set:' + user['id'], limit=10):
+                    return self.respond(429, {'error': 'Muitas tentativas. Aguarde um minuto.'})
+                store.set_recovery(user['id'], data.get('password'), data.get('question'), data.get('answer'))
+                return self.respond(200, store.session_user(self.token()))
             if path == '/api/import':
                 from server.office import import_file
                 item, warnings = import_file(data.get('name'), data.get('data'))

@@ -18,7 +18,7 @@ A integração Neon fornece variáveis nos dois ambientes. Não foi confirmado s
 
 Local: `server/store.py` (`register`), `server/workspace.py` (`create`, `update`) e tela de contas em `web/app.js`.
 
-A autenticação funciona e tem limitação de tentativas no banco, mas não há confirmação de e-mail, convite restrito, limite de contas/arquivos ou retenção automática de versões. Recuperação de senha está fora do escopo por decisão do produto: quem esquecer a senha perde o acesso à conta. Criação abusiva de contas e histórico pode aumentar custo de banco e funções. Rate limit por conta/IP reduz tentativas, mas não é quota de armazenamento nem defesa completa contra abuso distribuído.
+A autenticação funciona e tem limitação de tentativas no banco, mas não há confirmação de e-mail, convite restrito, limite de contas/arquivos ou retenção automática de versões. A recuperação de senha usa pergunta e resposta secreta escolhidas no cadastro (resposta guardada com scrypt, comparação sem diferenciar maiúsculas/acentos, limite por IP e e-mail, bloqueio de 15 minutos após 5 respostas erradas e encerramento de todas as sessões ao trocar a senha). Perguntas secretas são mais fracas que um link por e-mail: respostas podem ser descobertas por pessoas próximas ou redes sociais. Contas antigas sem pergunta não podem ser recuperadas até cadastrarem uma. Criação abusiva de contas e histórico pode aumentar custo de banco e funções. Rate limit por conta/IP reduz tentativas, mas não é quota de armazenamento nem defesa completa contra abuso distribuído.
 
 Ação: implementar política de cadastro/convites, cotas e alertas de custo.
 

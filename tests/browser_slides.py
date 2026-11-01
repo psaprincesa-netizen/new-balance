@@ -11,7 +11,7 @@ from server.store import Store
 def exercise(page,base,title='Apresentação visual'):
     errors=[];page.on('pageerror',lambda e:(errors.append(str(e)),print('Browser error:',e,flush=True)))
     page.goto(base);page.get_by_role('button',name='Criar minha conta').click()
-    page.get_by_label('Nome',exact=True).fill('Ana Teste');page.get_by_label('E-mail',exact=True).fill(uuid.uuid4().hex+'@example.org');page.get_by_label('Senha',exact=True).fill(uuid.uuid4().hex+'-Teste12')
+    page.get_by_label('Nome',exact=True).fill('Ana Teste');page.get_by_label('E-mail',exact=True).fill(uuid.uuid4().hex+'@example.org');page.get_by_label('Senha',exact=True).fill(uuid.uuid4().hex+'-Teste12');page.get_by_label('Pergunta secreta',exact=True).select_option(index=1);page.get_by_label('Resposta secreta',exact=True).fill('resposta de teste')
     page.get_by_role('button',name='Criar conta',exact=False).click();expect(page.get_by_role('heading',name='Olá, Ana. Vamos criar?')).to_be_visible()
     page.get_by_role('button',name='＋ Criar novo').click();page.locator('#create-form select').select_option('slides');page.get_by_label('Nome do arquivo',exact=True).last.fill(title);page.get_by_role('button',name='Criar arquivo',exact=True).click()
     page.locator('#slide-title').fill('Resultados');page.locator('#slide-body').fill('Resumo do trimestre');page.locator('#slide-notes').fill('Notas para apresentar')
@@ -42,7 +42,7 @@ def exercise(page,base,title='Apresentação visual'):
     expect(page.locator('#slide-preview img')).to_be_visible()
     page.screenshot(path='/tmp/drap-slides-verified.png',full_page=True)
     ctx=page.context.browser.new_context();reader=ctx.new_page();credentials={'email':uuid.uuid4().hex+'@example.org','password':uuid.uuid4().hex+'-Reader12'};headers={'Origin':base}
-    assert reader.request.post(base+'/api/register',headers=headers,data={**credentials,'name':'Leitor'}).ok
+    assert reader.request.post(base+'/api/register',headers=headers,data={**credentials,'question':'pet','answer':'resposta de teste','name':'Leitor'}).ok
     assert reader.request.post(base+'/api/login',headers=headers,data=credentials).ok
     assert page.request.post(base+'/api/items/'+item['id']+'/share',headers=headers,data={'email':credentials['email'],'role':'read'}).ok
     reader.goto(base);reader.get_by_role('button',name=title,exact=False).click();expect(reader.locator('#slide-preview img')).to_be_visible();expect(reader.locator('#slide-image')).to_be_disabled();reader.locator('[data-slide="1"]').click();expect(reader.locator('#slide-image')).to_be_disabled();expect(reader.locator('#slide-title')).to_have_value('Conclusão');reader.get_by_role('button',name='▷ Apresentar',exact=True).click();expect(reader.locator('.present img')).to_be_visible();reader.keyboard.press('Escape')

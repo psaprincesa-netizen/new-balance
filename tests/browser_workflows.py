@@ -10,7 +10,7 @@ from server.store import Store
 
 def exercise(page,base,title='Fluxos integrados'):
     errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
-    page.goto(base);page.get_by_role('button',name='Criar minha conta').click();page.get_by_label('Nome',exact=True).fill('Ana Teste');page.get_by_label('E-mail',exact=True).fill(uuid.uuid4().hex+'@example.org');page.get_by_label('Senha',exact=True).fill(uuid.uuid4().hex+'-Teste12');page.get_by_role('button',name='Criar conta',exact=False).click();expect(page.get_by_role('heading',name='Olá, Ana. Vamos criar?')).to_be_visible()
+    page.goto(base);page.get_by_role('button',name='Criar minha conta').click();page.get_by_label('Nome',exact=True).fill('Ana Teste');page.get_by_label('E-mail',exact=True).fill(uuid.uuid4().hex+'@example.org');page.get_by_label('Senha',exact=True).fill(uuid.uuid4().hex+'-Teste12');page.get_by_label('Pergunta secreta',exact=True).select_option(index=1);page.get_by_label('Resposta secreta',exact=True).fill('resposta de teste');page.get_by_role('button',name='Criar conta',exact=False).click();expect(page.get_by_role('heading',name='Olá, Ana. Vamos criar?')).to_be_visible()
     def create(kind,name):
         page.get_by_role('button',name='Todos os arquivos',exact=False).click();page.get_by_role('button',name='＋ Criar novo').click();page.locator('#create-form select').select_option(kind);page.get_by_label('Nome do arquivo',exact=True).last.fill(name);page.get_by_role('button',name='Criar arquivo',exact=True).click();expect(page.locator('#title')).to_have_value(name)
     def save():page.get_by_role('button',name='Salvar',exact=True).click();expect(page.locator('#save-state')).to_contain_text('Versão')
@@ -46,7 +46,7 @@ def exercise(page,base,title='Fluxos integrados'):
     assert float(page.locator('#flow-canvas').get_attribute('viewBox').split()[-1])>600
     save();diagram=get('Diagrama revisado')
     create('portal','Portal revisado');page.get_by_label('Arquivo para vincular',exact=True).select_option(document['id']);page.get_by_role('button',name='Vincular arquivo',exact=True).click();save();portal=get('Portal revisado')
-    ctx=page.context.browser.new_context();reader=ctx.new_page();creds={'email':uuid.uuid4().hex+'@example.org','password':uuid.uuid4().hex+'-Leitor12'};headers={'Origin':base};assert reader.request.post(base+'/api/register',headers=headers,data={**creds,'name':'Leitor'}).ok;assert reader.request.post(base+'/api/login',headers=headers,data=creds).ok
+    ctx=page.context.browser.new_context();reader=ctx.new_page();creds={'email':uuid.uuid4().hex+'@example.org','password':uuid.uuid4().hex+'-Leitor12'};headers={'Origin':base};assert reader.request.post(base+'/api/register',headers=headers,data={**creds,'question':'pet','answer':'resposta de teste','name':'Leitor'}).ok;assert reader.request.post(base+'/api/login',headers=headers,data=creds).ok
     for item in [document,portal,diagram]:assert page.request.post(base+'/api/items/'+item['id']+'/share',headers=headers,data={'email':creds['email'],'role':'read'}).ok
     reader.goto(base);reader.get_by_role('button',name='Portal revisado',exact=False).click();expect(reader.locator('[data-link]')).to_be_enabled();reader.locator('[data-link]').click();expect(reader.locator('#export-text')).to_be_enabled();expect(reader.locator('#document-image')).to_be_disabled();expect(reader.locator('#preview img')).to_be_visible()
     reader.get_by_role('button',name='Todos os arquivos',exact=False).click();reader.get_by_role('button',name='Diagrama revisado',exact=False).click()

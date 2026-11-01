@@ -25,7 +25,7 @@ npm run build
 .venv/bin/python -m server.app
 ```
 
-Abra a aplicação servida na porta 8000 pelo seu ambiente de desenvolvimento. Crie sua própria conta; não há senha padrão ou conta de demonstração. A autenticação exige senha com pelo menos 12 caracteres. O banco é criado em `.data/platform.sqlite`, fora do controle de versão.
+Abra a aplicação servida na porta 8000 pelo seu ambiente de desenvolvimento. Crie sua própria conta; não há senha padrão ou conta de demonstração. A autenticação exige senha com pelo menos 12 caracteres. No cadastro, o usuário escolhe uma pergunta secreta e digita a resposta; em **Esqueci minha senha**, responder corretamente permite criar uma nova senha. Contas antigas são convidadas a cadastrar a pergunta (botão **Pergunta secreta** no menu lateral). O banco é criado em `.data/platform.sqlite`, fora do controle de versão.
 
 Configurações opcionais: `HOST` (padrão `127.0.0.1`), `PORT` (8000), `DATABASE_PATH` e `COOKIE_SECURE=1` para cookies em HTTPS. Nunca use credenciais reais como dados de teste.
 

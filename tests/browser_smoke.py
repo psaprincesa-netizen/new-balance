@@ -29,7 +29,7 @@ def main():
                 page.get_by_role('button', name='Criar minha conta').click()
                 page.get_by_label('Nome', exact=True).fill('Ana Teste')
                 page.get_by_label('E-mail', exact=True).fill(uuid.uuid4().hex+'@example.org')
-                page.get_by_label('Senha', exact=True).fill('senha-longa-de-teste-123')
+                page.get_by_label('Senha', exact=True).fill('senha-longa-de-teste-123');page.get_by_label('Pergunta secreta',exact=True).select_option(index=1);page.get_by_label('Resposta secreta',exact=True).fill('resposta de teste')
                 page.get_by_role('button', name='Criar conta', exact=False).click()
                 expect(page.get_by_role('heading', name='Olá, Ana. Vamos criar?')).to_be_visible()
                 page.screenshot(path='/tmp/nexo-desktop.png', full_page=True)

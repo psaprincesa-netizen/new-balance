@@ -206,8 +206,10 @@ function defaults(kind) {
   }
 }
 function auth(register = false) {
-  app.innerHTML = `<main class="auth"><section class="auth-aside"><div class="brand"><span class="brand-name">DRAP <span>office</span></span></div><h1>Um espaço.<br>Infinitas<br>possibilidades.</h1><p>Documentos, dados e ideias conectados.<br>Seu trabalho ganha um novo lugar.</p><small>PLATAFORMA DE PRODUTIVIDADE • VERSÃO INICIAL</small></section><section class="auth-panel"><form id="auth"><p class="eyebrow">SEU ESPAÇO DE TRABALHO</p><h2>${register ? "Crie sua conta" : "Bem-vindo de volta"}</h2><p class="muted">${register ? "Comece a organizar suas ideias." : "Entre para continuar de onde parou."}</p>${register ? '<label class="field">Nome<input name="name" autocomplete="name" maxlength="100" required></label>' : ""}<label class="field">E-mail<input name="email" type="email" autocomplete="email" maxlength="254" required></label><label class="field">Senha<input name="password" type="password" autocomplete="${register ? "new-password" : "current-password"}" minlength="${register ? 12 : 1}" maxlength="128" required></label>${register ? "<small>Use pelo menos 12 caracteres. Não reutilize senhas.</small>" : ""}<p id="auth-error" class="error" role="alert"></p><button class="primary" type="submit">${register ? "Criar conta" : "Entrar no DRAP office"} →</button><p class="field"><button id="toggle-auth" type="button">${register ? "Já tenho conta" : "Criar minha conta"}</button></p><small>Seus arquivos são privados até você compartilhá-los.</small></form></section></main>`;
+  app.innerHTML = `<main class="auth"><section class="auth-aside"><div class="brand"><span class="brand-name">DRAP <span>office</span></span></div><h1>Um espaço.<br>Infinitas<br>possibilidades.</h1><p>Documentos, dados e ideias conectados.<br>Seu trabalho ganha um novo lugar.</p><small>PLATAFORMA DE PRODUTIVIDADE • VERSÃO INICIAL</small></section><section class="auth-panel"><form id="auth"><p class="eyebrow">SEU ESPAÇO DE TRABALHO</p><h2>${register ? "Crie sua conta" : "Bem-vindo de volta"}</h2><p class="muted">${register ? "Comece a organizar suas ideias." : "Entre para continuar de onde parou."}</p>${register ? '<label class="field">Nome<input name="name" autocomplete="name" maxlength="100" required></label>' : ""}<label class="field">E-mail<input name="email" type="email" autocomplete="email" maxlength="254" required></label><label class="field">Senha<input name="password" type="password" autocomplete="${register ? "new-password" : "current-password"}" minlength="${register ? 12 : 1}" maxlength="128" required></label>${register ? "<small>Use pelo menos 12 caracteres. Não reutilize senhas.</small>" + recoveryFields() : ""}<p id="auth-error" class="error" role="alert"></p><button class="primary" type="submit">${register ? "Criar conta" : "Entrar no DRAP office"} →</button>${register ? "" : '<p class="field"><button id="forgot-password" type="button">Esqueci minha senha</button></p>'}<p class="field"><button id="toggle-auth" type="button">${register ? "Já tenho conta" : "Criar minha conta"}</button></p><small>Seus arquivos são privados até você compartilhá-los.</small></form></section></main>`;
   bind("toggle-auth", () => auth(!register));
+  bind("forgot-password", () => recoveryScreen());
+  if (register) loadRecoveryQuestions(app);
   bind(
     "auth",
     async (e) => {
@@ -220,6 +222,7 @@ function auth(register = false) {
         user = await api("/api/login", data);
         await refresh();
         render();
+        askRecoverySetup();
       } catch (err) {
         document.querySelector("#auth-error").textContent = err.message;
       } finally {
@@ -228,6 +231,86 @@ function auth(register = false) {
     },
     "submit",
   );
+}
+// Secret question used to recover the account and choose a new password.
+let recoveryQuestions = null;
+function recoveryFields(intro = "") {
+  return `<fieldset class="recovery-fields"><legend>Recuperação da conta</legend>${intro}<label class="field">Pergunta secreta<select name="question" aria-label="Pergunta secreta" required><option value="">Escolha uma pergunta…</option></select></label><label class="field">Resposta secreta<input name="answer" type="password" autocomplete="off" minlength="3" maxlength="100" required></label><small>Se esquecer a senha, você responde a esta pergunta para criar uma nova. Escolha uma resposta que só você saiba; maiúsculas e acentos não fazem diferença.</small></fieldset>`;
+}
+async function loadRecoveryQuestions(root, selected = "") {
+  try {
+    recoveryQuestions ??= (await api("/api/recovery/questions")).items;
+    const select = root.querySelector('select[name="question"]');
+    if (!select) return;
+    for (const q of recoveryQuestions) select.add(new Option(q.text, q.id, false, q.id === selected));
+  } catch (e) { notify(e.message); }
+}
+function recoveryScreen(email = "") {
+  app.innerHTML = `<main class="auth"><section class="auth-aside"><div class="brand"><span class="brand-name">DRAP <span>office</span></span></div><h1>Recupere<br>seu acesso.</h1><p>Responda à sua pergunta secreta<br>e crie uma nova senha.</p></section><section class="auth-panel"><form id="recovery-email"><p class="eyebrow">RECUPERAR CONTA</p><h2>Esqueci minha senha</h2><p class="muted">Informe o e-mail da sua conta.</p><label class="field">E-mail<input name="email" type="email" autocomplete="email" maxlength="254" required value="${esc(email)}"></label><p id="recovery-error" class="error" role="alert"></p><button class="primary" type="submit">Continuar →</button><p class="field"><button id="back-login" type="button">Voltar para o login</button></p></form></section></main>`;
+  bind("back-login", () => auth());
+  bind("recovery-email", async (e) => {
+    e.preventDefault();
+    const button = e.target.querySelector("[type=submit]");
+    button.disabled = true;
+    const address = new FormData(e.target).get("email");
+    try {
+      const { text } = await api("/api/recovery/question", { email: address });
+      recoveryAnswer(address, text);
+    } catch (err) {
+      document.querySelector("#recovery-error").textContent = err.status === 404
+        ? "Não encontramos uma pergunta secreta para esse e-mail. Contas sem pergunta cadastrada não podem ser recuperadas."
+        : err.message;
+      button.disabled = false;
+    }
+  }, "submit");
+}
+function recoveryAnswer(email, question) {
+  const form = document.querySelector(".auth-panel");
+  form.innerHTML = `<form id="recovery-reset"><p class="eyebrow">RECUPERAR CONTA</p><h2>Pergunta secreta</h2><p class="muted">${esc(email)}</p><p><strong id="recovery-question">${esc(question)}</strong></p><label class="field">Resposta secreta<input name="answer" type="password" autocomplete="off" maxlength="100" required></label><label class="field">Nova senha<input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required></label><label class="field">Confirmar nova senha<input name="confirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required></label><small>Use pelo menos 12 caracteres. Ao trocar a senha, todas as sessões abertas da conta são encerradas.</small><p id="recovery-error" class="error" role="alert"></p><button class="primary" type="submit">Criar nova senha →</button><p class="field"><button id="back-login" type="button">Voltar para o login</button></p></form>`;
+  bind("back-login", () => auth());
+  bind("recovery-reset", async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target));
+    const error = document.querySelector("#recovery-error");
+    if (data.password !== data.confirm) { error.textContent = "As senhas não conferem."; return; }
+    const button = e.target.querySelector("[type=submit]");
+    button.disabled = true;
+    try {
+      await api("/api/recovery/reset", { email, answer: data.answer, password: data.password });
+      auth();
+      document.querySelector('#auth input[name="email"]').value = email;
+      notify("Senha alterada. Entre com a nova senha.");
+    } catch (err) {
+      error.textContent = err.message;
+      button.disabled = false;
+    }
+  }, "submit");
+}
+function recoveryDialog(required = false) {
+  const intro = required ? "<p>Sua conta ainda não tem pergunta secreta. Sem ela, não será possível recuperar o acesso se você esquecer a senha.</p>" : "";
+  showDialog(`<form id="recovery-setup"><h2>${user.recovery_question ? "Alterar pergunta secreta" : "Cadastrar pergunta secreta"}</h2>${recoveryFields(intro)}<label class="field">Senha atual<input name="password" type="password" autocomplete="current-password" maxlength="128" required></label><p id="recovery-setup-error" class="error" role="alert"></p><div class="row"><button type="button" id="recovery-later">${required ? "Agora não" : "Cancelar"}</button><button class="primary" type="submit">Salvar</button></div></form>`, () => {
+    loadRecoveryQuestions(modal, user.recovery_question || "");
+    bind("recovery-later", closeDialog);
+    bind("recovery-setup", async (e) => {
+      e.preventDefault();
+      const button = e.target.querySelector("[type=submit]");
+      button.disabled = true;
+      try {
+        user = await api("/api/account/recovery", Object.fromEntries(new FormData(e.target)));
+        closeDialog();
+        notify("Pergunta secreta salva.");
+      } catch (err) {
+        document.querySelector("#recovery-setup-error").textContent = err.message;
+        button.disabled = false;
+      }
+    }, "submit");
+  });
+}
+function askRecoverySetup() {
+  // Older accounts were created before the secret question existed; ask once per session.
+  if (!user || user.recovery_question) return;
+  try { if (sessionStorage.getItem("drap:recovery-asked")) return; sessionStorage.setItem("drap:recovery-asked", "1"); } catch {}
+  recoveryDialog(true);
 }
 async function allPages(path) {
   const result = [];
@@ -260,11 +343,12 @@ function shell(body) {
     )
     .join(
       "",
-    )}</nav><footer>FEITO PARA CONECTAR<br>Uma conta. Todas as suas ideias.<br><button id="backup">Exportar meu espaço</button><button id="import">Importar JSON</button><button id="import-office">Importar Office / Agenda</button><a class="download-platform" href="/downloads/drap-office.zip" download="drap-office.zip">Baixar plataforma ↓</a></footer></aside><main class="main"><header class="topbar"><input class="search" id="search" type="search" placeholder="Buscar em todos os arquivos…" aria-label="Buscar arquivos" value="${esc(query)}"><div class="row"><span class="user-name muted">${esc(user.name)}</span><span class="avatar">${esc(user.name.slice(0, 2).toUpperCase())}</span><a class="download-top" href="/downloads/drap-office.zip" download="drap-office.zip" aria-label="Baixar plataforma" title="Baixar código da plataforma">↓</a><button id="logout" title="Sair da conta">Sair</button></div></header><div class="content">${body}</div></main></div>`;
+    )}</nav><footer>FEITO PARA CONECTAR<br>Uma conta. Todas as suas ideias.<br><button id="backup">Exportar meu espaço</button><button id="import">Importar JSON</button><button id="import-office">Importar Office / Agenda</button><button id="recovery-settings">Pergunta secreta</button><a class="download-platform" href="/downloads/drap-office.zip" download="drap-office.zip">Baixar plataforma ↓</a></footer></aside><main class="main"><header class="topbar"><input class="search" id="search" type="search" placeholder="Buscar em todos os arquivos…" aria-label="Buscar arquivos" value="${esc(query)}"><div class="row"><span class="user-name muted">${esc(user.name)}</span><span class="avatar">${esc(user.name.slice(0, 2).toUpperCase())}</span><a class="download-top" href="/downloads/drap-office.zip" download="drap-office.zip" aria-label="Baixar plataforma" title="Baixar código da plataforma">↓</a><button id="logout" title="Sair da conta">Sair</button></div></header><div class="content">${body}</div></main></div>`;
   document
     .querySelectorAll("[data-nav]")
     .forEach((n) => (n.onclick = () => navigate(n.dataset.nav)));
   bind("import-office", importOffice);
+  bind("recovery-settings", () => recoveryDialog(false));
   bind("logout", async () => {
     if (!(await leave())) return;
     await api("/api/logout", {});
@@ -1378,7 +1462,7 @@ document.addEventListener("keydown", (e) => {
 try {
   const formToken=new URLSearchParams(location.search).get('form');
   if (formToken) await publicForm(formToken);
-  else { user = await api("/api/me"); await refresh(); render(); }
+  else { user = await api("/api/me"); await refresh(); render(); askRecoverySetup(); }
 } catch (e) {
   if (e.status === 401) auth();
   else if (e.offline) {

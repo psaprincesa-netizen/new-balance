@@ -25,7 +25,7 @@ A lista recebida inclui centenas de funções de produtos maduros. Esta entrega 
 | Portais / SharePoint | Página com texto e links para arquivos respeitando permissões | Sites públicos/intranet, listas avançadas, aprovações, biblioteca corporativa e políticas |
 | IA / Copilot | Não conectado | Seleção de provedor, chaves seguras, políticas de dados, geração/resumo/análise e avaliações |
 | Colaboração | Permissões de leitura/edição, revogação, versões e detecção de conflitos | Comentários, menções, alterações rastreadas e coautoria em tempo real |
-| Segurança | scrypt, cookies HttpOnly/SameSite, origem, rate limit persistido no banco, autorização no servidor | MFA, SSO/OAuth, assinaturas, criptografia gerenciada e auditoria |
+| Segurança | scrypt, cookies HttpOnly/SameSite, origem, rate limit persistido no banco, autorização no servidor, recuperação de senha por pergunta secreta | MFA, SSO/OAuth, assinaturas, criptografia gerenciada e auditoria |
 | Automação de código | Fórmulas analisadas por parser limitado, sem executar código do usuário | VBA, Office Scripts e ambientes de execução isolados |
 | Acessibilidade | Labels, controles nativos, foco visível, status anunciados e teclado no apresentador | Auditoria WCAG, testes com leitores de tela, textos alternativos e legendas |
 | Publicação | Aplicação executável em desenvolvimento; backup e restauração locais testados | Hospedagem HTTPS, observabilidade, operação, recuperação e teste no ambiente publicado |
@@ -43,6 +43,7 @@ A lista recebida inclui centenas de funções de produtos maduros. Esta entrega 
 | Tabelas | Tipos, validação, ordenação e remoção de duplicatas | Sem banco relacional configurável |
 | Diagramas | Canvas, arraste, teclado, conectores e SVG | Sem bibliotecas BPMN/engenharia |
 | Colaboração | Comentários, listagem de acessos e rascunhos locais recuperáveis | Sem coautoria em tempo real |
+| Contas | Recuperação de senha por pergunta e resposta secreta escolhidas no cadastro; troca da pergunta com a senha atual | Sem MFA nem recuperação por e-mail |
 
 Esta tabela atualiza os itens básicos da matriz acima. Correio, reuniões, IA e integrações de provedor continuam pendentes; a existência de um plano não os torna implementados.
 
@@ -114,3 +115,11 @@ Política de cache: rede primeiro, com o cache usado apenas como reserva, porque
 Sem conexão: aparece um aviso no topo; ao salvar, a alteração fica como rascunho local (o mesmo mecanismo de rascunhos já existente) e o usuário salva novamente quando a internet voltar. Se o aplicativo for aberto sem internet, a interface carrega, explica a falta de conexão e reabre sozinha quando a rede volta.
 
 Limites: não há leitura de arquivos sem internet nem sincronização automática em segundo plano; o editor de planilhas e o editor visual de documentos só ficam disponíveis offline depois de terem sido abertos uma vez com internet. O ícone atual usa apenas o nome DRAP office e deve ser substituído quando houver o arquivo original da logo. `tests/browser_pwa.py` verifica manifesto, ícones, cache sem dados da API, aviso offline, rascunho e reabertura.
+
+## Recuperação de senha por pergunta secreta
+
+No cadastro, o usuário escolhe uma pergunta de uma lista fixa (`SECURITY_QUESTIONS` em `server/store.py`) e digita a resposta. A resposta é normalizada (sem diferença de maiúsculas, acentos ou espaços repetidos) e guardada apenas como hash scrypt com sal próprio, na tabela `account_recovery`.
+
+Em **Esqueci minha senha**, o usuário informa o e-mail, vê a pergunta, responde e escolhe a nova senha. A troca encerra todas as sessões abertas. Proteções: limite de tentativas por IP e por e-mail, bloqueio de 15 minutos após 5 respostas erradas e mensagem genérica para resposta errada ou conta sem pergunta. Logado, o botão **Pergunta secreta** do menu lateral troca a pergunta mediante a senha atual; contas criadas antes desse recurso recebem um convite para cadastrar a pergunta uma vez por sessão.
+
+Limites: perguntas secretas são mais fracas que confirmação por e-mail ou MFA, porque respostas podem ser adivinhadas por pessoas próximas. Informar um e-mail mostra se ele tem pergunta cadastrada (o cadastro já revelava contas existentes). `tests/test_recovery.py` e `tests/browser_recovery.py` cobrem o fluxo.

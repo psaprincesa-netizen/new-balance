@@ -965,3 +965,8 @@ body.offline::before {
   text-align: center;
   pointer-events: none;
 }
+
+/* Secret question used for account recovery. */
+.recovery-fields { border: 1px solid #c8cfbc; border-radius: 8px; padding: 12px 14px; margin: 14px 0 6px; }
+.recovery-fields legend { padding: 0 6px; font-weight: 600; color: var(--green); }
+.recovery-fields select { width: 100%; }
