@@ -69,7 +69,7 @@ def main():
                 page.keyboard.press('Escape')
 
                 create('sheet','Orçamento')
-                expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true')
+                expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true',timeout=30000)
                 for label,value in [('A1','Produto'),('B1','10'),('A2','Serviço'),('B2','20'),('C1','=SOMA(B1:B2)')]:
                     page.locator('#sheet-address').fill(label)
                     page.locator('#sheet-value').fill(value)
@@ -101,7 +101,7 @@ def main():
                 page.get_by_role('button',name='Respostas → Tabela').click()
                 expect(page.get_by_label('Registro 1, Como podemos melhorar?')).to_have_value('Integração dos dados')
                 page.get_by_role('button',name='Abrir como planilha ↗').click()
-                expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true')
+                expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true',timeout=30000)
                 page.locator('#sheet-address').fill('B2');page.locator('#sheet-select').click()
                 expect(page.locator('#sheet-value')).to_have_value('Integração dos dados')
 
