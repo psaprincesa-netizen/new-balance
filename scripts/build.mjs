@@ -4,6 +4,7 @@ const root = new URL('../', import.meta.url);
 execFileSync(process.execPath, ['scripts/build-engine.mjs'], {cwd:root,stdio:'inherit'});
 execFileSync(process.execPath, ['scripts/build-document.mjs'], {cwd:root,stdio:'inherit'});
 execFileSync(process.execPath, ['scripts/build-spreadsheet.mjs'], {cwd:root,stdio:'inherit'});
+execFileSync(process.execPath, ['scripts/build-qr.mjs'], {cwd:root,stdio:'inherit'});
 if (process.env.VERCEL === '1') {
   if (!process.env.DATABASE_URL || process.env.DATABASE_URL === '[SENSITIVE]') {
     throw new Error('Configure DATABASE_URL no ambiente de implantação antes de publicar.');

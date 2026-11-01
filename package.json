@@ -26,7 +26,8 @@
     "@univerjs/preset-sheets-filter": "1.2.0",
     "@univerjs/preset-sheets-sort": "1.2.0",
     "@univerjs/presets": "1.2.0",
-    "fast-formula-parser": "1.0.19"
+    "fast-formula-parser": "1.0.19",
+    "qrcode-generator": "2.0.4"
   },
   "devDependencies": {
     "esbuild": "0.25.12"

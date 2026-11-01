@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from functools import cache
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
-from server.store import Store, InvalidInput
+from server.store import Store, InvalidInput, MfaRequired
 from server.workspace import Workspace, Conflict
 from server.database import ConfigurationError, store_from_environment
 
@@ -71,6 +71,7 @@ def handler_for(store):
                           '/pivot-ui.js': ('pivot-ui.js', 'text/javascript; charset=utf-8'),
                           '/chart.js': ('chart.js', 'text/javascript; charset=utf-8'),
                           '/project.js': ('project.js', 'text/javascript; charset=utf-8'),
+                          '/qr.js': ('qr.js', 'text/javascript; charset=utf-8'),
                           '/spreadsheet.js': ('spreadsheet.js', 'text/javascript; charset=utf-8'),
                           '/spreadsheet.css': ('spreadsheet.css', 'text/css; charset=utf-8'),
                           '/formula.js': ('formula.js', 'text/javascript; charset=utf-8'),
@@ -102,6 +103,10 @@ def handler_for(store):
                 if path.startswith('/api/forms/'):
                     return self.respond(200, workspace().public_form(path.removeprefix('/api/forms/')))
                 user = store.session_user(self.token())
+                if path == '/api/account/events':
+                    if not user:
+                        return self.respond(401, {'error': 'Entre na sua conta.'})
+                    return self.respond(200, {'items': store.events(user['id'])})
                 if path == '/api/me':
                     return self.respond(200 if user else 401, user or {'error': 'Entre na sua conta.'})
                 if not path.startswith('/api/items'):
@@ -174,20 +179,43 @@ def handler_for(store):
                 if not store.auth_allowed('ip:' + ip, limit=60) or not store.auth_allowed(email_key):
                     return self.respond(429, {'error': 'Muitas tentativas. Aguarde um minuto.'})
                 if path == '/api/register':
-                    return self.respond(201, store.register(data.get('email', ''), data.get('name', ''), data.get('password', ''),
-                                                            data.get('question'), data.get('answer'), require_recovery=True))
-                token = store.login(data.get('email', ''), data.get('password', ''))
+                    created = store.register(data.get('email', ''), data.get('name', ''), data.get('password', ''),
+                                             data.get('question'), data.get('answer'), require_recovery=True)
+                    store.log_event('register', user_id=created['id'], ip=ip)
+                    return self.respond(201, created)
+                if data.get('code') and not store.auth_allowed('mfa:' + data.get('email', ''), limit=5):
+                    return self.respond(429, {'error': 'Muitas tentativas de código. Aguarde um minuto.'})
+                try:
+                    token = store.login(data.get('email', ''), data.get('password', ''), data.get('code'))
+                except MfaRequired as exc:
+                    if exc.user_id:
+                        store.log_event('mfa_failed', user_id=exc.user_id, ip=ip)
+                    return self.respond(401, {'error': str(exc), 'mfa_required': True})
                 if not token:
+                    store.log_event('login_failed', email=data.get('email', ''), ip=ip)
                     return self.respond(401, {'error': 'E-mail ou senha incorretos.'})
+                session = store.session_user(token)
+                store.log_event('login', user_id=session['id'], ip=ip)
                 secure = '; Secure' if (os.environ.get('COOKIE_SECURE') == '1' or bool(os.environ.get('VERCEL'))) else ''
-                return self.respond(200, store.session_user(token),
+                return self.respond(200, session,
                                     'session=' + token + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400' + secure)
             if path == '/api/logout':
+                leaving = store.session_user(self.token())
+                if leaving:
+                    store.log_event('logout', user_id=leaving['id'])
                 store.logout(self.token())
                 return self.respond(200, {'ok': True}, 'session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')
             user = store.session_user(self.token())
             if not user:
                 return self.respond(401, {'error': 'Entre na sua conta.'})
+            if path in ('/api/account/mfa/setup', '/api/account/mfa/enable', '/api/account/mfa/disable'):
+                if not store.auth_allowed('mfa-settings:' + user['id'], limit=10):
+                    return self.respond(429, {'error': 'Muitas tentativas. Aguarde um minuto.'})
+                if path.endswith('/setup'):
+                    return self.respond(200, store.mfa_setup(user['id'], data.get('password'), user['email']))
+                if path.endswith('/enable'):
+                    return self.respond(200, store.mfa_enable(user['id'], data.get('code', '')))
+                return self.respond(200, store.mfa_disable(user['id'], data.get('password'), data.get('code', '')))
             if path == '/api/account/recovery':
                 if not store.auth_allowed('recovery-set:' + user['id'], limit=10):
                     return self.respond(429, {'error': 'Muitas tentativas. Aguarde um minuto.'})
@@ -209,7 +237,9 @@ def handler_for(store):
                     return self.respond(429, {'error': 'Aguarde um minuto antes de comentar novamente.'})
                 return self.respond(201, workspace().comment(user['id'], parts[2], data.get('body')))
             if len(parts) == 4 and parts[:2] == ['api', 'items'] and parts[3] == 'share':
-                return self.respond(200, workspace().share(user['id'], parts[2], data.get('email'), data.get('role')))
+                shared = workspace().share(user['id'], parts[2], data.get('email'), data.get('role'))
+                store.log_event('share', user_id=user['id'], detail=f"{data.get('email', '')} ({data.get('role', '')})")
+                return self.respond(200, shared)
             if len(parts) == 3 and parts[:2] == ['api', 'items']:
                 return self.respond(200, workspace().update(user['id'], parts[2], data))
             self.respond(404, {'error': 'Rota não encontrada.'})

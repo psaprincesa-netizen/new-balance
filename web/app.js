@@ -148,6 +148,7 @@ async function api(path, data) {
   if (!r.ok) {
     const e = Error(result.error || "Não foi possível concluir.");
     e.status = r.status;
+    e.data = result;
     throw e;
   }
   return result;
@@ -220,7 +221,17 @@ function auth(register = false) {
       const data = Object.fromEntries(new FormData(e.target));
       try {
         if (register) await api("/api/register", data);
-        user = await api("/api/login", data);
+        try {
+          user = await api("/api/login", data);
+        } catch (err) {
+          if (!err.data?.mfa_required) throw err;
+          // Password accepted: ask for the authenticator code in the same form.
+          if (!e.target.querySelector('[name="code"]')) {
+            e.target.querySelector('#auth-error').insertAdjacentHTML('beforebegin', '<label class="field">Código de verificação<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="20" required></label><small>Digite os 6 dígitos do app autenticador ou um código de backup.</small>');
+            e.target.querySelector('[name="code"]').focus();
+          }
+          throw err;
+        }
         await refresh();
         render();
         askRecoverySetup();
@@ -307,6 +318,58 @@ function recoveryDialog(required = false) {
     }, "submit");
   });
 }
+// Account security: two-step verification and recent activity.
+async function securityDialog() {
+  let events = [];
+  try { events = (await api("/api/account/events")).items; } catch (e) { notify(e.message); }
+  showDialog(`<h2>Segurança da conta</h2><section class="card"><h3>Verificação em duas etapas</h3><p id="mfa-status">${user.mfa_enabled ? "Ativa: ao entrar, além da senha, é pedido um código do app autenticador." : "Desativada. Ative para exigir um código do celular além da senha."}</p><button id="mfa-toggle" class="${user.mfa_enabled ? "danger" : "primary"}">${user.mfa_enabled ? "Desativar" : "Ativar verificação em duas etapas"}</button></section><section class="card"><h3>Pergunta secreta</h3><p>${user.recovery_question ? "Cadastrada." : "Não cadastrada: sem ela não é possível recuperar a senha."}</p><button id="security-recovery">${user.recovery_question ? "Alterar" : "Cadastrar"}</button></section><section class="card"><h3>Atividade recente</h3><ul class="activity" id="activity-list">${events.map(ev => `<li><strong>${esc(ev.label)}</strong>${ev.detail ? " · " + esc(ev.detail) : ""}<small> · ${date(ev.at)}${ev.ip ? " · IP " + esc(ev.ip) : ""}</small></li>`).join("") || "<li>Nenhuma atividade registrada.</li>"}</ul></section><div class="row"><button id="security-close">Fechar</button></div>`, () => {
+    bind("security-close", closeDialog);
+    bind("security-recovery", () => recoveryDialog(false));
+    bind("mfa-toggle", () => (user.mfa_enabled ? mfaDisableDialog() : mfaSetupDialog()));
+  });
+}
+function mfaSetupDialog() {
+  showDialog(`<form id="mfa-password"><h2>Ativar verificação em duas etapas</h2><p>Você vai precisar de um app autenticador no celular, como Google Authenticator, Microsoft Authenticator ou Authy.</p><label class="field">Senha atual<input name="password" type="password" autocomplete="current-password" maxlength="128" required></label><p id="mfa-error" class="error" role="alert"></p><div class="row"><button type="button" id="mfa-cancel">Cancelar</button><button class="primary">Continuar</button></div></form>`, () => {
+    bind("mfa-cancel", securityDialog);
+    bind("mfa-password", async (e) => {
+      e.preventDefault();
+      try {
+        const setup = await api("/api/account/mfa/setup", Object.fromEntries(new FormData(e.target)));
+        let qr = "";
+        try { qr = (await import("/qr.js")).qrSvg(setup.uri); } catch {}
+        const key = setup.secret.match(/.{1,4}/g).join(" ");
+        showDialog(`<form id="mfa-enable"><h2>Escaneie o QR code</h2><p>No app autenticador, adicione uma conta e escaneie o código abaixo.</p><div class="mfa-qr" role="img" aria-label="QR code para o app autenticador">${qr}</div><p>Se não conseguir escanear, digite esta chave no app: <code id="mfa-secret">${esc(key)}</code></p><p><a href="${esc(setup.uri)}">Abrir no app autenticador deste aparelho</a></p><label class="field">Código de 6 dígitos mostrado no app<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required></label><p id="mfa-error" class="error" role="alert"></p><div class="row"><button type="button" id="mfa-cancel">Cancelar</button><button class="primary">Ativar</button></div></form>`, () => {
+          bind("mfa-cancel", securityDialog);
+          bind("mfa-enable", async (ev) => {
+            ev.preventDefault();
+            try {
+              const { backup_codes } = await api("/api/account/mfa/enable", Object.fromEntries(new FormData(ev.target)));
+              user = { ...user, mfa_enabled: true };
+              showDialog(`<h2>Verificação ativada</h2><p>Guarde estes códigos de backup em local seguro. Cada um funciona uma única vez, caso você perca o celular. Eles não serão mostrados de novo.</p><ul class="backup-codes" id="backup-codes">${backup_codes.map(c => `<li><code>${esc(c)}</code></li>`).join("")}</ul><div class="row"><button id="backup-download">Baixar códigos</button><button class="primary" id="backup-done">Já guardei</button></div>`, () => {
+                bind("backup-download", () => download("drap-office-codigos-de-backup.txt", "Códigos de backup do DRAP office (" + user.email + ")\nCada código funciona uma vez.\n\n" + backup_codes.join("\n") + "\n", "text/plain"));
+                bind("backup-done", securityDialog);
+              });
+            } catch (err) { document.querySelector("#mfa-error").textContent = err.message; }
+          }, "submit");
+        });
+      } catch (err) { document.querySelector("#mfa-error").textContent = err.message; }
+    }, "submit");
+  });
+}
+function mfaDisableDialog() {
+  showDialog(`<form id="mfa-disable"><h2>Desativar verificação em duas etapas</h2><p>Sua conta voltará a ser protegida apenas pela senha.</p><label class="field">Senha atual<input name="password" type="password" autocomplete="current-password" maxlength="128" required></label><label class="field">Código do app ou de backup<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="20" required></label><p id="mfa-error" class="error" role="alert"></p><div class="row"><button type="button" id="mfa-cancel">Cancelar</button><button class="danger">Desativar</button></div></form>`, () => {
+    bind("mfa-cancel", securityDialog);
+    bind("mfa-disable", async (e) => {
+      e.preventDefault();
+      try {
+        await api("/api/account/mfa/disable", Object.fromEntries(new FormData(e.target)));
+        user = { ...user, mfa_enabled: false };
+        notify("Verificação em duas etapas desativada.");
+        securityDialog();
+      } catch (err) { document.querySelector("#mfa-error").textContent = err.message; }
+    }, "submit");
+  });
+}
 function askRecoverySetup() {
   // Older accounts were created before the secret question existed; ask once per session.
   if (!user || user.recovery_question) return;
@@ -344,12 +407,13 @@ function shell(body) {
     )
     .join(
       "",
-    )}</nav><footer>FEITO PARA CONECTAR<br>Uma conta. Todas as suas ideias.<br><button id="backup">Exportar meu espaço</button><button id="import">Importar JSON</button><button id="import-office">Importar Office / Agenda</button><button id="recovery-settings">Pergunta secreta</button><a class="download-platform" href="/downloads/drap-office.zip" download="drap-office.zip">Baixar plataforma ↓</a></footer></aside><main class="main"><header class="topbar"><input class="search" id="search" type="search" placeholder="Buscar em todos os arquivos…" aria-label="Buscar arquivos" value="${esc(query)}"><div class="row"><span class="user-name muted">${esc(user.name)}</span><span class="avatar">${esc(user.name.slice(0, 2).toUpperCase())}</span><a class="download-top" href="/downloads/drap-office.zip" download="drap-office.zip" aria-label="Baixar plataforma" title="Baixar código da plataforma">↓</a><button id="logout" title="Sair da conta">Sair</button></div></header><div class="content">${body}</div></main></div>`;
+    )}</nav><footer>FEITO PARA CONECTAR<br>Uma conta. Todas as suas ideias.<br><button id="backup">Exportar meu espaço</button><button id="import">Importar JSON</button><button id="import-office">Importar Office / Agenda</button><button id="recovery-settings">Pergunta secreta</button><button id="security-settings">Segurança da conta</button><a class="download-platform" href="/downloads/drap-office.zip" download="drap-office.zip">Baixar plataforma ↓</a></footer></aside><main class="main"><header class="topbar"><input class="search" id="search" type="search" placeholder="Buscar em todos os arquivos…" aria-label="Buscar arquivos" value="${esc(query)}"><div class="row"><span class="user-name muted">${esc(user.name)}</span><span class="avatar">${esc(user.name.slice(0, 2).toUpperCase())}</span><a class="download-top" href="/downloads/drap-office.zip" download="drap-office.zip" aria-label="Baixar plataforma" title="Baixar código da plataforma">↓</a><button id="logout" title="Sair da conta">Sair</button></div></header><div class="content">${body}</div></main></div>`;
   document
     .querySelectorAll("[data-nav]")
     .forEach((n) => (n.onclick = () => navigate(n.dataset.nav)));
   bind("import-office", importOffice);
   bind("recovery-settings", () => recoveryDialog(false));
+  bind("security-settings", securityDialog);
   bind("logout", async () => {
     if (!(await leave())) return;
     await api("/api/logout", {});
@@ -1483,7 +1547,7 @@ function coverage() {
         "Segurança e operação",
         "Parcial",
         "Senhas scrypt, sessões HttpOnly, rate limit no banco, autorização por arquivo, Vercel e Neon.",
-        "Pendentes: MFA, auditoria administrativa, alertas e testes de carga.",
+        "Pendentes: auditoria administrativa da organização, alertas e testes de carga.",
       ],
     ]
       .map(
