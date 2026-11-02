@@ -88,3 +88,36 @@ class WorkspaceTest(unittest.TestCase):
         self.assertEqual(len(self.workspace.comments(self.a,item)),2)
         self.workspace.share(self.a,item,'b@example.org','remove')
         with self.assertRaises(LookupError):self.workspace.comments(self.b,item)
+
+
+class BoardScheduleValidationTest(unittest.TestCase):
+    def test_board_dependencies_and_dates(self):
+        from server.schema import valid_content
+        base = {'title': 'A', 'due': '2026-01-03', 'status': 'A fazer'}
+        ok = {'tasks': [{**base, 'id': 't1', 'start': '2026-01-01'},
+                        {**base, 'id': 't2', 'title': 'B', 'depends': ['t1']},
+                        {**base, 'id': 't3', 'title': 'M', 'milestone': True}]}
+        self.assertTrue(valid_content('board', ok))
+        self.assertTrue(valid_content('board', {'tasks': [base]}))
+        cycle = {'tasks': [{**base, 'id': 't1', 'depends': ['t2']}, {**base, 'id': 't2', 'depends': ['t1']}]}
+        self.assertFalse(valid_content('board', cycle))
+        self.assertFalse(valid_content('board', {'tasks': [{**base, 'id': 't1', 'depends': ['nope']}]}))
+        self.assertFalse(valid_content('board', {'tasks': [{**base, 'id': 't1'}, {**base, 'id': 't1'}]}))
+        self.assertFalse(valid_content('board', {'tasks': [{**base, 'start': '2026-02-01'}]}))
+        self.assertTrue(valid_content('board', {'tasks': [{**base, 'due': '03/01/2026'}]}))
+        self.assertFalse(valid_content('board', {'tasks': [{**base, 'start': '01/01/2026'}]}))
+        self.assertFalse(valid_content('board', {'tasks': [{**base, 'due': '', 'milestone': True}]}))
+
+
+class SheetLinksValidationTest(unittest.TestCase):
+    def test_sheet_links(self):
+        from server.schema import valid_sheet_links
+        item = {'type': 'item', 'item': 'abc', 'title': 'Contrato', 'kind': 'document', 'sheetId': 's1', 'cell': 'B2'}
+        url = {'type': 'url', 'url': 'https://exemplo.com', 'sheetId': 's1', 'cell': 'C2'}
+        self.assertTrue(valid_sheet_links([item, url]))
+        self.assertFalse(valid_sheet_links([item, {**item}]))
+        self.assertFalse(valid_sheet_links([{**url, 'url': 'javascript:alert(1)'}]))
+        self.assertFalse(valid_sheet_links([{**url, 'url': 'http://exemplo.com'}]))
+        self.assertFalse(valid_sheet_links([{**item, 'cell': 'b2'}]))
+        self.assertFalse(valid_sheet_links([{**item, 'extra': 1}]))
+        self.assertFalse(valid_sheet_links([url] * 201))

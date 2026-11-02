@@ -14,13 +14,13 @@ A implantação utiliza os arquivos locais pela CLI. O checkout ainda não foi e
 
 A integração Neon fornece variáveis nos dois ambientes. Não foi confirmado se apontam para bancos ou branches distintos. Separe-os antes de executar testes em Preview para evitar alterações no banco de produção.
 
-### P1 · Cadastro público sem recuperação/verificação de acesso e cotas
+### P1 · Cadastro público sem verificação de acesso e cotas
 
 Local: `server/store.py` (`register`), `server/workspace.py` (`create`, `update`) e tela de contas em `web/app.js`.
 
-A autenticação funciona e tem limitação de tentativas no banco, mas não há recuperação de senha, confirmação de e-mail, convite restrito, limite de contas/arquivos ou retenção automática de versões. No lançamento público, pessoas podem perder acesso sem recuperação; criação abusiva de contas e histórico pode aumentar custo de banco e funções. Rate limit por conta/IP reduz tentativas, mas não é quota de armazenamento nem defesa completa contra abuso distribuído.
+A autenticação funciona e tem limitação de tentativas no banco, mas não há confirmação de e-mail, convite restrito, limite de contas/arquivos ou retenção automática de versões. A recuperação de senha usa pergunta e resposta secreta escolhidas no cadastro (resposta guardada com scrypt, comparação sem diferenciar maiúsculas/acentos, limite por IP e e-mail, bloqueio de 15 minutos após 5 respostas erradas e encerramento de todas as sessões ao trocar a senha). Perguntas secretas são mais fracas que um link por e-mail: respostas podem ser descobertas por pessoas próximas ou redes sociais. Contas antigas sem pergunta não podem ser recuperadas até cadastrarem uma. Criação abusiva de contas e histórico pode aumentar custo de banco e funções. Rate limit por conta/IP reduz tentativas, mas não é quota de armazenamento nem defesa completa contra abuso distribuído.
 
-Ação: implementar recuperação com tokens de uso único, política de cadastro/convites, cotas e alertas de custo.
+Ação: implementar política de cadastro/convites, cotas e alertas de custo.
 
 ### P2 · Coleções grandes ainda são agregadas no navegador
 
@@ -82,4 +82,4 @@ Ação: caso o código deva ser privado, remover a cópia de `public/downloads` 
 - Jornada dos dez editores no Chromium usando PostgreSQL: salvamento, reabertura, conversões, fórmulas, teclado, tarefas, agenda, histórico, lixeira, indicadores e layout móvel.
 - Download de ZIP pela interface verificado no navegador.
 
-Não executados: teste de carga, auditoria completa de segurança, recuperação de conta e restauração/PITR do banco gerenciado. Os testes automatizados acima descrevem a execução local. A preparação do schema e a verificação TLS também passaram no build remoto Vercel.
+Não executados: teste de carga, auditoria completa de segurança e restauração/PITR do banco gerenciado. Os testes automatizados acima descrevem a execução local. A preparação do schema e a verificação TLS também passaram no build remoto Vercel.

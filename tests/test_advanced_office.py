@@ -21,6 +21,7 @@ class AdvancedOfficeTest(unittest.TestCase):
                 new=copy.deepcopy(item['content']);mutate(new);return ws.update(who,item['id'],{'title':item['title'],'content':new,'version':item['version']})
             with self.assertRaises(PermissionError):update(editor,lambda n:n['workbook']['sheets']['sheet-0']['cellData']['1']['1'].update(v=999))
             with self.assertRaises(PermissionError):update(editor,lambda n:n.update(protectedRanges=[]))
+            with self.assertRaises(PermissionError):update(editor,lambda n:n.update(links=[{'sheetId':'sheet-0','cell':'B2','type':'url','url':'https://example.org'}]))
             item=update(editor,lambda n:n['workbook']['sheets']['sheet-0']['cellData']['0']['0'].update(v='Permitido'))
             item=update(owner,lambda n:n['workbook']['sheets']['sheet-0']['cellData']['1']['1'].update(v=999))
             self.assertEqual(ws.get(editor,item['id'])['content']['workbook']['sheets']['sheet-0']['cellData']['1']['1']['v'],999)

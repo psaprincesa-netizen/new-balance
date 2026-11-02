@@ -1,3 +1,5 @@
+> Registro histórico. A revisão atual e o cancelamento da integração Google estão em [revisao-2026-11-02.md](revisao-2026-11-02.md). As referências à configuração OAuth abaixo descrevem uma etapa encerrada.
+
 # Revisão funcional e de desempenho
 
 Escopo: ferramentas disponíveis no DRAP office e seus fluxos de trabalho. Recursos indicados como planejados no mapa de cobertura continuam pendentes; esta revisão não declara equivalência completa com Google Workspace ou Microsoft 365.
@@ -54,7 +56,7 @@ Na conferência da publicação final, a navegação mostrou a biblioteca já co
 
 Esta etapa acrescenta funções, além da revisão anterior: formatação rica por trecho, abas de documentos, notas reais no DOCX, cabeçalho/rodapé e numeração, sumário atualizável, modelos e tabelas mescladas; cinco gráficos adicionais e proteção de intervalos; grupos/rotação em PPTX e apresentador separado; dependências/cronograma; agenda mensal; quizzes com gabarito privado, pontuação e novos campos; integração Google com OAuth/PKCE e tokens criptografados.
 
-Verificação local desta etapa: **71 testes Python, 29 testes JavaScript e 13 jornadas de navegador**. Inclui persistência e exportação dos novos recursos, rejeição de alterações em células protegidas, grupos em PPTX, notas privadas fora da janela do público, ciclos de tarefas, correção de quizzes e sigilo do gabarito. A jornada Google usa respostas simuladas do provedor; a conexão real requer cliente OAuth e consentimento do titular. Detalhes em [configurar-google.md](configurar-google.md).
+Verificação local desta etapa: **71 testes Python, 29 testes JavaScript e 13 jornadas de navegador**. Inclui persistência e exportação dos novos recursos, rejeição de alterações em células protegidas, grupos em PPTX, notas privadas fora da janela do público, ciclos de tarefas, correção de quizzes e sigilo do gabarito. A jornada Google usa respostas simuladas do provedor; a conexão real requer cliente OAuth e consentimento do titular. Detalhes em configuração OAuth (retirada do escopo).
 
 Os demais recursos ainda pendentes estão discriminados em [google-workspace.md](google-workspace.md) e no mapa de cobertura do aplicativo. Esta entrega não declara paridade integral com Google Workspace.
 

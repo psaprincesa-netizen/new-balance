@@ -279,9 +279,17 @@ class Workspace:
                 raise InvalidInput('Este formulário atingiu o limite de respostas.')
             answers = validate_answers(content, answers, schema_id)
             now = time.time_ns() // 1000000
-            content['responses'].append({'at': now, 'questions': content['questions'][:], 'answers': answers, **quiz_score(content,answers)})
+            response = {'at': now, 'questions': content['questions'][:], 'answers': answers}
+            result = {'ok': True}
+            if content.get('quiz'):
+                from server.forms import score_response
+                grade = score_response(content, answers)
+                if grade['total']:
+                    response.update(grade);response['maxScore']=grade['total']
+                    result.update(grade)
+            content['responses'].append(response)
             _, encoded = self.validate({'title': row['title'], 'content': content})
             version = row['version'] + 1
             db.execute('UPDATE items SET content=?, version=?, updated=? WHERE id=?', (encoded, version, now, item_id))
             db.execute('INSERT INTO versions VALUES (?, ?, ?, ?, ?)', (item_id, version, row['title'], encoded, now))
-        return {'ok': True}
+        return result

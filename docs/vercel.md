@@ -56,4 +56,4 @@ Na Vercel, use backups/PITR do provedor PostgreSQL ou `pg_dump` administrado de 
 
 Configure alertas para erros, falhas de login, conexões e custo. A listagem/histórico paginam quatro conteúdos por resposta para respeitar limites de resposta serverless. A interface ainda carrega todas as páginas em memória: coleções muito grandes exigirão busca e indicadores no servidor. Não há paginação infinita de UI nem teste de carga.
 
-O [relatório de auditoria](auditoria-vercel.md) descreve riscos remanescentes, incluindo recuperação de conta, retenção, verificação de e-mail e custos de cadastro público.
+O [relatório de auditoria](auditoria-vercel.md) descreve riscos remanescentes, incluindo retenção, verificação de e-mail e custos de cadastro público.

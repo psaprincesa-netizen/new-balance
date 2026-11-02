@@ -37,7 +37,7 @@ def exercise(page,base,check_offline=True,disconnect=None):
     # Register a disposable account, open a real editor, and retain unsaved work
     # while the browser shows the installation request from the toolbar.
     headers={'Origin':base};creds={'name':'Ana Install','email':uuid.uuid4().hex+'@example.org','password':uuid.uuid4().hex+'-Test12'}
-    assert page.request.post(base+'/api/register',headers=headers,data=creds).ok;assert page.request.post(base+'/api/login',headers=headers,data=creds).ok
+    assert page.request.post(base+'/api/register',headers=headers,data={**creds,'question':'pet','answer':'resposta de teste'}).ok;assert page.request.post(base+'/api/login',headers=headers,data={**creds,'question':'pet','answer':'resposta de teste'}).ok
     response=page.request.post(base+'/api/items',headers=headers,data={'kind':'document','title':'Teste instalação','content':{'text':'Conteúdo privado'}});assert response.ok;item=response.json()
     page.goto(base);page.get_by_role('button',name='Teste instalação',exact=False).click();expect(page.locator('#preview')).to_have_attribute('data-ready','true');visual=page.get_by_role('textbox',name='Página do documento',exact=True);visual.fill('Edição ainda não salva')
     page.evaluate('''() => {const event=new Event('beforeinstallprompt',{cancelable:true});event.prompt=async()=>window.toolbarPrompt=true;event.userChoice=Promise.resolve({outcome:'dismissed'});window.dispatchEvent(event);}''')

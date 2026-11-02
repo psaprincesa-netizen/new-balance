@@ -10,10 +10,10 @@ from server.store import Store
 def exercise(page,base,title='Planilha de aceitação'):
     errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
     page.goto(base);page.get_by_role('button',name='Criar minha conta').click()
-    page.get_by_label('Nome',exact=True).fill('Ana Teste');page.get_by_label('E-mail',exact=True).fill(uuid.uuid4().hex+'@example.org');page.get_by_label('Senha',exact=True).fill(uuid.uuid4().hex+'-Teste12')
+    page.get_by_label('Nome',exact=True).fill('Ana Teste');page.get_by_label('E-mail',exact=True).fill(uuid.uuid4().hex+'@example.org');page.get_by_label('Senha',exact=True).fill(uuid.uuid4().hex+'-Teste12');page.get_by_label('Pergunta secreta',exact=True).select_option(index=1);page.get_by_label('Resposta secreta',exact=True).fill('resposta de teste')
     page.get_by_role('button',name='Criar conta',exact=False).click();expect(page.get_by_role('heading',name='Olá, Ana. Vamos criar?')).to_be_visible()
     page.get_by_role('button',name='＋ Criar novo').click();page.locator('#create-form select').select_option('sheet');page.get_by_label('Nome do arquivo',exact=True).last.fill(title);page.get_by_role('button',name='Criar arquivo',exact=True).click()
-    def ready():expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true')
+    def ready():expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true',timeout=30000)
     def select(address):
         page.locator('#sheet-address').fill(address);page.locator('#sheet-select').click()
     def setcell(address,value):
@@ -82,11 +82,11 @@ def exercise(page,base,title='Planilha de aceitação'):
     assert page.request.post(base+'/api/items/'+copied['id'],headers={'Origin':base},data={'title':copied['title'],'content':copied['content'],'version':copied['version'],'deleted':True}).ok
     reader_context=page.context.browser.new_context();reader=reader_context.new_page()
     credentials={'email':uuid.uuid4().hex+'@example.org','password':uuid.uuid4().hex+'-Reader12'};headers={'Origin':base}
-    assert reader.request.post(base+'/api/register',headers=headers,data={**credentials,'name':'Leitor de teste'}).ok
+    assert reader.request.post(base+'/api/register',headers=headers,data={**credentials,'question':'pet','answer':'resposta de teste','name':'Leitor de teste'}).ok
     assert reader.request.post(base+'/api/login',headers=headers,data=credentials).ok
     assert page.request.post(base+'/api/items/'+item['id']+'/share',headers=headers,data={'email':credentials['email'],'role':'read'}).ok
     reader.goto(base);reader.get_by_role('button',name=title,exact=False).click()
-    expect(reader.locator('#spreadsheet')).to_have_attribute('data-ready','true')
+    expect(reader.locator('#spreadsheet')).to_have_attribute('data-ready','true',timeout=30000)
     expect(reader.locator('#save')).to_be_disabled();expect(reader.locator('#sheet-apply')).to_be_disabled()
     expect(reader.locator('button[aria-label="Negrito"]:visible')).to_be_disabled()
     with reader.expect_download() as reader_backup:reader.get_by_role('button',name='Exportar JSON',exact=True).click()

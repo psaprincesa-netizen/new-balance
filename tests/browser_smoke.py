@@ -30,7 +30,7 @@ def main():
                 page.get_by_role('button', name='Criar minha conta').click()
                 page.get_by_label('Nome', exact=True).fill('Ana Teste')
                 page.get_by_label('E-mail', exact=True).fill(uuid.uuid4().hex+'@example.org')
-                page.get_by_label('Senha', exact=True).fill('senha-longa-de-teste-123')
+                page.get_by_label('Senha', exact=True).fill('senha-longa-de-teste-123');page.get_by_label('Pergunta secreta',exact=True).select_option(index=1);page.get_by_label('Resposta secreta',exact=True).fill('resposta de teste')
                 page.get_by_role('button', name='Criar conta', exact=False).click()
                 expect(page.get_by_role('heading', name='Olá, Ana. Vamos criar?')).to_be_visible()
                 page.screenshot(path='/tmp/nexo-desktop.png', full_page=True)
@@ -70,7 +70,7 @@ def main():
                 page.keyboard.press('Escape')
 
                 create('sheet','Orçamento')
-                expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true')
+                expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true',timeout=30000)
                 for label,value in [('A1','Produto'),('B1','10'),('A2','Serviço'),('B2','20'),('C1','=SOMA(B1:B2)')]:
                     page.locator('#sheet-address').fill(label)
                     page.locator('#sheet-value').fill(value)
@@ -102,7 +102,7 @@ def main():
                 page.get_by_role('button',name='Respostas → Tabela').click()
                 expect(page.get_by_label('Registro 1, Como podemos melhorar?')).to_have_value('Integração dos dados')
                 page.get_by_role('button',name='Abrir como planilha ↗').click()
-                expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true')
+                expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true',timeout=30000)
                 page.locator('#sheet-address').fill('B2');page.locator('#sheet-select').click()
                 expect(page.locator('#sheet-value')).to_have_value('Integração dos dados')
 

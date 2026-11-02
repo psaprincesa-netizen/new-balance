@@ -29,12 +29,13 @@ npm run build
 .venv/bin/python -m server.app
 ```
 
-Abra a aplicação servida na porta 8000 pelo seu ambiente de desenvolvimento. Crie sua própria conta; não há senha padrão ou conta de demonstração. A autenticação exige senha com pelo menos 12 caracteres. O banco é criado em `.data/platform.sqlite`, fora do controle de versão.
+Abra a aplicação servida na porta 8000 pelo seu ambiente de desenvolvimento. Crie sua própria conta; não há senha padrão ou conta de demonstração. A autenticação exige senha com pelo menos 12 caracteres. No cadastro, o usuário escolhe uma pergunta secreta e digita a resposta; em **Esqueci minha senha**, responder corretamente permite criar uma nova senha. Contas antigas são convidadas a cadastrar a pergunta (botão **Pergunta secreta** no menu lateral). O banco é criado em `.data/platform.sqlite`, fora do controle de versão.
 
 Configurações opcionais: `HOST` (padrão `127.0.0.1`), `PORT` (8000), `DATABASE_PATH` e `COOKIE_SECURE=1` para cookies em HTTPS. Nunca use credenciais reais como dados de teste.
 
 ## Recursos ampliados
 
+- App instalável (PWA) no computador, tablet e celular. A interface abre sem internet; sem conexão, salvar guarda a alteração como rascunho local. Dados das contas nunca são guardados no cache do navegador. Detalhes em [recursos](docs/recursos.md#app-instalável-e-modo-offline-pwa).
 - DOCX, XLSX e PPTX reais para importar/exportar texto, células, abas, slides e notas. Slides incluem imagens, caixas de texto e formas editáveis no PPTX. A importação informa perdas de layout, gráficos e mídia avançada; não promete fidelidade completa ao Office.
 - Até 20 abas por pasta, fórmulas entre abas e motor de expressões com funções de busca, datas, texto, estatística e finanças. Funções de rede são bloqueadas; macros não são executadas. Importação Office: até 2,5 MB e 24 MB expandidos, conteúdo de cada arquivo limitado a 2 MB.
 - Comentários privados por arquivo, lista de acessos para o proprietário e recuperação de rascunhos no mesmo navegador. Os rascunhos não substituem o salvamento no servidor.
@@ -105,7 +106,7 @@ Confira contas e arquivos antes de trocar o caminho da instância principal. Pre
 
 A interface não envia conteúdo para ferramentas de IA ou serviços Office. No modo Vercel, o backend persiste os dados no PostgreSQL configurado. Requisições `POST /api/items` criam arquivos; `POST /api/items/{id}` altera usando a versão atual; `GET /api/items/{id}/history` retorna versões autorizadas; `POST /api/items/{id}/share` administra permissões. Listagem e histórico HTTP usam páginas de até quatro arquivos/versões, ajustadas ao limite de bytes (`items`, `next_offset`). Cada edição e sua versão são gravadas na mesma transação. Limites: 2 MB por conteúdo; planilhas com até 20 abas e 50 mil células preenchidas; tabelas com 200 linhas × 26 colunas; 100 slides. Falhas de salvamento mantêm o rascunho. Há recuperação de rascunhos locais no mesmo navegador e conta, sujeita à disponibilidade do armazenamento do navegador.
 
-O servidor da biblioteca padrão é para desenvolvimento. A Vercel fornece HTTPS e o runtime de produção. Ainda faltam recuperação de conta, auditoria administrativa, observabilidade, backups ensaiados e testes de carga. A preparação do schema foi validada no build remoto Vercel. Testes de carga e restauração do banco gerenciado ainda não foram realizados.
+O servidor da biblioteca padrão é para desenvolvimento. A Vercel fornece HTTPS e o runtime de produção. Ainda faltam auditoria administrativa, observabilidade, backups ensaiados e testes de carga. A preparação do schema foi validada no build remoto Vercel. Testes de carga e restauração do banco gerenciado ainda não foram realizados.
 
 A verificação automatizada está em `.github/workflows/verify.yml`: build, testes de domínio/API e doze jornadas reais no Chromium. O ZIP inclui essa configuração.
 

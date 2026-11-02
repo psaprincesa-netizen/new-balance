@@ -13,7 +13,7 @@ self.addEventListener('install',event=>{
 });
 self.addEventListener('activate',event=>{
   event.waitUntil((async()=>{
-    for(const key of await caches.keys())if(key.startsWith('drap-offline-')&&key!==CACHE)await caches.delete(key);
+    for(const key of await caches.keys())if(key.startsWith('drap-')&&key!==CACHE)await caches.delete(key);
     await self.clients.claim();
   })());
 });

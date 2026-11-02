@@ -5,11 +5,12 @@ import {mountAdvancedDocument} from './document-advanced.js';
 import {mountInsertMenu,prepareDocumentInsertion} from './insert-menu.js';
 import {mountDocumentTools,printDocument} from './document-tools.js';
 import {mountSheetTools} from './sheet-tools.js';
-import {responseTable,recordsWorkbook,quizScore,answerError,localDateTime,safeCsv,documentSlides} from './workflows.js';
+import {responseTable,recordsWorkbook,quizScore,answerError,localDateTime,safeCsv,documentSlides,scoreResponse,MULTI_SEPARATOR} from './workflows.js';
 import {mountSlides,slideMarkup,slideStyle,printSlides,raster} from './slides.js';
 import {mountPivots} from './pivot-ui.js';
 import {chartSvg,chartData} from './chart.js';
 import { parseCSV, toCSV } from "./csv.js";
+import {ensureTaskIds,findCycle,schedule,taskSpan,isoDay} from './project.js';
 const app = document.querySelector("#app"),
   modal = document.querySelector("#modal");
 const TYPES = {
@@ -133,18 +134,28 @@ function notify(text) {
     6500,
   );
 }
+const OFFLINE_MESSAGE = "Sem conexão com a internet. Tente novamente quando a conexão voltar.";
 async function api(path, data) {
-  const r = await fetch(path, {
-    method: data === undefined ? "GET" : "POST",
-    headers: data === undefined ? {} : { "Content-Type": "application/json" },
-    body: data === undefined ? undefined : JSON.stringify(data),
-  });
+  let r;
+  try {
+    r = await fetch(path, {
+      method: data === undefined ? "GET" : "POST",
+      headers: data === undefined ? {} : { "Content-Type": "application/json" },
+      body: data === undefined ? undefined : JSON.stringify(data),
+    });
+  } catch {
+    // fetch only rejects on network failure: report it plainly instead of "Failed to fetch".
+    const e = Error(OFFLINE_MESSAGE);
+    e.offline = true;
+    throw e;
+  }
   let result;
   try { result=await r.json(); }
   catch { throw Error('O servidor não respondeu corretamente (HTTP '+r.status+'). Tente novamente.'); }
   if (!r.ok) {
     const e = Error(result.error || "Não foi possível concluir.");
     e.status = r.status;
+    e.data = result;
     throw e;
   }
   return result;
@@ -205,8 +216,10 @@ function defaults(kind) {
   }
 }
 function auth(register = false) {
-  app.innerHTML = `<main class="auth"><section class="auth-aside"><div class="brand"><span class="brand-name">DRAP <span>office</span></span></div><h1>Um espaço.<br>Infinitas<br>possibilidades.</h1><p>Documentos, dados e ideias conectados.<br>Seu trabalho ganha um novo lugar.</p><small>PLATAFORMA DE PRODUTIVIDADE • VERSÃO INICIAL</small></section><section class="auth-panel"><form id="auth"><p class="eyebrow">SEU ESPAÇO DE TRABALHO</p><h2>${register ? "Crie sua conta" : "Bem-vindo de volta"}</h2><p class="muted">${register ? "Comece a organizar suas ideias." : "Entre para continuar de onde parou."}</p>${register ? '<label class="field">Nome<input name="name" autocomplete="name" maxlength="100" required></label>' : ""}<label class="field">E-mail<input name="email" type="email" autocomplete="email" maxlength="254" required></label><label class="field">Senha<input name="password" type="password" autocomplete="${register ? "new-password" : "current-password"}" minlength="${register ? 12 : 1}" maxlength="128" required></label>${register ? "<small>Use pelo menos 12 caracteres. Não reutilize senhas.</small>" : ""}<p id="auth-error" class="error" role="alert"></p><button class="primary" type="submit">${register ? "Criar conta" : "Entrar no DRAP office"} →</button><p class="field"><button id="toggle-auth" type="button">${register ? "Já tenho conta" : "Criar minha conta"}</button></p><small>Seus arquivos são privados até você compartilhá-los.<br>Recuperação de senha ainda não disponível nesta versão.</small><a class="auth-install" href="/install" target="_blank" rel="noopener" data-install-action>Instalar e criar atalho no aparelho</a></form></section></main>`;
+  app.innerHTML = `<main class="auth"><section class="auth-aside"><div class="brand"><span class="brand-name">DRAP <span>office</span></span></div><h1>Um espaço.<br>Infinitas<br>possibilidades.</h1><p>Documentos, dados e ideias conectados.<br>Seu trabalho ganha um novo lugar.</p><small>PLATAFORMA DE PRODUTIVIDADE • VERSÃO INICIAL</small></section><section class="auth-panel"><form id="auth"><p class="eyebrow">SEU ESPAÇO DE TRABALHO</p><h2>${register ? "Crie sua conta" : "Bem-vindo de volta"}</h2><p class="muted">${register ? "Comece a organizar suas ideias." : "Entre para continuar de onde parou."}</p>${register ? '<label class="field">Nome<input name="name" autocomplete="name" maxlength="100" required></label>' : ""}<label class="field">E-mail<input name="email" type="email" autocomplete="email" maxlength="254" required></label><label class="field">Senha<input name="password" type="password" autocomplete="${register ? "new-password" : "current-password"}" minlength="${register ? 12 : 1}" maxlength="128" required></label>${register ? "<small>Use pelo menos 12 caracteres. Não reutilize senhas.</small>" + recoveryFields() : ""}<p id="auth-error" class="error" role="alert"></p><button class="primary" type="submit">${register ? "Criar conta" : "Entrar no DRAP office"} →</button>${register ? "" : '<p class="field"><button id="forgot-password" type="button">Esqueci minha senha</button></p>'}<p class="field"><button id="toggle-auth" type="button">${register ? "Já tenho conta" : "Criar minha conta"}</button></p><small>Seus arquivos são privados até você compartilhá-los.</small><a class="auth-install" href="/install" target="_blank" rel="noopener" data-install-action>Instalar e criar atalho no aparelho</a></form></section></main>`;
   bind("toggle-auth", () => auth(!register));
+  bind("forgot-password", () => recoveryScreen());
+  if (register) loadRecoveryQuestions(app);
   bind(
     "auth",
     async (e) => {
@@ -216,9 +229,20 @@ function auth(register = false) {
       const data = Object.fromEntries(new FormData(e.target));
       try {
         if (register) await api("/api/register", data);
-        user = await api("/api/login", data);
+        try {
+          user = await api("/api/login", data);
+        } catch (err) {
+          if (!err.data?.mfa_required) throw err;
+          // Password accepted: ask for the authenticator code in the same form.
+          if (!e.target.querySelector('[name="code"]')) {
+            e.target.querySelector('#auth-error').insertAdjacentHTML('beforebegin', '<label class="field">Código de verificação<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="20" required></label><small>Digite os 6 dígitos do app autenticador ou um código de backup.</small>');
+            e.target.querySelector('[name="code"]').focus();
+          }
+          throw err;
+        }
         await refresh();
         render();
+        askRecoverySetup();
       } catch (err) {
         document.querySelector("#auth-error").textContent = err.message;
       } finally {
@@ -227,6 +251,138 @@ function auth(register = false) {
     },
     "submit",
   );
+}
+// Secret question used to recover the account and choose a new password.
+let recoveryQuestions = null;
+function recoveryFields(intro = "") {
+  return `<fieldset class="recovery-fields"><legend>Recuperação da conta</legend>${intro}<label class="field">Pergunta secreta<select name="question" aria-label="Pergunta secreta" required><option value="">Escolha uma pergunta…</option></select></label><label class="field">Resposta secreta<input name="answer" type="password" autocomplete="off" minlength="3" maxlength="100" required></label><small>Se esquecer a senha, você responde a esta pergunta para criar uma nova. Escolha uma resposta que só você saiba; maiúsculas e acentos não fazem diferença.</small></fieldset>`;
+}
+async function loadRecoveryQuestions(root, selected = "") {
+  try {
+    recoveryQuestions ??= (await api("/api/recovery/questions")).items;
+    const select = root.querySelector('select[name="question"]');
+    if (!select) return;
+    for (const q of recoveryQuestions) select.add(new Option(q.text, q.id, false, q.id === selected));
+  } catch (e) { notify(e.message); }
+}
+function recoveryScreen(email = "") {
+  app.innerHTML = `<main class="auth"><section class="auth-aside"><div class="brand"><span class="brand-name">DRAP <span>office</span></span></div><h1>Recupere<br>seu acesso.</h1><p>Responda à sua pergunta secreta<br>e crie uma nova senha.</p></section><section class="auth-panel"><form id="recovery-email"><p class="eyebrow">RECUPERAR CONTA</p><h2>Esqueci minha senha</h2><p class="muted">Informe o e-mail da sua conta.</p><label class="field">E-mail<input name="email" type="email" autocomplete="email" maxlength="254" required value="${esc(email)}"></label><p id="recovery-error" class="error" role="alert"></p><button class="primary" type="submit">Continuar →</button><p class="field"><button id="back-login" type="button">Voltar para o login</button></p></form></section></main>`;
+  bind("back-login", () => auth());
+  bind("recovery-email", async (e) => {
+    e.preventDefault();
+    const button = e.target.querySelector("[type=submit]");
+    button.disabled = true;
+    const address = new FormData(e.target).get("email");
+    try {
+      const { text } = await api("/api/recovery/question", { email: address });
+      recoveryAnswer(address, text);
+    } catch (err) {
+      document.querySelector("#recovery-error").textContent = err.status === 404
+        ? "Não encontramos uma pergunta secreta para esse e-mail. Contas sem pergunta cadastrada não podem ser recuperadas."
+        : err.message;
+      button.disabled = false;
+    }
+  }, "submit");
+}
+function recoveryAnswer(email, question) {
+  const form = document.querySelector(".auth-panel");
+  form.innerHTML = `<form id="recovery-reset"><p class="eyebrow">RECUPERAR CONTA</p><h2>Pergunta secreta</h2><p class="muted">${esc(email)}</p><p><strong id="recovery-question">${esc(question)}</strong></p><label class="field">Resposta secreta<input name="answer" type="password" autocomplete="off" maxlength="100" required></label><label class="field">Nova senha<input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required></label><label class="field">Confirmar nova senha<input name="confirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required></label><small>Use pelo menos 12 caracteres. Ao trocar a senha, todas as sessões abertas da conta são encerradas.</small><p id="recovery-error" class="error" role="alert"></p><button class="primary" type="submit">Criar nova senha →</button><p class="field"><button id="back-login" type="button">Voltar para o login</button></p></form>`;
+  bind("back-login", () => auth());
+  bind("recovery-reset", async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target));
+    const error = document.querySelector("#recovery-error");
+    if (data.password !== data.confirm) { error.textContent = "As senhas não conferem."; return; }
+    const button = e.target.querySelector("[type=submit]");
+    button.disabled = true;
+    try {
+      await api("/api/recovery/reset", { email, answer: data.answer, password: data.password });
+      auth();
+      document.querySelector('#auth input[name="email"]').value = email;
+      notify("Senha alterada. Entre com a nova senha.");
+    } catch (err) {
+      error.textContent = err.message;
+      button.disabled = false;
+    }
+  }, "submit");
+}
+function recoveryDialog(required = false) {
+  const intro = required ? "<p>Sua conta ainda não tem pergunta secreta. Sem ela, não será possível recuperar o acesso se você esquecer a senha.</p>" : "";
+  showDialog(`<form id="recovery-setup"><h2>${user.recovery_question ? "Alterar pergunta secreta" : "Cadastrar pergunta secreta"}</h2>${recoveryFields(intro)}<label class="field">Senha atual<input name="password" type="password" autocomplete="current-password" maxlength="128" required></label><p id="recovery-setup-error" class="error" role="alert"></p><div class="row"><button type="button" id="recovery-later">${required ? "Agora não" : "Cancelar"}</button><button class="primary" type="submit">Salvar</button></div></form>`, () => {
+    loadRecoveryQuestions(modal, user.recovery_question || "");
+    bind("recovery-later", closeDialog);
+    bind("recovery-setup", async (e) => {
+      e.preventDefault();
+      const button = e.target.querySelector("[type=submit]");
+      button.disabled = true;
+      try {
+        user = await api("/api/account/recovery", Object.fromEntries(new FormData(e.target)));
+        closeDialog();
+        notify("Pergunta secreta salva.");
+      } catch (err) {
+        document.querySelector("#recovery-setup-error").textContent = err.message;
+        button.disabled = false;
+      }
+    }, "submit");
+  });
+}
+// Account security: two-step verification and recent activity.
+async function securityDialog() {
+  let events = [];
+  try { events = (await api("/api/account/events")).items; } catch (e) { notify(e.message); }
+  showDialog(`<h2>Segurança da conta</h2><section class="card"><h3>Verificação em duas etapas</h3><p id="mfa-status">${user.mfa_enabled ? "Ativa: ao entrar, além da senha, é pedido um código do app autenticador." : "Desativada. Ative para exigir um código do celular além da senha."}</p><button id="mfa-toggle" class="${user.mfa_enabled ? "danger" : "primary"}">${user.mfa_enabled ? "Desativar" : "Ativar verificação em duas etapas"}</button></section><section class="card"><h3>Pergunta secreta</h3><p>${user.recovery_question ? "Cadastrada." : "Não cadastrada: sem ela não é possível recuperar a senha."}</p><button id="security-recovery">${user.recovery_question ? "Alterar" : "Cadastrar"}</button></section><section class="card"><h3>Atividade recente</h3><ul class="activity" id="activity-list">${events.map(ev => `<li><strong>${esc(ev.label)}</strong>${ev.detail ? " · " + esc(ev.detail) : ""}<small> · ${date(ev.at)}${ev.ip ? " · IP " + esc(ev.ip) : ""}</small></li>`).join("") || "<li>Nenhuma atividade registrada.</li>"}</ul></section><div class="row"><button id="security-close">Fechar</button></div>`, () => {
+    bind("security-close", closeDialog);
+    bind("security-recovery", () => recoveryDialog(false));
+    bind("mfa-toggle", () => (user.mfa_enabled ? mfaDisableDialog() : mfaSetupDialog()));
+  });
+}
+function mfaSetupDialog() {
+  showDialog(`<form id="mfa-password"><h2>Ativar verificação em duas etapas</h2><p>Você vai precisar de um app autenticador no celular, como Google Authenticator, Microsoft Authenticator ou Authy.</p><label class="field">Senha atual<input name="password" type="password" autocomplete="current-password" maxlength="128" required></label><p id="mfa-error" class="error" role="alert"></p><div class="row"><button type="button" id="mfa-cancel">Cancelar</button><button class="primary">Continuar</button></div></form>`, () => {
+    bind("mfa-cancel", securityDialog);
+    bind("mfa-password", async (e) => {
+      e.preventDefault();
+      try {
+        const setup = await api("/api/account/mfa/setup", Object.fromEntries(new FormData(e.target)));
+        let qr = "";
+        try { qr = (await import("/qr.js")).qrSvg(setup.uri); } catch {}
+        const key = setup.secret.match(/.{1,4}/g).join(" ");
+        showDialog(`<form id="mfa-enable"><h2>Escaneie o QR code</h2><p>No app autenticador, adicione uma conta e escaneie o código abaixo.</p><div class="mfa-qr" role="img" aria-label="QR code para o app autenticador">${qr}</div><p>Se não conseguir escanear, digite esta chave no app: <code id="mfa-secret">${esc(key)}</code></p><p><a href="${esc(setup.uri)}">Abrir no app autenticador deste aparelho</a></p><label class="field">Código de 6 dígitos mostrado no app<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required></label><p id="mfa-error" class="error" role="alert"></p><div class="row"><button type="button" id="mfa-cancel">Cancelar</button><button class="primary">Ativar</button></div></form>`, () => {
+          bind("mfa-cancel", securityDialog);
+          bind("mfa-enable", async (ev) => {
+            ev.preventDefault();
+            try {
+              const { backup_codes } = await api("/api/account/mfa/enable", Object.fromEntries(new FormData(ev.target)));
+              user = { ...user, mfa_enabled: true };
+              showDialog(`<h2>Verificação ativada</h2><p>Guarde estes códigos de backup em local seguro. Cada um funciona uma única vez, caso você perca o celular. Eles não serão mostrados de novo.</p><ul class="backup-codes" id="backup-codes">${backup_codes.map(c => `<li><code>${esc(c)}</code></li>`).join("")}</ul><div class="row"><button id="backup-download">Baixar códigos</button><button class="primary" id="backup-done">Já guardei</button></div>`, () => {
+                bind("backup-download", () => download("drap-office-codigos-de-backup.txt", "Códigos de backup do DRAP office (" + user.email + ")\nCada código funciona uma vez.\n\n" + backup_codes.join("\n") + "\n", "text/plain"));
+                bind("backup-done", securityDialog);
+              });
+            } catch (err) { document.querySelector("#mfa-error").textContent = err.message; }
+          }, "submit");
+        });
+      } catch (err) { document.querySelector("#mfa-error").textContent = err.message; }
+    }, "submit");
+  });
+}
+function mfaDisableDialog() {
+  showDialog(`<form id="mfa-disable"><h2>Desativar verificação em duas etapas</h2><p>Sua conta voltará a ser protegida apenas pela senha.</p><label class="field">Senha atual<input name="password" type="password" autocomplete="current-password" maxlength="128" required></label><label class="field">Código do app ou de backup<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="20" required></label><p id="mfa-error" class="error" role="alert"></p><div class="row"><button type="button" id="mfa-cancel">Cancelar</button><button class="danger">Desativar</button></div></form>`, () => {
+    bind("mfa-cancel", securityDialog);
+    bind("mfa-disable", async (e) => {
+      e.preventDefault();
+      try {
+        await api("/api/account/mfa/disable", Object.fromEntries(new FormData(e.target)));
+        user = { ...user, mfa_enabled: false };
+        notify("Verificação em duas etapas desativada.");
+        securityDialog();
+      } catch (err) { document.querySelector("#mfa-error").textContent = err.message; }
+    }, "submit");
+  });
+}
+function askRecoverySetup() {
+  // Older accounts were created before the secret question existed; ask once per session.
+  if (!user || user.recovery_question) return;
+  try { if (sessionStorage.getItem("drap:recovery-asked")) return; sessionStorage.setItem("drap:recovery-asked", "1"); } catch {}
+  recoveryDialog(true);
 }
 async function allPages(path, firstPage=null) {
   const result = firstPage ? [...firstPage.items] : [];
@@ -272,7 +428,6 @@ function shell(body) {
     ["shared", "♧", "Compartilhados"],
     ["analytics", "▥", "Indicadores"],
     ["automation", "⌘", "Conexões"],
-    ["google", "G", "Google Workspace"],
     ["coverage", "⊞", "Recursos"],
     ["trash", "♲", "Lixeira"],
   ]
@@ -282,11 +437,13 @@ function shell(body) {
     )
     .join(
       "",
-    )}</nav><footer>FEITO PARA CONECTAR<br>Uma conta. Todas as suas ideias.<br><button id="backup">Exportar meu espaço</button><button id="import">Importar JSON</button><button id="import-office">Importar Office / Agenda</button><a class="download-platform" href="/install" target="_blank" rel="noopener" data-install-action>Instalar e criar atalho ↓</a><a class="download-source" href="/downloads/drap-office.zip" download="drap-office.zip">Baixar código-fonte ZIP</a></footer></aside><main class="main"><header class="topbar"><input class="search" id="search" type="search" placeholder="Buscar em todos os arquivos…" aria-label="Buscar arquivos" value="${esc(query)}"><div class="row"><span class="user-name muted">${esc(user.name)}</span><span class="avatar">${esc(user.name.slice(0, 2).toUpperCase())}</span><a class="download-top" href="/install" target="_blank" rel="noopener" data-install-action aria-label="Instalar plataforma" title="Instalar e criar atalho no computador ou celular">↓</a><button id="logout" title="Sair da conta">Sair</button></div></header><div class="content">${body}</div></main></div>`;
+    )}</nav><footer>FEITO PARA CONECTAR<br>Uma conta. Todas as suas ideias.<br><button id="backup">Exportar meu espaço</button><button id="import">Importar JSON</button><button id="recovery-settings">Pergunta secreta</button><button id="security-settings">Segurança da conta</button><button id="import-office">Importar Office / Agenda</button><a class="download-platform" href="/install" target="_blank" rel="noopener" data-install-action>Instalar e criar atalho ↓</a><a class="download-source" href="/downloads/drap-office.zip" download="drap-office.zip">Baixar código-fonte ZIP</a></footer></aside><main class="main"><header class="topbar"><input class="search" id="search" type="search" placeholder="Buscar em todos os arquivos…" aria-label="Buscar arquivos" value="${esc(query)}"><div class="row"><span class="user-name muted">${esc(user.name)}</span><span class="avatar">${esc(user.name.slice(0, 2).toUpperCase())}</span><a class="download-top" href="/install" target="_blank" rel="noopener" data-install-action aria-label="Instalar plataforma" title="Instalar e criar atalho no computador ou celular">↓</a><button id="logout" title="Sair da conta">Sair</button></div></header><div class="content">${body}</div></main></div>`;
   document
     .querySelectorAll("[data-nav]")
     .forEach((n) => (n.onclick = () => navigate(n.dataset.nav)));
   bind("import-office", importOffice);
+  bind("recovery-settings", () => recoveryDialog(false));
+  bind("security-settings", securityDialog);
   bind("logout", async () => {
     if (!(await leave())) return;
     await api("/api/logout", {});
@@ -392,7 +549,6 @@ function render() {
   if (current) return editor();
   if (view === "analytics") return analytics();
   if (view === "automation") return automation();
-  if (view === "google") return googleWorkspace();
   if (view === "coverage") return coverage();
   const home = view === "home";
   shell(
@@ -508,7 +664,7 @@ async function openItem(id,loaded=null) {
     if(sequence===navigationSequence)notify(e.message);
   }
 }
-async function save() {
+async function save({remount = false} = {}) {
   if (busy) return;
   busy = true;
   app.inert = true;
@@ -520,10 +676,10 @@ async function save() {
       version: current.version,
       deleted: current.deleted,
     });
-    // Saving must not remount Univer: that clears selection, the active ribbon
-    // tab and undo history. Keep the content object held by the mounted editor.
-    const keepSheet = spreadsheet && !saved.deleted && saved.role !== 'read';
-    if (keepSheet) {
+    // Preserve selection and undo history after ordinary saves. Structural
+    // transitions such as restoring from trash must rebuild the toolbar.
+    const keepEditor = !remount && (spreadsheet || documentEditor) && !saved.deleted && saved.role !== 'read';
+    if (keepEditor) {
       const content = current.content;
       for (const key of Object.keys(content)) delete content[key];
       Object.assign(content, saved.content);
@@ -534,9 +690,15 @@ async function save() {
     try { localStorage.removeItem(draftKey()); } catch {}
     notify("Arquivo salvo. Seu trabalho está em dia.");
     rememberItem(saved);
-    if (keepSheet) document.querySelector('#save-state').textContent = `Versão ${current.version} · ${date(current.updated)}`;
+    if (keepEditor) document.querySelector('#save-state').textContent = `Versão ${current.version} · ${date(current.updated)}`;
     else editor();
   } catch (e) {
+    if (e.offline) {
+      // Keep the edit in this browser so it survives a reload while offline.
+      clearTimeout(stashDraft.timer);
+      stashDraft();
+      e.message = "Sem conexão: as alterações ficaram como rascunho neste navegador. Salve de novo quando a internet voltar.";
+    }
     notify(e.message);
     const status = document.querySelector("#save-state");
     if (status) status.textContent = e.message;
@@ -609,7 +771,7 @@ function editor() {
       return;
     current.deleted = !current.deleted;
     setDirty();
-    await save();
+    await save({remount:true});
   });
   const c = current.content;
   const root = document.querySelector("#editor-body");
@@ -648,13 +810,16 @@ function editor() {
     root.textContent =
       "Formato de conteúdo incompatível com este editor. Exporte o JSON para preservar seus dados.";
   }
-  if (read)
-    root
-      .querySelectorAll("input,textarea,select,button")
-      .forEach(n=>{const allowed={slides:'[data-slide],#present,#present-separate',document:'[data-doc-tab],#rich-html,#document-zoom,#export-text,#document-mode,#document-outline,#document-statistics,[data-outline]',note:'[data-doc-tab],#rich-html,#document-zoom,#export-text,#document-mode,#document-outline,#document-statistics,[data-outline]',calendar:'#month-prev,#month-next,#month-today',portal:'[data-link]',diagram:'#diagram-svg',table:'#table-filter,#table-csv',form:'#form-csv'}[current.kind];if(!allowed||!n.matches(allowed))n.disabled=true;});
+  applyEditorPermissions(root);
   const insertPanel=document.createElement('section');insertPanel.id='inserted-content';insertPanel.className='inserted-content';root.after(insertPanel);
   mountInsertMenu(insertPanel,current,{dialog:showDialog,close:closeDialog,bind,escape:esc,notify,dirty:setDirty,api,download,items:()=>items,openItem,flush:async()=>{await spreadsheet?.flush();},insertDocument:['document','note'].includes(current.kind)?source=>root.insertDocument(source):null});
   colors();
+}
+function applyEditorPermissions(root){
+  if (current.role==='read')
+    root
+      .querySelectorAll("input,textarea,select,button")
+      .forEach(n=>{const allowed={slides:'[data-slide],#present,#present-separate',document:'[data-doc-tab],#rich-html,#document-zoom,#export-text,#document-mode,#document-outline,#document-statistics,[data-outline]',note:'[data-doc-tab],#rich-html,#document-zoom,#export-text,#document-mode,#document-outline,#document-statistics,[data-outline]',board:'[data-board-view]',calendar:'#month-prev,#month-next,#month-today',portal:'[data-link]',diagram:'#diagram-svg',table:'#table-filter,#table-csv',form:'#form-csv'}[current.kind];if(!allowed||!n.matches(allowed))n.disabled=true;});
 }
 function textEditor(root, c) {
   documentEditor?.dispose();documentEditor=null;const token={};root.documentToken=token;
@@ -749,10 +914,11 @@ function textEditor(root, c) {
       " — Apresentação",
     ),
   );
+  applyEditorPermissions(root);
 }
 async function sheetEditor(root, c) {
   root.classList.add('spreadsheet-editor');
-  root.innerHTML = `<div class="toolbar sheet-tools"><label>Intervalo <input id="sheet-address" aria-label="Intervalo da planilha" value="A1" size="10"></label><button id="sheet-select">Selecionar</button><label>Valor ou fórmula <input id="sheet-value" aria-label="Valor ou fórmula" placeholder="=SUM(A1:A5)"></label><button id="sheet-apply">Aplicar à célula</button><button id="csv-import">Importar CSV</button><button id="csv-export">Exportar CSV</button><button id="sheet-report">Criar relatório ↗</button><button id="sheet-chart-add">Criar gráfico</button><button id="sheet-pivot-add">Tabela dinâmica</button></div><div class="toolbar sheet-tools"><button id="sheet-calculate">∑ Inserir cálculo</button><button id="sheet-row">Inserir linha</button><button id="sheet-column">Inserir coluna</button><button id="sheet-clear">Limpar valores</button><button id="sheet-paste">Colar tabela</button><span class="muted">Clique numa célula e digite. Enter confirma; Tab avança. Selecione um intervalo para formatar.</span></div><div id="spreadsheet" aria-label="Editor de planilhas"><p>Carregando editor…</p></div><p class="muted sheet-help">Use a barra de ferramentas para formatar, mesclar, filtrar e ordenar. Clique com o botão direito para inserir/excluir linhas e colunas. As células, a barra de fórmulas e o campo acima aceitam SUM/IF/VLOOKUP e os equivalentes SOMA/SE/PROCV; os nomes são armazenados em inglês. Ao digitar números na grade, use vírgula decimal (1234,50). Salve para registrar no banco. XLSX preserva valores, fórmulas, estilos, mesclagens, filtros e validações comuns; regras avançadas ficam no arquivo DRAP e no JSON. Gráficos de colunas, linhas e pizza ficam abaixo da grade e no XLSX. Tabelas dinâmicas agrupam e resumem os dados abaixo da grade. Macros VBA ainda não estão disponíveis.</p><section id="sheet-charts" aria-label="Gráficos da planilha"></section><section id="sheet-pivots" aria-label="Tabelas dinâmicas"></section>`;
+  root.innerHTML = `<div class="toolbar sheet-tools"><label>Intervalo <input id="sheet-address" aria-label="Intervalo da planilha" value="A1" size="10"></label><button id="sheet-select">Selecionar</button><label>Valor ou fórmula <input id="sheet-value" aria-label="Valor ou fórmula" placeholder="=SUM(A1:A5)"></label><button id="sheet-apply">Aplicar à célula</button><button id="sheet-insert">Vincular célula</button><button id="csv-import">Importar CSV</button><button id="csv-export">Exportar CSV</button><button id="sheet-report">Criar relatório ↗</button><button id="sheet-chart-add">Criar gráfico</button><button id="sheet-pivot-add">Tabela dinâmica</button></div><div class="toolbar sheet-tools"><button id="sheet-calculate">∑ Inserir cálculo</button><button id="sheet-row">Inserir linha</button><button id="sheet-column">Inserir coluna</button><button id="sheet-clear">Limpar valores</button><button id="sheet-paste">Colar tabela</button><span class="muted">Clique numa célula e digite. Enter confirma; Tab avança. Selecione um intervalo para formatar.</span></div><div id="sheet-link-bar" class="sheet-link-bar" hidden></div><div id="spreadsheet" aria-label="Editor de planilhas"><p>Carregando editor…</p></div><p class="muted sheet-help">Use a barra de ferramentas para formatar, mesclar, filtrar e ordenar. Clique com o botão direito para inserir/excluir linhas e colunas. As células, a barra de fórmulas e o campo acima aceitam SUM/IF/VLOOKUP e os equivalentes SOMA/SE/PROCV; os nomes são armazenados em inglês. Ao digitar números na grade, use vírgula decimal (1234,50). Salve para registrar no banco. XLSX preserva valores, fórmulas, estilos, mesclagens, filtros e validações comuns; regras avançadas ficam no arquivo DRAP e no JSON. Gráficos de colunas, linhas e pizza ficam abaixo da grade e no XLSX. Tabelas dinâmicas agrupam e resumem os dados abaixo da grade. Macros VBA ainda não estão disponíveis.</p><section id="sheet-links" aria-label="Arquivos e links vinculados"></section><section id="sheet-charts" aria-label="Gráficos da planilha"></section><section id="sheet-pivots" aria-label="Tabelas dinâmicas"></section>`;
   const item=current;let pivotUI=null;
   try {
     if (!document.querySelector('#spreadsheet-css')) {
@@ -762,17 +928,18 @@ async function sheetEditor(root, c) {
     const {mountSpreadsheet}=await import('/spreadsheet.js');
     if(!root.isConnected || current!==item)return;
     const host=root.querySelector('#spreadsheet');host.textContent='';
-    const mounted=await mountSpreadsheet(host,c,{id:item.id,name:item.title,readOnly:item.role==='read',onChange:setDirty,onError:notify,onSelection:(address,value)=>{if(!root.isConnected||document.activeElement?.closest('.sheet-tools'))return;root.querySelector('#sheet-address').value=address;root.querySelector('#sheet-value').value=value;},onRender:()=>{renderCharts();pivotUI?.render();}});
+    const mounted=await mountSpreadsheet(host,c,{id:item.id,name:item.title,readOnly:item.role==='read',onChange:setDirty,onError:notify,onSelection:(address,value)=>{if(!root.isConnected)return;showCellLink(address);if(document.activeElement?.closest('.sheet-tools'))return;root.querySelector('#sheet-address').value=address;root.querySelector('#sheet-value').value=value;},onRender:()=>{renderCharts();pivotUI?.render();}});
     if(!root.isConnected||current!==item){mounted.dispose();return;}
     spreadsheet=mounted;
     pivotUI=mountPivots({root,content:c,spreadsheet,readOnly:item.role==='read',dirty:setDirty,dialog:showDialog,closeDialog,notify,download,escapeHtml:esc});
     host.dataset.ready='true';
     renderCharts();
+    renderLinks();
     const address=()=>document.querySelector('#sheet-address').value.trim().toUpperCase();
     const action=fn=>async()=>{try{await fn();}catch(e){notify(e.message);}};
     mountSheetProtection(root,c,spreadsheet,{owner:item.role==='owner',readOnly:item.role==='read',address,dialog:showDialog,bind,close:closeDialog,dirty:setDirty,escape:esc,notify});
     mountSheetTools(root,spreadsheet,{address,dialog:showDialog,bind,close:closeDialog,escape:esc,notify,readOnly:item.role==='read'});
-    bind('sheet-select',action(()=>{spreadsheet.select(address());const value=spreadsheet.read(address());document.querySelector('#sheet-value').value=value.formulas[0]?.[0]||(value.values[0]?.[0]??'');}));
+    bind('sheet-select',action(()=>{spreadsheet.select(address());showCellLink(address());const value=spreadsheet.read(address());document.querySelector('#sheet-value').value=value.formulas[0]?.[0]||(value.values[0]?.[0]??'');}));
     bind('sheet-apply',action(()=>spreadsheet.set(address(),document.querySelector('#sheet-value').value)));
     for(const kind of ['row','column','clear'])bind('sheet-'+kind,action(()=>spreadsheet.quick(kind,address())));
     bind('sheet-paste',()=>showDialog(`<h2>Colar tabela</h2><form id="sheet-paste-form"><label class="field">Célula inicial<input name="target" value="${esc(address().split(':')[0])}" required pattern="[A-Za-z]{1,3}[1-9][0-9]{0,5}"></label><label class="field">Dados copiados do Excel ou CSV<textarea name="data" rows="8" required></textarea></label><p id="paste-error" role="alert"></p><button class="primary">Colar dados</button></form>`,()=>bind('sheet-paste-form',async e=>{e.preventDefault();try{const f=new FormData(e.target);await spreadsheet.paste(f.get('data'),f.get('target').toUpperCase());closeDialog();notify('Dados inseridos na planilha.');}catch(err){document.querySelector('#paste-error').textContent=err.message;}},'submit')));
@@ -781,8 +948,56 @@ async function sheetEditor(root, c) {
     bind('csv-import',()=>pickFile('.csv',async text=>{try{await spreadsheet.paste(text,address());}catch(e){notify(e.message);}}));
     bind('sheet-chart-add',()=>showDialog(`<h2>Criar gráfico</h2><form id="chart-form"><label class="field">Título do gráfico<input name="title" value="${esc(current.title)}" maxlength="100" required></label><label class="field">Tipo de gráfico<select name="type"><option value="bar">Colunas</option><option value="line">Linhas</option><option value="pie">Pizza</option><option value="area">Área</option><option value="doughnut">Rosca</option><option value="horizontal">Barras horizontais</option><option value="scatter">Dispersão XY</option><option value="radar">Radar</option></select></label><label class="field">Intervalo de dados<input name="range" value="${esc(address().includes(':')?address():'A1:B5')}" required></label><p>Duas colunas: rótulos e valores, com cabeçalho. Até 200 linhas. O gráfico acompanha os valores dessas células.</p><p id="chart-error" role="alert" class="error"></p><button class="primary">Adicionar gráfico</button></form>`,()=>bind('chart-form',async e=>{e.preventDefault();try{await spreadsheet.flush();if((c.charts||[]).length>=10)throw Error('Limite de dez gráficos por arquivo.');const d=Object.fromEntries(new FormData(e.target));d.range=d.range.trim().toUpperCase();if(!/^[A-Z]{1,3}[1-9]\d{0,5}:[A-Z]{1,3}[1-9]\d{0,5}$/.test(d.range))throw Error('Use um intervalo como A1:B5.');d.sheetId=spreadsheet.activeSheetId();d.id=crypto.randomUUID();chartData(spreadsheet.chartRows(d.range,d.sheetId),d.type);(c.charts??=[]).push(d);closeDialog();setDirty();renderCharts();}catch(err){document.querySelector('#chart-error').textContent=err.message;}},'submit')));
     bind('csv-export',action(async()=>{await spreadsheet.flush();download(current.title+'.csv',spreadsheet.csv(),'text/csv');}));
+    bind('sheet-insert',()=>insertLinkDialog(address().split(':')[0]));
     bind('sheet-report',action(async()=>{await spreadsheet.flush();await convert('document',{text:'# '+current.title+'\n\n'+spreadsheet.rows().map(r=>r.join(' | ')).join('\n')},' — Relatório');}));
     if(item.role==='read')root.querySelectorAll('.sheet-tools input,.sheet-tools button:not(#csv-export):not(#sheet-stats)').forEach(el=>el.disabled=true);
+  // Cell links: a cell can point to another DRAP office file or to an external https address.
+  function cellLink(cell,sheetId=spreadsheet.activeSheetId()){return (c.links||[]).find(l=>l.sheetId===sheetId&&l.cell===cell);}
+  function linkLabel(l){return l.type==='item'?(items.find(i=>i.id===l.item)?.title||l.title):l.url;}
+  function openLink(l){if(l.type==='item')openItem(l.item);else window.open(l.url,'_blank','noopener,noreferrer');}
+  function showCellLink(address){
+    const bar=root.querySelector('#sheet-link-bar');if(!bar||!spreadsheet)return;
+    const l=cellLink(String(address).split(':')[0]);
+    if(!l){bar.hidden=true;bar.innerHTML='';return;}
+    bar.hidden=false;
+    bar.innerHTML=`<span>🔗 ${l.type==='item'?'Arquivo':'Link'} em ${esc(l.cell)}: <strong>${esc(linkLabel(l))}</strong></span><button id="cell-link-open" class="primary">Abrir ${l.type==='item'?'arquivo':'link'} ↗</button>${item.role!=='read'?'<button id="cell-link-remove">Remover vínculo</button>':''}`;
+    bind('cell-link-open',()=>openLink(l));
+    bind('cell-link-remove',()=>{c.links=c.links.filter(x=>x!==l);setDirty();showCellLink(l.cell);renderLinks();});
+  }
+  function renderLinks(){
+    const panel=root.querySelector('#sheet-links');if(!panel||!spreadsheet)return;
+    const sheets=new Map(spreadsheet.listSheets().map(s=>[s.id,s.name]));
+    const list=(c.links||[]);
+    panel.innerHTML=list.length?`<h3>Arquivos e links vinculados</h3><ul class="sheet-link-list">${list.map((l,i)=>`<li><span class="badge">${l.type==='item'?esc(TYPES[l.kind]?.single||'Arquivo'):'Link'}</span> <strong>${esc(linkLabel(l))}</strong> <span class="muted">${esc(sheets.get(l.sheetId)||'Aba removida')} · ${esc(l.cell)}</span> <button data-link-open="${i}">Abrir ↗</button><button data-link-cell="${i}">Ir para a célula</button></li>`).join('')}</ul>`:'';
+    panel.querySelectorAll('[data-link-open]').forEach(b=>b.onclick=()=>openLink(list[+b.dataset.linkOpen]));
+    panel.querySelectorAll('[data-link-cell]').forEach(b=>b.onclick=()=>{const l=list[+b.dataset.linkCell];try{spreadsheet.activateSheet?.(l.sheetId);spreadsheet.select(l.cell);showCellLink(l.cell);}catch(e){notify(e.message);}});
+  }
+  function insertLinkDialog(cell){
+    const files=items.filter(i=>i.id!==item.id&&!i.deleted);
+    showDialog(`<h2>Inserir na planilha</h2><form id="insert-link-form"><fieldset class="field"><legend>O que inserir</legend><label class="checklist"><input type="radio" name="type" value="item" ${files.length?'checked':''} ${files.length?'':'disabled'}>Arquivo do DRAP office</label><label class="checklist"><input type="radio" name="type" value="url" ${files.length?'':'checked'}>Link externo (site)</label></fieldset><label class="field" data-for="item">Arquivo<select name="item" aria-label="Arquivo a vincular">${files.map(f=>`<option value="${esc(f.id)}">${esc(f.title)} — ${esc(TYPES[f.kind]?.single||f.kind)}</option>`).join('')}</select></label><label class="field" data-for="url" hidden>Endereço (https)<input name="url" type="url" placeholder="https://" maxlength="2000"></label><label class="field">Texto exibido na célula<input name="text" maxlength="200" placeholder="Usa o nome do arquivo se ficar vazio"></label><label class="field">Célula<input name="cell" value="${esc(cell)}" required pattern="[A-Za-z]{1,3}[1-9][0-9]{0,5}" aria-label="Célula de destino"></label><p id="insert-link-error" class="error" role="alert"></p><div class="row"><button type="button" id="insert-link-cancel">Cancelar</button><button class="primary">Inserir</button></div></form>`,()=>{
+      const form=document.querySelector('#insert-link-form');
+      const toggle=()=>{const type=new FormData(form).get('type');form.querySelectorAll('[data-for]').forEach(el=>el.hidden=el.dataset.for!==type);};
+      form.querySelectorAll('[name="type"]').forEach(r=>r.onchange=toggle);toggle();
+      bind('insert-link-cancel',closeDialog);
+      bind('insert-link-form',async e=>{
+        e.preventDefault();const d=new FormData(form),error=document.querySelector('#insert-link-error');
+        try{
+          const type=d.get('type'),target=String(d.get('cell')).toUpperCase(),sheetId=spreadsheet.activeSheetId();
+          let link;
+          if(type==='item'){const f=files.find(x=>x.id===d.get('item'));if(!f)throw Error('Escolha um arquivo.');link={type:'item',item:f.id,kind:f.kind,title:f.title.slice(0,200)};}
+          else{let url;try{url=new URL(d.get('url'));}catch{throw Error('Informe um endereço completo, começando com https://');}if(url.protocol!=='https:')throw Error('Use um endereço https://');link={type:'url',url:url.href};}
+          if(!cellLink(target,sheetId)&&(c.links||[]).length>=200)throw Error('Limite de 200 vínculos por planilha.');
+          const text=String(d.get('text')||'').trim()||(link.type==='item'?link.title:link.url);
+          await spreadsheet.flush();
+          spreadsheet.set(target,text.startsWith('=')?"'"+text:text);
+          c.links=(c.links||[]).filter(l=>!(l.sheetId===sheetId&&l.cell===target));
+          c.links.push({...link,sheetId,cell:target});
+          setDirty();closeDialog();renderLinks();showCellLink(target);
+          notify(link.type==='item'?'Arquivo vinculado à célula '+target+'.':'Link inserido na célula '+target+'.');
+        }catch(err){error.textContent=err.message;}
+      },'submit');
+    });
+  }
   function renderCharts(){
     if(!spreadsheet||!root.isConnected)return;
     const panel=root.querySelector('#sheet-charts');
@@ -812,26 +1027,51 @@ function present(slides, theme="light") {
   function key(e){if(e.key==='Escape'){e.preventDefault();close();}else if(['ArrowRight','PageDown',' '].includes(e.key)&&!(e.key===' '&&e.target.tagName==='BUTTON')){e.preventDefault();move(1);}else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();move(-1);}else if(e.key==='Home'){e.preventDefault();i=0;render();}else if(e.key==='End'){e.preventDefault();i=visible.length-1;render();}else if(e.key.toLowerCase()==='b'){e.preventDefault();black=!black;render();}else if(e.key==='Tab'){const buttons=[...div.querySelectorAll('button:not(:disabled)')],first=buttons[0],last=buttons.at(-1);if(e.shiftKey&&e.target===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&e.target===last){e.preventDefault();first.focus();}}}
   const clock=setInterval(tick,1000);document.addEventListener('keydown',key);render();
 }
+let boardView = "kanban";
 function boardEditor(root, c) {
   c.tasks ??= [];
+  ensureTaskIds(c.tasks);
   const statuses=['A fazer','Em andamento','Concluído'];
   const priorities=['Baixa','Normal','Alta','Urgente'];
-  root.innerHTML=`<form id="add-task" class="toolbar"><input name="title" placeholder="O que precisa ser feito?" aria-label="Nome da tarefa" maxlength="200" required><input name="due" type="date" aria-label="Prazo"><select name="priority" aria-label="Prioridade da tarefa">${priorities.map(p=>`<option ${p==='Normal'?'selected':''}>${p}</option>`).join('')}</select><button class="primary">＋ Adicionar tarefa</button></form><div class="board">${statuses.map(status=>`<section class="column"><h3>${status} <span class="badge">${c.tasks.filter(t=>t.status===status).length}</span></h3>${c.tasks.map((t,i)=>t.status===status?`<article class="card"><h3>${esc(t.title)}</h3><span class="badge">${esc(t.priority || 'Normal')}</span><p class="muted">${t.due?'Prazo: '+esc(t.due):'Sem prazo'}${t.assignee?'<br>Responsável: '+esc(t.assignee):''}</p>${(t.subtasks||[]).map((s,j)=>`<label class="checklist"><input type="checkbox" data-subtask="${i}:${j}" ${s.done?'checked':''}>${esc(s.title)}</label>`).join('')}<select data-task="${i}" aria-label="Estado de ${esc(t.title)}">${statuses.map(s=>`<option ${s===status?'selected':''}>${s}</option>`).join('')}</select><div class="row"><button data-edit-task="${i}">Detalhes</button><button data-remove-task="${i}" class="danger">Excluir</button></div></article>`:'').join('')}</section>`).join('')}</div>`;
-  bind('add-task',e=>{e.preventDefault();if(c.tasks.length>=1000)return notify('Limite de 1000 tarefas.');c.tasks.push({id:crypto.randomUUID(),...Object.fromEntries(new FormData(e.target)),status:'A fazer',assignee:'',subtasks:[]});setDirty();boardEditor(root,c);},'submit');
-  root.querySelectorAll('[data-task]').forEach(n=>n.onchange=()=>{const task=c.tasks[+n.dataset.task],old=task.status;task.status=n.value;const error=dependencyError(c.tasks);if(error){task.status=old;n.value=old;return notify(error);}setDirty();boardEditor(root,c);});
-  root.querySelectorAll('[data-remove-task]').forEach(n=>n.onclick=()=>{const removed=c.tasks.splice(+n.dataset.removeTask,1)[0];for(const task of c.tasks)task.dependsOn=(task.dependsOn||[]).filter(id=>id!==removed.id);setDirty();boardEditor(root,c);});
+  const byId=new Map(c.tasks.map(t=>[t.id,t]));
+  const deps=t=>(t.depends||[]).map(id=>byId.get(id)?.title).filter(Boolean);
+  const card=(t,i,status)=>`<article class="card"><h3>${t.milestone?'◆ ':''}${esc(t.title)}</h3><span class="badge">${esc(t.priority || 'Normal')}</span><p class="muted">${t.start?'Início: '+esc(t.start)+'<br>':''}${t.due?(t.milestone?'Marco: ':'Prazo: ')+esc(t.due):'Sem prazo'}${t.assignee?'<br>Responsável: '+esc(t.assignee):''}${deps(t).length?'<br>Depende de: '+deps(t).map(esc).join(', '):''}</p>${(t.subtasks||[]).map((s,j)=>`<label class="checklist"><input type="checkbox" data-subtask="${i}:${j}" ${s.done?'checked':''}>${esc(s.title)}</label>`).join('')}<select data-task="${i}" aria-label="Estado de ${esc(t.title)}">${statuses.map(s=>`<option ${s===status?'selected':''}>${s}</option>`).join('')}</select><div class="row"><button data-edit-task="${i}">Detalhes</button><button data-remove-task="${i}" class="danger">Excluir</button></div></article>`;
+  const toolbar=`<form id="add-task" class="toolbar"><input name="title" placeholder="O que precisa ser feito?" aria-label="Nome da tarefa" maxlength="200" required><input name="start" type="date" aria-label="Início"><input name="due" type="date" aria-label="Prazo"><select name="priority" aria-label="Prioridade da tarefa">${priorities.map(p=>`<option ${p==='Normal'?'selected':''}>${p}</option>`).join('')}</select><button class="primary">＋ Adicionar tarefa</button></form><div class="row" role="group" aria-label="Visualização"><button type="button" data-board-view="kanban" aria-pressed="${boardView==='kanban'}" class="${boardView==='kanban'?'primary':''}">Kanban</button><button type="button" data-board-view="timeline" aria-pressed="${boardView==='timeline'}" class="${boardView==='timeline'?'primary':''}">Cronograma</button></div>`;
+  root.innerHTML=toolbar+(boardView==='timeline'?timelineMarkup(c.tasks):`<div class="board">${statuses.map(status=>`<section class="column"><h3>${status} <span class="badge">${c.tasks.filter(t=>t.status===status).length}</span></h3>${c.tasks.map((t,i)=>t.status===status?card(t,i,status):'').join('')}</section>`).join('')}</div>`);
+  root.querySelectorAll('[data-board-view]').forEach(n=>n.onclick=()=>{boardView=n.dataset.boardView;boardEditor(root,c);});
+  bind('add-task',e=>{e.preventDefault();if(c.tasks.length>=1000)return notify('Limite de 1000 tarefas.');const data=Object.fromEntries(new FormData(e.target));if(data.start&&data.due&&data.start>data.due)return notify('O início deve ser antes do prazo.');c.tasks.push({...data,status:'A fazer',assignee:'',subtasks:[],depends:[],milestone:false});ensureTaskIds(c.tasks);setDirty();boardEditor(root,c);},'submit');
+  root.querySelectorAll('[data-task]').forEach(n=>n.onchange=()=>{const task=c.tasks[+n.dataset.task],old=task.status;task.status=n.value;const error=dependencyError(c.tasks.map(t=>({...t,dependsOn:t.depends})));if(error){task.status=old;n.value=old;return notify(error);}setDirty();boardEditor(root,c);});
+  root.querySelectorAll('[data-remove-task]').forEach(n=>n.onclick=()=>{const [removed]=c.tasks.splice(+n.dataset.removeTask,1);for(const t of c.tasks)t.depends=(t.depends||[]).filter(id=>id!==removed.id);setDirty();boardEditor(root,c);});
   root.querySelectorAll('[data-subtask]').forEach(n=>n.onchange=()=>{const [i,j]=n.dataset.subtask.split(':').map(Number);c.tasks[i].subtasks[j].done=n.checked;setDirty();});
-  mountTimeline(root,c,esc);
   root.querySelectorAll('[data-edit-task]').forEach(n=>n.onclick=()=>{
-    const task=c.tasks[+n.dataset.editTask];for(const entry of c.tasks)entry.id??=crypto.randomUUID();
-    showDialog(`<h2>Detalhes da tarefa</h2><form id="task-details"><label class="field">Título da tarefa<input name="title" value="${esc(task.title)}" maxlength="200" required></label><label class="field">Responsável<input name="assignee" value="${esc(task.assignee||'')}" maxlength="100"></label><label class="field">Data de início<input name="start" type="date" value="${esc(task.start||'')}"></label><label class="field">Depende destas tarefas<select name="dependsOn" multiple aria-label="Dependências da tarefa">${c.tasks.filter(t=>t!==task).map(t=>`<option value="${esc(t.id)}" ${(task.dependsOn||[]).includes(t.id)?'selected':''}>${esc(t.title)}</option>`).join('')}</select></label><label class="field">Data limite<input name="due" type="date" value="${esc(task.due)}"></label><label class="field">Prioridade<select name="priority">${priorities.map(p=>`<option ${p===(task.priority||'Normal')?'selected':''}>${p}</option>`).join('')}</select></label><label class="field">Subtarefas, uma por linha<textarea name="subtasks" rows="5">${esc((task.subtasks||[]).map(s=>s.title).join('\n'))}</textarea></label><p id="task-error" class="error" role="alert"></p><button class="primary">Aplicar detalhes</button></form>`,()=>bind('task-details',e=>{
-      e.preventDefault();const form=new FormData(e.target),data=Object.fromEntries(form);data.dependsOn=form.getAll('dependsOn');if(data.start&&(!data.due||data.start>data.due)){document.querySelector('#task-error').textContent='O prazo deve ser igual ou posterior ao início.';return;}
+    const task=c.tasks[+n.dataset.editTask];
+    const others=c.tasks.filter(t=>t!==task);
+    showDialog(`<h2>Detalhes da tarefa</h2><form id="task-details"><label class="field">Título da tarefa<input name="title" value="${esc(task.title)}" maxlength="200" required></label><label class="field">Responsável<input name="assignee" value="${esc(task.assignee||'')}" maxlength="100"></label><label class="field">Início<input name="start" type="date" value="${esc(task.start||'')}"></label><label class="field">Data limite<input name="due" type="date" value="${esc(task.due)}"></label><label class="checklist"><input type="checkbox" name="milestone" ${task.milestone?'checked':''}>Marco (entrega de um dia, sem duração)</label><label class="field">Prioridade<select name="priority">${priorities.map(p=>`<option ${p===(task.priority||'Normal')?'selected':''}>${p}</option>`).join('')}</select></label><fieldset class="task-deps"><legend>Depende de</legend>${others.length?others.map(o=>`<label class="checklist"><input type="checkbox" name="depends" value="${esc(o.id)}" ${(task.depends||[]).includes(o.id)?'checked':''}>${esc(o.title)}</label>`).join(''):'<p class="muted">Nenhuma outra tarefa.</p>'}</fieldset><label class="field">Subtarefas, uma por linha<textarea name="subtasks" rows="5">${esc((task.subtasks||[]).map(s=>s.title).join('\n'))}</textarea></label><p id="task-error" class="error" role="alert"></p><button class="primary">Aplicar detalhes</button></form>`,()=>bind('task-details',e=>{
+      e.preventDefault();const form=new FormData(e.target);const data=Object.fromEntries(form);
+      const error=document.querySelector('#task-error');
       const titles=data.subtasks.split('\n').map(t=>t.trim()).filter(Boolean);
-      if(titles.length>50 || titles.some(t=>t.length>200)){document.querySelector('#task-error').textContent='Até 50 subtarefas, com 200 caracteres cada.';return;}
+      if(titles.length>50 || titles.some(t=>t.length>200)){error.textContent='Até 50 subtarefas, com 200 caracteres cada.';return;}
+      data.milestone=form.has('milestone');data.depends=form.getAll('depends');
+      if(data.start&&data.due&&data.start>data.due&&!data.milestone){error.textContent='O início deve ser antes da data limite.';return;}
+      if(data.milestone&&!data.due){error.textContent='Informe a data do marco.';return;}
+      const trial=c.tasks.map(t=>t===task?{...t,depends:data.depends}:t);
+      if(findCycle(trial)){error.textContent='Essa dependência cria um ciclo entre tarefas.';return;}
       data.subtasks=titles.map(title=>({title,done:task.subtasks?.find(s=>s.title===title)?.done || false}));
-      const error=dependencyError(c.tasks.map(t=>t===task?{...task,...data}:t));if(error){document.querySelector('#task-error').textContent=error;return;}Object.assign(task,data);closeDialog();setDirty();boardEditor(root,c);
+      Object.assign(task,data);closeDialog();setDirty();boardEditor(root,c);
     },'submit'));
   });
+  applyEditorPermissions(root);
+}
+function timelineMarkup(tasks) {
+  const plan=schedule(tasks);
+  if(plan.cycle) return `<p class="error" role="alert">As dependências formam um ciclo. Remova uma delas para ver o cronograma.</p>`;
+  const undated=tasks.filter(t=>!taskSpan(t));
+  if(!plan.tasks.length) return `<p class="muted">Defina início e prazo nas tarefas para montar o cronograma.</p>`;
+  const span=Math.max(1,plan.end-plan.start+1);
+  const byId=new Map(tasks.map(t=>[t.id,t]));
+  const days=plan.end-plan.start+1;
+  const path=plan.critical.map(id=>esc(byId.get(id).title)).join(' → ');
+  return `<section class="timeline" aria-label="Cronograma"><p><strong>Período:</strong> ${isoDay(plan.start)} a ${isoDay(plan.end)} (${days} dias) · <strong>Caminho crítico:</strong> <span id="critical-path">${path}</span></p>${plan.conflicts.length?`<p class="error" role="alert">Começam antes de as dependências terminarem: ${plan.conflicts.map(id=>esc(byId.get(id).title)).join(', ')}. O cronograma mostra a data mais cedo possível.</p>`:''}<div class="gantt">${plan.tasks.map(r=>{const left=(r.es-plan.start)/span*100,width=r.milestone?0:(r.duration/span*100);const t=byId.get(r.id);return `<div class="gantt-row${r.critical?' critical':''}" data-gantt="${esc(r.id)}"><div class="gantt-label">${r.milestone?'◆ ':''}${esc(t.title)}<small>${isoDay(r.es)}${r.milestone?'':' a '+isoDay(r.ef)} · ${t.status}${r.critical?' · crítica':` · folga ${r.slack} d`}</small></div><div class="gantt-track"><span class="${r.milestone?'gantt-milestone':'gantt-bar'}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%" title="${esc(t.title)}"></span></div></div>`;}).join('')}</div>${undated.length?`<p class="muted">Sem datas: ${undated.map(t=>esc(t.title)).join(', ')}</p>`:''}</section>`;
 }
 function calendarEditor(root, c) {
   c.events ??= [];
@@ -884,23 +1124,43 @@ function calendarEditor(root, c) {
 }
 function answerField(question, field, index) {
   const attrs=`name="q${index}" ${field.required?'required':''}`;
+  const label=`${esc(question)}${field.required?' *':''}`;
+  if(field.type==='multiple') return `<fieldset class="field answer-group" data-answer="${index}"><legend>${label}</legend>${(field.options||[]).map(o=>`<label class="checklist"><input type="checkbox" name="q${index}" value="${esc(o)}">${esc(o)}</label>`).join('')}</fieldset>`;
+  if(field.type==='scale') return `<fieldset class="field answer-group scale" data-answer="${index}"><legend>${label}</legend>${Array.from({length:field.max||5},(_,n)=>`<label><input type="radio" ${attrs} value="${n+1}">${n+1}</label>`).join('')}</fieldset>`;
   return `<label class="field">${esc(question)}${field.required?' *':''}${['choice','rating'].includes(field.type)?`<select ${attrs}><option value="">Selecione…</option>${(field.type==='rating'?['1','2','3','4','5']:(field.options||[])).map(o=>`<option>${esc(o)}</option>`).join('')}</select>`:(field.type==='longtext'?`<textarea ${attrs} rows="5" maxlength="4000"></textarea>`:`<input ${attrs} type="${field.type}" ${field.type==='number'?'step="any"':''} maxlength="4000">`)}</label>`;
+}
+function collectAnswers(form, fields) {
+  const values=new FormData(form);
+  return fields.map((field,i)=>field.type==='multiple'?values.getAll('q'+i).join(MULTI_SEPARATOR):(values.get('q'+i)||''));
+}
+function correctAnswerField(field, i) {
+  const options=field.type==='scale'?Array.from({length:field.max||5},(_,n)=>String(n+1)):(field.options||[]);
+  let input;
+  if(field.type==='multiple') input=`<div class="row">${options.map(o=>`<label class="checklist"><input type="checkbox" data-correct-multi="${i}" value="${esc(o)}" ${(field.correct||[]).includes(o)?'checked':''}>${esc(o)}</label>`).join('')}</div>`;
+  else if(field.type==='choice'||field.type==='scale') input=`<select data-correct="${i}" aria-label="Resposta correta da pergunta ${i+1}"><option value="">Sem resposta correta</option>${options.map(o=>`<option ${o===field.correct?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
+  else input=`<input data-correct="${i}" type="${field.type==='number'?'number':'text'}" step="any" value="${esc(field.correct||'')}" aria-label="Resposta correta da pergunta ${i+1}" maxlength="4000">`;
+  return `<div class="quiz-key"><span>Resposta correta</span>${input}<label>Pontos <input data-points="${i}" type="number" min="0" max="100" step="1" value="${field.points??1}" aria-label="Pontos da pergunta ${i+1}"></label></div>`;
 }
 function formEditor(root,c) {
   c.questions ??=[];c.responses ??=[];
   c.fields ??=c.questions.map(()=>({type:'text',required:true,options:[]}));
-  const fieldTypes={text:'Texto',email:'E-mail',number:'Número',date:'Data',choice:'Escolha única',longtext:'Texto longo',rating:'Avaliação de 1 a 5'};
-  root.innerHTML=`<div class="toolbar"><button id="add-question">＋ Pergunta de texto</button><button id="form-table">Respostas → Tabela</button><button id="form-sheet">Respostas → Planilha</button><button id="form-csv">Baixar respostas CSV</button>${current.role==='owner'?'<button id="form-publish">Link de coleta</button>':''}<span>${c.responses.length} respostas</span></div><label class="checklist"><input id="form-quiz" type="checkbox" ${c.quiz?'checked':''}> Quiz com correção automática</label><p class="muted">O gabarito fica visível apenas a quem tem acesso ao arquivo. A correção compara o texto, ignorando maiúsculas e espaços nas extremidades.</p><h3>Perguntas</h3>${c.questions.map((q,i)=>`<article class="card"><div class="row"><input data-question="${i}" value="${esc(q)}" aria-label="Pergunta ${i+1}" maxlength="300"><select data-field-type="${i}" aria-label="Tipo da pergunta ${i+1}">${Object.entries(fieldTypes).map(([type,label])=>`<option value="${type}" ${c.fields[i].type===type?'selected':''}>${label}</option>`).join('')}</select><button data-remove-question="${i}">Excluir</button></div><label class="checklist"><input type="checkbox" data-field-required="${i}" ${c.fields[i].required?'checked':''}>Obrigatória</label>${c.fields[i].type==='choice'?`<label class="field">Opções, uma por linha<textarea data-field-options="${i}">${esc(c.fields[i].options.join('\n'))}</textarea></label>`:''}${c.quiz?`<div class="row"><label class="field">Resposta correta<input data-correct-answer="${i}" value="${esc(c.fields[i].correctAnswer||'')}" maxlength="4000" placeholder="Vazio: sem pontuação"></label><label class="field">Pontos<input data-quiz-points="${i}" type="number" min="0" max="100" value="${c.fields[i].points??1}"></label></div>`:''}</article>`).join('')}<hr><h3>Responder neste espaço</h3><form id="respond-form">${c.questions.map((q,i)=>answerField(q,c.fields[i],i)).join('')}<button class="primary" ${c.questions.length?'':'disabled'}>Registrar resposta</button></form><h3 class="section-head">Respostas registradas</h3>${c.responses.map(r=>`<div class="card"><small>${date(r.at)}</small>${r.score!==undefined?`<strong class="badge">Nota: ${r.score} / ${r.maxScore}</strong>`:''}${r.answers.map((a,i)=>`<p>${esc(r.questions?.[i]||'Pergunta '+(i+1))}: ${esc(a)}</p>`).join('')}</div>`).join('')}`;
-  bind('form-quiz',event=>{c.quiz=event.target.checked;setDirty();formEditor(root,c);},'change');
-  root.querySelectorAll('[data-correct-answer]').forEach(input=>input.oninput=()=>{const field=c.fields[+input.dataset.correctAnswer];if(input.value)field.correctAnswer=input.value;else delete field.correctAnswer;setDirty();});
-  root.querySelectorAll('[data-quiz-points]').forEach(input=>input.onchange=()=>{c.fields[+input.dataset.quizPoints].points=Math.max(0,Math.min(100,Math.round(Number(input.value)||0)));setDirty();});
-  root.querySelectorAll('[data-question]').forEach(n=>n.oninput=()=>{const i=+n.dataset.question;c.questions[i]=n.value;const label=root.querySelector(`[name="q${i}"]`).closest('label');label.firstChild.textContent=n.value+(c.fields[i].required?' *':'');setDirty();});
+  for(const field of c.fields){if(field.correct===undefined&&field.correctAnswer!==undefined)field.correct=field.correctAnswer;delete field.correctAnswer;}
+  for(const response of c.responses)if(response.total===undefined&&response.maxScore!==undefined)response.total=response.maxScore;
+  const fieldTypes={text:'Texto',email:'E-mail',number:'Número',date:'Data',choice:'Escolha única',multiple:'Múltipla seleção',scale:'Escala',longtext:'Texto longo',rating:'Avaliação de 1 a 5'};
+  const grade=r=>typeof r.total==='number'&&r.total>0?`<p><strong>Nota: ${r.score} de ${r.total}</strong></p>`:'';
+  root.innerHTML=`<div class="toolbar"><button id="add-question">＋ Pergunta de texto</button><button id="form-table">Respostas → Tabela</button><button id="form-sheet">Respostas → Planilha</button><button id="form-csv">Baixar respostas CSV</button>${current.role==='owner'?'<button id="form-publish">Link de coleta</button>':''}<label class="checklist"><input type="checkbox" id="form-quiz" ${c.quiz?'checked':''}>Modo quiz (nota automática)</label><span>${c.responses.length} respostas</span></div><h3>Perguntas</h3>${c.questions.map((q,i)=>`<article class="card"><div class="row"><input data-question="${i}" value="${esc(q)}" aria-label="Pergunta ${i+1}" maxlength="300"><select data-field-type="${i}" aria-label="Tipo da pergunta ${i+1}">${Object.entries(fieldTypes).map(([type,label])=>`<option value="${type}" ${c.fields[i].type===type?'selected':''}>${label}</option>`).join('')}</select><button data-remove-question="${i}">Excluir</button></div><label class="checklist"><input type="checkbox" data-field-required="${i}" ${c.fields[i].required?'checked':''}>Obrigatória</label>${['choice','multiple'].includes(c.fields[i].type)?`<label class="field">Opções, uma por linha<textarea data-field-options="${i}" aria-label="Opções da pergunta ${i+1}">${esc(c.fields[i].options.join('\n'))}</textarea></label>`:''}${c.fields[i].type==='scale'?`<label class="field">Escala de 1 até<select data-field-max="${i}" aria-label="Máximo da escala da pergunta ${i+1}">${[2,3,4,5,6,7,8,9,10].map(n=>`<option ${n===(c.fields[i].max||5)?'selected':''}>${n}</option>`).join('')}</select></label>`:''}${c.quiz?correctAnswerField(c.fields[i],i):''}</article>`).join('')}<hr><h3>Responder neste espaço</h3><form id="respond-form">${c.questions.map((q,i)=>answerField(q,c.fields[i],i)).join('')}<button class="primary" ${c.questions.length?'':'disabled'}>Registrar resposta</button></form><h3 class="section-head">Respostas registradas</h3>${c.responses.map(r=>`<div class="card"><small>${date(r.at)}</small>${grade(r)}${r.answers.map((a,i)=>`<p>${esc(r.questions?.[i]||'Pergunta '+(i+1))}: ${esc(a)}</p>`).join('')}</div>`).join('')}`;
+  root.querySelectorAll('[data-question]').forEach(n=>n.oninput=()=>{const i=+n.dataset.question;c.questions[i]=n.value;const group=root.querySelector(`[data-answer="${i}"] legend`);if(group)group.textContent=n.value+(c.fields[i].required?' *':'');else{const label=root.querySelector(`[name="q${i}"]`).closest('label');label.firstChild.textContent=n.value+(c.fields[i].required?' *':'');}setDirty();});
   root.querySelectorAll('[data-remove-question]').forEach(n=>n.onclick=()=>{c.questions.splice(+n.dataset.removeQuestion,1);c.fields.splice(+n.dataset.removeQuestion,1);setDirty();formEditor(root,c);});
-  root.querySelectorAll('[data-field-type]').forEach(n=>n.onchange=()=>{c.fields[+n.dataset.fieldType].type=n.value;delete c.fields[+n.dataset.fieldType].correctAnswer;setDirty();formEditor(root,c);});
-  root.querySelectorAll('[data-field-required]').forEach(n=>n.onchange=()=>{const i=+n.dataset.fieldRequired;c.fields[i].required=n.checked;const field=root.querySelector(`[name="q${i}"]`);field.required=n.checked;field.closest('label').firstChild.textContent=c.questions[i]+(n.checked?' *':'');setDirty();});
-  root.querySelectorAll('[data-field-options]').forEach(n=>n.onchange=()=>{const options=n.value.split('\n').map(s=>s.trim()).filter(Boolean);if(options.length>50)return notify('Até 50 opções.');c.fields[+n.dataset.fieldOptions].options=options;setDirty();formEditor(root,c);});
+  root.querySelectorAll('[data-field-type]').forEach(n=>n.onchange=()=>{const f=c.fields[+n.dataset.fieldType];f.type=n.value;delete f.correct;if(n.value==='multiple')f.options=f.options.filter(o=>!o.includes(';'));setDirty();formEditor(root,c);});
+  root.querySelectorAll('[data-field-required]').forEach(n=>n.onchange=()=>{c.fields[+n.dataset.fieldRequired].required=n.checked;setDirty();formEditor(root,c);});
+  root.querySelectorAll('[data-field-options]').forEach(n=>n.onchange=()=>{const f=c.fields[+n.dataset.fieldOptions];const options=[...new Set(n.value.split('\n').map(s=>s.trim()).filter(Boolean))];if(options.length>50)return notify('Até 50 opções.');if(f.type==='multiple'&&options.some(o=>o.includes(';')))return notify('Em múltipla seleção, as opções não podem conter ponto e vírgula.');f.options=options;if(Array.isArray(f.correct))f.correct=f.correct.filter(o=>options.includes(o));else if(f.correct&&!options.includes(f.correct))delete f.correct;setDirty();formEditor(root,c);});
+  root.querySelectorAll('[data-field-max]').forEach(n=>n.onchange=()=>{const f=c.fields[+n.dataset.fieldMax];f.max=+n.value;if(f.correct&&+f.correct>f.max)delete f.correct;setDirty();formEditor(root,c);});
+  root.querySelectorAll('[data-correct]').forEach(n=>n.onchange=()=>{const f=c.fields[+n.dataset.correct];if(n.value)f.correct=n.value;else delete f.correct;setDirty();});
+  root.querySelectorAll('[data-correct-multi]').forEach(n=>n.onchange=()=>{const i=+n.dataset.correctMulti;c.fields[i].correct=[...root.querySelectorAll(`[data-correct-multi="${i}"]:checked`)].map(x=>x.value);setDirty();});
+  root.querySelectorAll('[data-points]').forEach(n=>n.onchange=()=>{const v=Math.round(Number(n.value));if(!(v>=0&&v<=100)){n.value=c.fields[+n.dataset.points].points??1;return notify('Use de 0 a 100 pontos.');}c.fields[+n.dataset.points].points=v;setDirty();});
+  bind('form-quiz',e=>{c.quiz=e.target.checked;setDirty();formEditor(root,c);},'change');
   bind('add-question',()=>{if(c.questions.length>=100)return notify('Limite de 100 perguntas.');c.questions.push('Nova pergunta');c.fields.push({type:'text',required:true,options:[]});setDirty();formEditor(root,c);});
-  bind('respond-form',e=>{e.preventDefault();if(c.responses.length>=1000)return notify('Limite de 1000 respostas.');const d=new FormData(e.target),answers=c.questions.map((_,i)=>d.get('q'+i)||'');for(let i=0;i<answers.length;i++){const error=answerError(answers[i],c.fields[i]);if(error){notify('Pergunta '+(i+1)+': '+error);return;}}c.responses.push({at:Date.now(),questions:[...c.questions],answers,...quizScore(c,answers)});setDirty();formEditor(root,c);},'submit');
+  bind('respond-form',e=>{e.preventDefault();if(c.responses.length>=1000)return notify('Limite de 1000 respostas.');const answers=collectAnswers(e.target,c.fields);for(let i=0;i<answers.length;i++){const error=answerError(answers[i],c.fields[i]);if(error){notify('Pergunta '+(i+1)+': '+error);return;}}const response={at:Date.now(),questions:[...c.questions],answers};if(c.quiz){const g=scoreResponse(c.fields,answers);if(g.total){Object.assign(response,g);notify(`Nota: ${g.score} de ${g.total}.`);}}c.responses.push(response);setDirty();formEditor(root,c);},'submit');
   const responseRows=()=>responseTable(c,date);
   bind('form-csv',()=>{const data=responseRows();download(current.title+'-respostas.csv',toCSV(safeCsv([data.columns,...data.rows])),'text/csv');});
   bind('form-table',()=>{if(!c.responses.length)return notify('Registre uma resposta primeiro.');const data=responseRows();if(data.columns.length>26||data.rows.length>200)return notify('A tabela aceita 26 campos e 200 registros. Use Respostas → Planilha ou Baixar respostas CSV para levar todos os dados.');convert('table',data,' — Respostas');});
@@ -922,7 +1182,7 @@ async function publicationDialog() {
 async function publicForm(token) {
   const data=await api('/api/forms/'+encodeURIComponent(token));
   app.innerHTML=`<main class="public-form"><div class="brand"><span class="brand-name">DRAP <span>office</span></span></div><h1>${esc(data.title)}</h1><form id="public-response">${data.questions.map((q,i)=>answerField(q,data.fields[i],i)).join('')}<p id="public-response-error" class="error" role="alert"></p><button class="primary">Enviar resposta</button></form></main>`;
-  bind('public-response',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;const values=new FormData(e.target);try{await api('/api/forms/'+encodeURIComponent(token),{answers:data.questions.map((_,i)=>values.get('q'+i)||''),schema_id:data.schema_id});e.target.innerHTML='<h2>Resposta enviada</h2><p>Sua resposta foi registrada. Obrigado!</p>';}catch(err){document.querySelector('#public-response-error').textContent=err.message;button.disabled=false;}},'submit');
+  bind('public-response',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;const answers=collectAnswers(e.target,data.fields);const invalid=answers.map((a,i)=>answerError(a,data.fields[i])).findIndex(Boolean);if(invalid>=0){document.querySelector('#public-response-error').textContent='Pergunta '+(invalid+1)+': '+answerError(answers[invalid],data.fields[invalid]);button.disabled=false;return;}try{const result=await api('/api/forms/'+encodeURIComponent(token),{answers,schema_id:data.schema_id});e.target.innerHTML='<h2>Resposta enviada</h2><p>Sua resposta foi registrada. Obrigado!</p>'+(result.total?`<p id="quiz-score"><strong>Sua nota: ${result.score} de ${result.total}</strong></p>`:'');}catch(err){document.querySelector('#public-response-error').textContent=err.message;button.disabled=false;}},'submit');
 }
 const tableStates=new Map();
 function tableEditor(root, c) {
@@ -1295,11 +1555,6 @@ async function analytics() {
       .join("")}</div></section>`,
   );
 }
-async function googleWorkspace(){
-  shell('<h1>Gmail, Agenda e Meet</h1><div id="google-root"><p role="status">Carregando conexão…</p></div>');
-  const root=document.querySelector('#google-root');
-  try{const {renderGoogle}=await import('/google.js');if(root.isConnected)await renderGoogle(root,{api,escape:esc,notify,dialog:showDialog,bind,close:closeDialog});}catch(error){if(root.isConnected)root.textContent=error.message;}
-}
 function automation() {
   shell(
     `<p class="eyebrow">CONECTE SEU TRABALHO</p><h1>As ideias continuam em outra ferramenta.</h1><p class="muted">Conversões locais executadas sob demanda nos editores. Arquivos de origem são preservados.</p><div class="coverage">${[
@@ -1326,7 +1581,7 @@ function automation() {
       )
       .join(
         "",
-      )}</div><h2 class="section-head">Serviços externos</h2><div class="card"><h3>E-mail, reuniões, armazenamento remoto e IA</h3><p class="muted">Gmail, Google Agenda e links Meet estão disponíveis na seção Google Workspace após configuração OAuth e autorização da sua conta. Armazenamento remoto, sincronização Drive e IA continuam pendentes.</p></div>`,
+      )}</div><h2 class="section-head">Serviços externos</h2><div class="card"><h3>E-mail, reuniões, armazenamento remoto e IA</h3><p class="muted">As ferramentas desta versão funcionam dentro do DRAP office. Serviços externos e IA não fazem parte desta revisão.</p></div>`,
   );
 }
 function coverage() {
@@ -1353,13 +1608,13 @@ function coverage() {
       [
         "Projetos e agenda",
         "Disponível",
-        "Kanban, responsáveis, prioridades, subtarefas, dependências sem ciclos, bloqueio de início por predecessoras, cronograma, agenda mensal, repetições e ICS.",
-        "Pendentes: caminho crítico, notificações e convites externos.",
+        "Kanban, cronograma (Gantt), dependências, marcos, caminho crítico e folga, responsáveis, prioridades, subtarefas, agenda, geração de repetições e arquivos ICS.",
+        "Pendentes: recursos e custos, linhas de base, notificações e convites externos.",
       ],
       [
         "Formulários e tabelas",
         "Disponível",
-        "Formulários tipados com texto longo e avaliação, quizzes com gabarito privado e correção no servidor, coleta pública revogável, respostas e notas exportáveis; tabelas com tipos, ordenação, filtro e deduplicação.",
+        "Formulários tipados com texto longo, avaliação, múltipla seleção e escala, quizzes com gabarito privado e correção no servidor, coleta pública revogável, respostas e notas exportáveis; tabelas com tipos, ordenação, filtro e deduplicação.",
         "Pendentes: anexos nas respostas, ramificação condicional, relacionamentos e consultas entre tabelas.",
       ],
       [
@@ -1381,16 +1636,16 @@ function coverage() {
         "Pendentes: modelagem analítica, conectores, agendamento e designer de fluxos.",
       ],
       [
-        "Google Workspace e IA",
-        "Requer conexão",
-        "Integração Gmail para busca, leitura, envio e lixeira; Agenda para eventos e links Meet. OAuth individual com proteção dos tokens no servidor.",
-        "Configure o cliente Google e conecte a conta. Drive, anexos de e-mail, participantes/convidados, telefonia, OCR e IA permanecem pendentes.",
+        "Serviços externos",
+        "Fora do escopo",
+        "A revisão concentra-se nas ferramentas próprias da plataforma.",
+        "Correio externo, reuniões externas e IA não estão ativados.",
       ],
       [
         "Segurança e operação",
         "Parcial",
-        "Senhas scrypt, sessões HttpOnly, rate limit no banco, autorização por arquivo, Vercel e Neon.",
-        "Pendentes: recuperação de conta, MFA, auditoria administrativa, alertas e testes de carga.",
+        "Senhas scrypt, verificação em duas etapas (app autenticador e códigos de backup), recuperação por pergunta secreta, registro de atividade da conta, sessões HttpOnly, rate limit no banco, autorização por arquivo, Vercel e Neon.",
+        "Pendentes: auditoria administrativa da organização, alertas e testes de carga.",
       ],
     ]
       .map(
@@ -1416,13 +1671,28 @@ document.addEventListener("keydown", (e) => {
 try {
   const formToken=new URLSearchParams(location.search).get('form');
   if (formToken) await publicForm(formToken);
-  else { const initial=await api("/api/bootstrap"); user=initial.user; items=await allPages("/api/library",initial); if(new URLSearchParams(location.search).get("google")==="connected")view="google";render(); }
+  else { const initial=await api("/api/bootstrap"); user=initial.user; items=await allPages("/api/library",initial); render(); askRecoverySetup(); }
 } catch (e) {
   if (e.status === 401) auth();
-  else
+  else if (e.offline) {
+    app.textContent =
+      "Você está sem conexão. O DRAP office vai abrir automaticamente quando a internet voltar.";
+    addEventListener("online", () => location.reload(), { once: true });
+  } else
     app.textContent =
       "Não foi possível conectar à plataforma. Recarregue a página para tentar novamente.";
 }
+function connectionNotice() {
+  document.body.classList.toggle("offline", !navigator.onLine);
+  notify(navigator.onLine
+    ? "Conexão restabelecida. Salve as alterações pendentes."
+    : "Sem conexão. Você pode continuar editando; salve quando a internet voltar.");
+}
+addEventListener("online", connectionNotice);
+addEventListener("offline", connectionNotice);
+if (!navigator.onLine) document.body.classList.add("offline");
+// isSecureContext covers HTTPS and localhost; the worker only caches the app shell.
+
 
 async function importOffice() {
   if (!(await leave())) return;

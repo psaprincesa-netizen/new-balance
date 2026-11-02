@@ -19,3 +19,6 @@ web/document.js
 
 web/service-worker.js
 web/app.bundle.js
+web/qr.js
+
+.venv

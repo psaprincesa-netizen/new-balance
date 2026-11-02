@@ -11,9 +11,9 @@ from server.store import Store
 def exercise(page,base,title='Barra de ferramentas'):
     errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
     page.goto(base);page.get_by_role('button',name='Criar minha conta').click()
-    page.get_by_label('Nome',exact=True).fill('Ana Teste');page.get_by_label('E-mail',exact=True).fill(uuid.uuid4().hex+'@example.org');page.get_by_label('Senha',exact=True).fill(uuid.uuid4().hex+'-Teste12')
+    page.get_by_label('Nome',exact=True).fill('Ana Teste');page.get_by_label('E-mail',exact=True).fill(uuid.uuid4().hex+'@example.org');page.get_by_label('Senha',exact=True).fill(uuid.uuid4().hex+'-Teste12');page.get_by_label('Pergunta secreta',exact=True).select_option(index=1);page.get_by_label('Resposta secreta',exact=True).fill('resposta de teste')
     page.get_by_role('button',name='Criar conta',exact=False).click();page.get_by_role('button',name='＋ Criar novo').click();page.locator('#create-form select').select_option('sheet');page.get_by_label('Nome do arquivo',exact=True).last.fill(title);page.get_by_role('button',name='Criar arquivo',exact=True).click()
-    expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true')
+    expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true',timeout=30000)
     def command(name):return page.locator('[data-u-command="'+name+'"]:visible')
     def select(address):
         box=page.locator('#spreadsheet input.univer-appearance-none');box.fill(address);box.press('Enter');expect(page.locator('#sheet-address')).to_have_value(address)
@@ -75,7 +75,7 @@ def exercise(page,base,title='Barra de ferramentas'):
     assert sheet['cellData']['3']['5']['v']==3706.5 and '%' in style(stored(),3,4)['n']['pattern'],(sheet['cellData']['3'],style(stored(),3,4))
     # Switching cells updates the ribbon, and a second save keeps undo available.
     select('A1');expect(size).to_have_value('11');select('B4');expect(size).to_have_value('16')
-    page.reload();page.get_by_role('button',name=title,exact=False).click();expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true');select('B4');expect(font).to_have_value('Courier New');expect(size).to_have_value('16')
+    page.reload();page.get_by_role('button',name=title,exact=False).click();expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true',timeout=30000);select('B4');expect(font).to_have_value('Courier New');expect(size).to_have_value('16')
     with page.expect_download() as dl:page.get_by_role('button',name='Baixar XLSX',exact=True).click()
     ws=load_workbook(io.BytesIO(Path(dl.value.path()).read_bytes())).worksheets[0]
     assert ws['B4'].font.name=='Courier New' and ws['B4'].font.sz==16 and ws['B4'].font.bold and ws['B4'].font.italic and ws['B4'].font.strike

@@ -11,7 +11,7 @@ from server.store import Store
 def exercise(page,base):
     errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
     headers={'Origin':base};creds={'email':uuid.uuid4().hex+'@example.org','password':uuid.uuid4().hex+'-Test12','name':'Ana Teste'}
-    assert page.request.post(base+'/api/register',headers=headers,data=creds).ok;assert page.request.post(base+'/api/login',headers=headers,data=creds).ok
+    assert page.request.post(base+'/api/register',headers=headers,data={**creds,'question':'pet','answer':'resposta de teste'}).ok;assert page.request.post(base+'/api/login',headers=headers,data={**creds,'question':'pet','answer':'resposta de teste'}).ok
     def create(kind,title,content):
         r=page.request.post(base+'/api/items',headers=headers,data={'kind':kind,'title':title,'content':content});assert r.ok,r.text();return r.json()
     item=create('document','Inserção de arquivos',{'text':'Texto original'});source=create('document','Documento privado de origem',{'text':'# Da biblioteca\nConteúdo copiado'})
@@ -43,7 +43,7 @@ def exercise(page,base):
     exported=Document(io.BytesIO(Path(dl.value.path()).read_bytes()));assert len(exported.inline_shapes)==1;assert 'Texto original' in '\n'.join(p.text for p in exported.paragraphs)
     # Reader can download attachments but cannot insert; linking the source does not grant access.
     ctx=page.context.browser.new_context();reader=ctx.new_page();reader_creds={'name':'Leitor','email':uuid.uuid4().hex+'@example.org','password':uuid.uuid4().hex+'-Read12'}
-    assert reader.request.post(base+'/api/register',headers=headers,data=reader_creds).ok;assert reader.request.post(base+'/api/login',headers=headers,data=reader_creds).ok
+    assert reader.request.post(base+'/api/register',headers=headers,data={**reader_creds,'question':'pet','answer':'resposta de teste'}).ok;assert reader.request.post(base+'/api/login',headers=headers,data={**reader_creds,'question':'pet','answer':'resposta de teste'}).ok
     assert page.request.post(base+'/api/items/'+item['id']+'/share',headers=headers,data={'email':reader_creds['email'],'role':'read'}).ok
     reader.goto(base);reader.get_by_role('button',name='Inserção de arquivos',exact=False).click();expect(reader.locator('#aux-insert')).to_be_disabled();expect(reader.locator('[data-attachment-remove]')).to_have_count(0)
     with reader.expect_download() as dl:reader.locator('[data-attachment-open="0"]').click()

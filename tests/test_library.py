@@ -12,7 +12,7 @@ class LibraryTest(unittest.TestCase):
     request=test_api.ApiTest.request
     def account(self,email='library@example.org'):
         data={'email':email,'name':'Ana','password':'senha-longa-para-teste'}
-        self.assertEqual(self.request('POST','/api/register',data)[0],201)
+        self.assertEqual(self.request('POST','/api/register',{**data,'question':'pet','answer':'resposta de teste'})[0],201)
         status,user,cookie=self.request('POST','/api/login',data);self.assertEqual(status,200)
         return user['id'],{'Cookie':cookie.split(';')[0],'Content-Type':'application/json'}
     def test_metadata_pagination_and_bootstrap_avoid_document_contents(self):

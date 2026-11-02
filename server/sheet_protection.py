@@ -35,6 +35,14 @@ def enforce_protection(original,updated,role):
         if a is None:continue
         if b is None or any(a.get(key)!=b.get(key) for key in ('rowCount','columnCount','mergeData')):raise PermissionError('A estrutura desta aba contém células protegidas.')
         x1,y1,x2,y2=bounds(rule['range'])
+        def protected_links(content):
+            result={}
+            for link in content.get('links',[]):
+                if link['sheetId']!=rule['sheetId']:continue
+                x,y,_,_=bounds(link['cell'])
+                if x1<=x<=x2 and y1<=y<=y2:result[link['cell']]=link
+            return result
+        if protected_links(original)!=protected_links(updated):raise PermissionError('Vínculo em célula protegida.')
         for row in range(y1,y2+1):
             if a.get('rowData',{}).get(str(row))!=b.get('rowData',{}).get(str(row)):raise PermissionError('Linha protegida.')
             for col in range(x1,x2+1):

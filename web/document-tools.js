@@ -13,7 +13,7 @@ export function mountDocumentTools(root,content,{editor,changed,dialog,bind,clos
   root.querySelector('.document').before(bar);
   const panel=document.createElement('aside');panel.className='document-outline no-print';panel.hidden=true;panel.setAttribute('aria-label','Estrutura do documento');root.querySelector('.document').before(panel);
   function refresh(){
-    const preview=root.querySelector('#preview'),s={...pageDefaults,...content.page};preview.style.cssText=documentStyle(s);
+    const preview=root.querySelector('#preview'),s={...pageDefaults,...content.page};const zoom=preview.style.zoom;preview.style.cssText=documentStyle(s);preview.style.zoom=zoom;
     preview.dataset.pageMode=s.mode;preview.style.setProperty('--document-width',s.mode==='wide'?'100%':s.orientation==='landscape'?'1120px':'800px');
     if(panel.hidden)return;
     const headings=[...preview.querySelectorAll('h1,h2,h3,h4,h5,h6')];

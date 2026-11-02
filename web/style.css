@@ -960,3 +960,52 @@ a {
 .presenter-console .slide-stage{max-height:48vh}.audience-view{padding:3vw;background:#172018;min-height:100vh;display:grid;place-items:center}.audience-view .slide-stage{width:94vw}.audience-view>button{position:fixed;bottom:6px;right:10px}
 .mail-list{display:grid;gap:8px}.mail-row{display:grid;gap:6px;text-align:left;padding:16px}.mail-row small{color:#566658}.email-body{white-space:pre-wrap;overflow-wrap:anywhere;max-height:55vh;overflow:auto}.integration-setup{padding:12px;background:#fff4cf;border-radius:8px}
 .project-timeline{padding:16px;border:1px solid var(--line);border-radius:10px;margin:16px 0}.project-timeline summary{cursor:pointer;font-weight:600}.timeline-row{display:grid;grid-template-columns:minmax(100px,180px) 1fr;gap:10px;margin:16px 0}.timeline-row small{grid-column:1/-1}.timeline-track{background:#edf0e8;border-radius:4px;overflow:hidden}.timeline-track span{display:block;background:#4b5320;color:white;min-height:22px;font-size:11px;white-space:nowrap;overflow:hidden;border-radius:4px}.calendar-month{margin:20px 0}.month-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}.month-day{border:1px solid #dce4da;border-radius:6px;min-height:100px;padding:7px}.month-day time{display:block;font-size:12px}.month-day button{display:block;font-size:11px;padding:4px;margin-top:4px;max-width:100%;white-space:normal;overflow-wrap:anywhere}@media(max-width:600px){.month-day{padding:3px;min-height:70px}.month-day button{font-size:10px;padding:2px}.month-grid{gap:2px}}
+
+/* Connection status shown while the browser is offline (PWA). */
+body.offline::before {
+  content: "Sem conexão · as alterações só serão salvas quando a internet voltar";
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 1000;
+  padding: 6px 12px;
+  background: #5c4a12;
+  color: #fff;
+  font-size: 13px;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* Secret question used for account recovery. */
+.recovery-fields { border: 1px solid #c8cfbc; border-radius: 8px; padding: 12px 14px; margin: 14px 0 6px; }
+.recovery-fields legend { padding: 0 6px; font-weight: 600; color: var(--green); }
+.recovery-fields select { width: 100%; }
+
+/* Project timeline (Gantt) */
+.timeline { margin-top: 16px; }
+.gantt { display: grid; gap: 6px; }
+.gantt-row { display: grid; grid-template-columns: minmax(160px, 28%) 1fr; gap: 12px; align-items: center; }
+.gantt-label small { display: block; color: #5d6657; font-weight: normal; }
+.gantt-track { position: relative; height: 22px; background: #eef1e6; border-radius: 4px; }
+.gantt-bar { position: absolute; top: 3px; bottom: 3px; min-width: 4px; background: #8a9a5b; border-radius: 3px; }
+.gantt-row.critical .gantt-bar { background: #b3261e; }
+.gantt-milestone { position: absolute; top: 4px; width: 14px !important; height: 14px; margin-left: -7px; background: #4b5320; transform: rotate(45deg); }
+.gantt-row.critical .gantt-milestone { background: #b3261e; }
+.task-deps { border: 1px solid #c8cfbc; border-radius: 8px; padding: 8px 12px; max-height: 180px; overflow: auto; }
+@media (max-width: 700px) { .gantt-row { grid-template-columns: 1fr; gap: 4px; } }
+
+/* Account security */
+.mfa-qr { width: 200px; height: 200px; margin: 8px 0; background: #fff; }
+.mfa-qr svg { width: 100%; height: 100%; display: block; }
+.backup-codes { columns: 2; font-size: 16px; }
+.activity { max-height: 260px; overflow: auto; padding-left: 18px; }
+.activity li { margin: 4px 0; }
+.answer-group { border: 0; padding: 0; }
+.answer-group.scale { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.answer-group.scale legend { width: 100%; }
+.quiz-key { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 8px; padding: 8px; background: #f3f5ec; border-radius: 6px; }
+.quiz-key input[type="number"] { width: 70px; }
+
+/* Spreadsheet cell links */
+.sheet-link-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 8px 0; padding: 8px 12px; background: #eef1e6; border: 1px solid #c8cfbc; border-radius: 8px; }
+.sheet-link-list { list-style: none; padding: 0; display: grid; gap: 6px; }
+.sheet-link-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

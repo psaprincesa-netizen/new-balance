@@ -8,7 +8,7 @@ Manter a plataforma abrindo em https://new-balance-pi.vercel.app e preservar os 
 
 ## Próximas entregas por módulo
 
-1. Núcleo comum: auditoria administrativa, recuperação de conta e cotas. Rascunhos, comentários e acessos listáveis foram implementados.
+1. Núcleo comum: auditoria administrativa e cotas. Rascunhos, comentários e acessos listáveis foram implementados.
 2. Documentos e planilhas: ampliar fidelidade de Office, paginação, fidelidade avançada de imagens/Office, pivôs nativos XLSX e conectores. Abas, motor de fórmulas e intercâmbio Office já foram adicionados.
 3. Apresentações e diagramas: mestre, áudio/vídeo, animações e bibliotecas de diagramas. Imagens, caixas de texto, formas, camadas e PPTX visual foram adicionados aos slides; conectores e canvas aos diagramas.
 4. Projetos, agenda, formulários e tabelas: dependências, convites, quizzes, relacionamentos. Subtarefas, ocorrências repetidas, ICS, coleta pública e tipos de campos foram adicionados.
@@ -19,7 +19,7 @@ Cada entrega deve atualizar o mapa de cobertura, verificar persistência e permi
 
 ## Marca e integrações
 
-Nome confirmado: DRAP office. Cor: verde-exército #4B5320. Não aplicar a imagem gerada como logo definitiva: ela não garante a geometria exata exigida. Falta o original em arquivo para edição determinística autorizada. Foi solicitada a escolha Microsoft 365 ou Google Workspace para correio/calendário/reuniões, ainda sem resposta. Nunca pedir segredos no chat.
+Nome confirmado: DRAP office. Cor: verde-exército #4B5320. Não aplicar a imagem gerada como logo definitiva: ela não garante a geometria exata exigida. Falta o original em arquivo para edição determinística autorizada. Integrações externas foram retiradas do escopo pelo proprietário em 02/11/2026. Nunca pedir segredos no chat.
 
 ## Atualização: planilha Univer
 
@@ -53,4 +53,4 @@ A navegação agora mostra a biblioteca conhecida imediatamente e revalida os me
 
 ## Publicação dos recursos avançados
 
-Deploy `dpl_Ez7TmXRfngLgZSC2PSM8EDwYcXCK` em https://new-balance-pi.vercel.app: documentos ricos/abas/rodapés/notas, gráficos e proteção de intervalos, agrupamento/rotação/apresentador separado, dependências/cronograma, agenda mensal, quizzes e integração Google. Consulte `docs/revisao-funcional.md` e `docs/configurar-google.md`. A chave Google de criptografia já foi configurada como segredo Production; faltam GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET, que o proprietário cadastra diretamente na Vercel. Não gerar outra chave nem sobrescrever a existente. Após a configuração, novo deploy e consentimento individual são necessários. Nenhuma conta Google real foi conectada nesta etapa.
+O deploy anterior `dpl_Ez7TmXRfngLgZSC2PSM8EDwYcXCK` continha recursos ainda não integrados à branch principal. A revisão de 02/11/2026 reconcilia essa implementação com `origin/main` (43f75c3), preservando recuperação/MFA, Gantt/caminho crítico, quizzes e links de células. A integração Google foi cancelada pelo proprietário; não solicitar configuração OAuth. Consulte a revisão atual em `docs/revisao-2026-11-02.md`. Publicações futuras devem partir do código versionado e passar pelo workflow de verificação.

@@ -8,9 +8,10 @@ export function responseTable(content,formatDate=String){
       if(!names.has(key)){let name=q||'Pergunta',n=2;while(used.has(name))name=(q||'Pergunta')+' ('+(n++)+')';used.add(name);names.set(key,name);keys.push(key);}
       values.set(key,response.answers[i]??'');
     });
-    return {at:response.at,values,score:response.score,maxScore:response.maxScore};
+    return {at:response.at,values,grade:typeof (response.total??response.maxScore)==='number'&&(response.total??response.maxScore)>0?response.score+' / '+(response.total??response.maxScore):''};
   });
-  const graded=records.some(r=>r.score!==undefined);return {columns:['Data',...keys.map(k=>names.get(k)),...(graded?['Nota obtida','Nota máxima']:[])],rows:records.map(r=>[formatDate(r.at),...keys.map(k=>r.values.get(k)??''),...(graded?[String(r.score??''),String(r.maxScore??'')]:[])])};
+  const graded=records.some(r=>r.grade);
+  return {columns:['Data',...(graded?['Nota']:[]),...keys.map(k=>names.get(k))],rows:records.map(r=>[formatDate(r.at),...(graded?[r.grade]:[]),...keys.map(k=>r.values.get(k)??'')])};
 }
 export function recordsWorkbook(columns,rows,types=[]){
   if(!columns.length||columns.length>1024||(rows.length+1)*columns.length>50000)throw Error('A conversão aceita até 50 mil células. Exporte CSV para levar todos os registros.');
@@ -22,12 +23,30 @@ export function recordsWorkbook(columns,rows,types=[]){
   }));
   return {id:'records',name:'Registros',appVersion:'1.2.0',locale:'ptBR',styles:{},sheetOrder:['records'],sheets:{records:{id:'records',name:'Registros',rowCount:Math.max(1000,rows.length+1),columnCount:Math.max(26,columns.length),cellData,defaultColumnWidth:120,defaultRowHeight:25,mergeData:[]}}};
 }
+// Multiple-selection answers are stored as one string joined by "; ".
+export const MULTI_SEPARATOR='; ';
+export const splitMultiple=value=>value?value.split(MULTI_SEPARATOR):[];
+const normalizeAnswer=v=>String(v).normalize('NFKD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase().replace(/\s+/g,' ');
+export function answerIsCorrect(value,field){
+  if(field.type==='multiple'){const a=new Set(splitMultiple(value)),b=new Set(field.correct||[]);return a.size===b.size&&[...a].every(x=>b.has(x));}
+  if(field.type==='number')return value!==''&&Number(value)===Number(field.correct);
+  if(field.type==='choice'||field.type==='scale')return value===field.correct;
+  return value!==''&&normalizeAnswer(value)===normalizeAnswer(field.correct);
+}
+export const isGraded=field=>Array.isArray(field.correct)?field.correct.length>0:typeof field.correct==='string'&&field.correct!=='';
+export function scoreResponse(fields,answers){
+  let score=0,total=0;
+  fields.forEach((field,i)=>{if(!isGraded(field))return;const points=field.points??1;total+=points;if(answerIsCorrect(answers[i]??'',field))score+=points;});
+  return {score,total};
+}
 export function answerError(value,field){
   if(value.length>4000)return 'Use até 4000 caracteres.';
   if(field.required&&!value.trim())return 'Preencha este campo obrigatório.';
   if(!value)return '';
   if(field.type==='rating'&&!['1','2','3','4','5'].includes(value))return 'Escolha uma avaliação de 1 a 5.';
   if(field.type==='choice'&&!field.options.includes(value))return 'Selecione uma opção válida.';
+  if(field.type==='multiple'){const picked=splitMultiple(value);if(new Set(picked).size!==picked.length||picked.some(v=>!field.options.includes(v)))return 'Selecione opções válidas.';}
+  if(field.type==='scale'&&!(Number.isInteger(Number(value))&&Number(value)>=1&&Number(value)<=(field.max||5)))return 'Escolha um valor da escala.';
   if(field.type==='number'&&!Number.isFinite(Number(value)))return 'Informe um número válido.';
   if(field.type==='email'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))return 'Informe um e-mail válido.';
   if(field.type==='date'&&(!/^\d{4}-\d{2}-\d{2}$/.test(value)||!Number.isFinite(Date.parse(value+'T00:00:00Z'))||new Date(value+'T00:00:00Z').toISOString().slice(0,10)!==value))return 'Informe uma data válida.';

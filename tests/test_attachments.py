@@ -44,7 +44,7 @@ class InsertionApiTest(unittest.TestCase):
         document=Document();document.add_paragraph('Conteúdo inserido');output=io.BytesIO();document.save(output)
         payload={'name':'Conteúdo.docx','data':base64.b64encode(output.getvalue()).decode()}
         self.assertEqual(self.request('POST','/api/import/preview',payload)[0],401)
-        account={'name':'Editor','email':'editor@example.org','password':'long-test-password-123'};self.request('POST','/api/register',account)
+        account={'name':'Editor','email':'editor@example.org','password':'long-test-password-123'};self.request('POST','/api/register',{**account,'question':'pet','answer':'resposta de teste'})
         headers={'Content-Type':'application/json','Cookie':self.request('POST','/api/login',account)[2].split(';')[0]}
         status,result,_=self.request('POST','/api/import/preview',payload,headers)
         self.assertEqual(status,200);self.assertIn('Conteúdo inserido',result['content']['text']);self.assertTrue(result['warnings'])

@@ -10,7 +10,7 @@ from server.workspace import Workspace
 def main():
     expect.set_options(timeout=30000)
     with tempfile.TemporaryDirectory() as tmp:
-        store=Store(Path(tmp)/'db.sqlite');ws=Workspace(store);account={'email':'library@example.org','name':'Ana','password':'senha-longa-para-teste'};user=store.register(**account)['id']
+        store=Store(Path(tmp)/'db.sqlite');ws=Workspace(store);account={'email':'library@example.org','name':'Ana','password':'senha-longa-para-teste'};user=store.register(**account,question='pet',answer='resposta de teste')['id']
         board=ws.create(user,{'kind':'board','title':'Projeto rápido','content':{'tasks':[]}})
         for i in range(25):ws.create(user,{'kind':'document','title':f'Arquivo {i:02}','content':{'text':('palavraexclusiva' if i==0 else 'conteúdo')+' x'*50000}})
         server=ThreadingHTTPServer(('127.0.0.1',0),handler_for(store));threading.Thread(target=server.serve_forever,daemon=True).start();base=f'http://127.0.0.1:{server.server_port}'

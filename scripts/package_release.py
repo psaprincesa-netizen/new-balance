@@ -20,7 +20,8 @@ def package(output):
         for path in sorted((ROOT / directory).rglob('*')):
             blocked = {'.git', '.data', '.venv', 'node_modules', '__pycache__', 'public', 'dist'}
             if (path.is_file() and not path.is_symlink() and not blocked.intersection(path.relative_to(ROOT).parts)
-                    and (path.suffix in {'.py', '.js', '.mjs', '.css', '.html', '.json', '.md', '.txt', '.yml', '.webmanifest'} or (path.suffix == '.png' and path.parent == ROOT / 'web' / 'icons'))
+                    and (path.suffix in {'.py', '.js', '.mjs', '.css', '.html', '.json', '.md', '.txt', '.yml', '.webmanifest'}
+                         or path.parent == ROOT / 'web' / 'icons' and path.suffix in {'.png', '.svg'})
                     and not path.name.startswith('.env')):
                 selected.append(path)
     with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:

@@ -18,14 +18,14 @@ A lista recebida inclui centenas de funções de produtos maduros. Esta entrega 
 | Dados / Access | Tabelas, campos textuais, registros, filtro, CSV e conversão para planilha | Tipagem, índices configuráveis, relacionamentos, consultas, formulários específicos e relatórios |
 | Design editorial / Publisher | Impressão dos documentos pelo navegador | Layout editorial, guias, páginas-mestre e exportação gráfica profissional |
 | Diagramas / Visio | Fluxo sequencial editável | Canvas, conectores livres, BPMN, organogramas, rede, engenharia e plantas |
-| Projetos / Project | Kanban com prazos e indicadores | Cronogramas, marcos, dependências, recursos, custos, caminho crítico e linhas de base |
+| Projetos / Project | Kanban, cronograma (Gantt), marcos, dependências, caminho crítico e folga | Recursos, custos e linhas de base |
 | Planner / To Do | Tarefas em três estados, prazos e contagem de conclusão | Subtarefas, etiquetas, prioridades, lembretes, listas pessoais e recorrência |
 | Power Automate | Conversões manuais documento → slides, planilha → relatório, respostas → tabela, tabela → planilha | Gatilhos, agendas, conectores, condições, loops, aprovações e designer de fluxos |
 | BI / Power BI | Indicadores reais de arquivos, tarefas e respostas do espaço | Modelagem, medidas, fontes externas, painéis configuráveis, mapas e publicação analítica |
 | Portais / SharePoint | Página com texto e links para arquivos respeitando permissões | Sites públicos/intranet, listas avançadas, aprovações, biblioteca corporativa e políticas |
 | IA / Copilot | Não conectado | Seleção de provedor, chaves seguras, políticas de dados, geração/resumo/análise e avaliações |
 | Colaboração | Permissões de leitura/edição, revogação, versões e detecção de conflitos | Comentários, menções, alterações rastreadas e coautoria em tempo real |
-| Segurança | scrypt, cookies HttpOnly/SameSite, origem, rate limit persistido no banco, autorização no servidor | Recuperação, MFA, SSO/OAuth, assinaturas, criptografia gerenciada e auditoria |
+| Segurança | scrypt, cookies HttpOnly/SameSite, origem, rate limit persistido no banco, autorização no servidor, recuperação de senha por pergunta secreta, verificação em duas etapas (TOTP) e registro de atividade da conta | SSO/OAuth, assinaturas, criptografia gerenciada e auditoria administrativa da organização |
 | Automação de código | Fórmulas analisadas por parser limitado, sem executar código do usuário | VBA, Office Scripts e ambientes de execução isolados |
 | Acessibilidade | Labels, controles nativos, foco visível, status anunciados e teclado no apresentador | Auditoria WCAG, testes com leitores de tela, textos alternativos e legendas |
 | Publicação | Aplicação executável em desenvolvimento; backup e restauração locais testados | Hospedagem HTTPS, observabilidade, operação, recuperação e teste no ambiente publicado |
@@ -42,13 +42,14 @@ A lista recebida inclui centenas de funções de produtos maduros. Esta entrega 
 | Formulários | Tipos de campo, validação e links públicos revogáveis | Sem quizzes/ramificação; até 1000 respostas e limite de conteúdo |
 | Tabelas | Tipos, validação, ordenação e remoção de duplicatas | Sem banco relacional configurável |
 | Diagramas | Canvas, arraste, teclado, conectores e SVG | Sem bibliotecas BPMN/engenharia |
-| Colaboração | Comentários, listagem de acessos e rascunhos locais recuperáveis | Sem coautoria em tempo real ou recuperação de senha |
+| Colaboração | Comentários, listagem de acessos e rascunhos locais recuperáveis | Sem coautoria em tempo real |
+| Contas | Recuperação de senha por pergunta e resposta secreta escolhidas no cadastro; troca da pergunta com a senha atual | Sem MFA nem recuperação por e-mail |
 
 Esta tabela atualiza os itens básicos da matriz acima. Correio, reuniões, IA e integrações de provedor continuam pendentes; a existência de um plano não os torna implementados.
 
 ## Sequência de evolução
 
-1. Estabilizar o núcleo: recuperação de conta, rascunhos recuperáveis, auditoria, compartilhamentos listáveis e testes ampliados de acesso.
+1. Estabilizar o núcleo: rascunhos recuperáveis, auditoria, compartilhamentos listáveis e testes ampliados de acesso.
 2. Profundidade dos editores: arquivos Office com bibliotecas especializadas, texto estruturado e paginação, planilhas com múltiplas abas e fórmulas adicionais, canvas de slides e diagramas.
 3. Colaboração e arquivos: armazenamento de binários, comentários, equipes, permissões organizacionais e coautoria.
 4. Serviços: correio e calendário via OAuth, chamadas via serviço de mídia, conectores de dados e automações com execução em filas.
@@ -107,7 +108,7 @@ O menu Colar e as variantes de colagem usam os comandos nativos registrados, man
 
 ## Comparação com Google Workspace — 26/10/2026
 
-Veja o [inventário Google](google-workspace.md), com recursos existentes, adicionados e pendentes e links às fontes oficiais. Esta seção atualiza a matriz inicial: documentos agora têm estrutura navegável, estatísticas, listas numeradas, citação/código/linha horizontal e configuração global de página/fonte/espaçamento; planilhas têm seis transformações para um destino vazio e estatísticas; apresentações têm alinhamento/distribuição, fundos, ocultação, transições simples e controles do apresentador. As opções suportadas de página chegam ao DOCX; fundo, cor, ocultação e transições chegam ao PPTX. A edição de texto permanece contínua; coautoria, abas de documentos, paginação profissional, animação de objetos, serviços Google e IA continuam pendentes.
+Veja o [inventário Google](google-workspace.md), com recursos existentes, adicionados e pendentes e links às fontes oficiais. Esta seção atualiza a matriz inicial: documentos agora têm estrutura navegável, estatísticas, listas numeradas, citação/código/linha horizontal e configuração global de página/fonte/espaçamento; planilhas têm seis transformações para um destino vazio e estatísticas; apresentações têm alinhamento/distribuição, fundos, ocultação, transições simples e controles do apresentador. As opções suportadas de página chegam ao DOCX; fundo, cor, ocultação e transições chegam ao PPTX. A edição de texto permanece contínua; coautoria e paginação profissional, animação de objetos, serviços Google e IA continuam pendentes.
 
 ## Botão auxiliar ＋ Inserir
 
@@ -133,4 +134,33 @@ Documentos armazenam uma árvore de texto rico junto ao Markdown de compatibilid
 
 Planilhas têm cinco tipos adicionais de gráficos e proteção de intervalos aplicada pelo servidor. A proteção controla gravações compartilhadas no DRAP, não é senha de XLSX. Slides têm grupos, rotação, estilo para novos slides, layout de duas colunas e janela separada do apresentador.
 
-Projetos têm dependências e cronograma; agenda tem visão mensal; formulários têm quizzes, texto longo e avaliação. Gmail/Agenda/Meet usam OAuth individual, com tokens criptografados e renovação. Configuração e limites em [configurar-google.md](configurar-google.md).
+Projetos têm dependências e cronograma; agenda tem visão mensal; formulários têm quizzes, texto longo e avaliação. A integração externa Google foi retirada em 02/11/2026 por solicitação do proprietário; a agenda interna continua disponível.
+## App instalável e modo offline (PWA)
+
+O DRAP office pode ser instalado pelo navegador (Chrome/Edge: ícone de instalar na barra de endereço; Android: "Adicionar à tela inicial"; iPhone: Compartilhar → "Adicionar à Tela de Início"). `web/manifest.webmanifest` define nome, cor #4B5320 e ícones; `web/sw.js` guarda a interface do aplicativo (HTML, CSS e scripts) para abrir sem internet.
+
+Política de cache: rede primeiro, com o cache usado apenas como reserva, porque os nomes dos arquivos não têm hash de versão. Nada de `/api/` nem de `/downloads/` é guardado: arquivos, contas e respostas de formulários nunca ficam no Cache Storage, e sair da conta não deixa dados legíveis no aparelho. Links com parâmetros (como `?form=`) também não são guardados.
+
+Sem conexão: aparece um aviso no topo; ao salvar, a alteração fica como rascunho local (o mesmo mecanismo de rascunhos já existente) e o usuário salva novamente quando a internet voltar. Se o aplicativo for aberto sem internet, a interface carrega, explica a falta de conexão e reabre sozinha quando a rede volta.
+
+Limites: não há leitura de arquivos sem internet nem sincronização automática em segundo plano; o editor de planilhas e o editor visual de documentos só ficam disponíveis offline depois de terem sido abertos uma vez com internet. O ícone atual usa apenas o nome DRAP office e deve ser substituído quando houver o arquivo original da logo. `tests/browser_pwa.py` verifica manifesto, ícones, cache sem dados da API, aviso offline, rascunho e reabertura.
+
+## Recuperação de senha por pergunta secreta
+
+No cadastro, o usuário escolhe uma pergunta de uma lista fixa (`SECURITY_QUESTIONS` em `server/store.py`) e digita a resposta. A resposta é normalizada (sem diferença de maiúsculas, acentos ou espaços repetidos) e guardada apenas como hash scrypt com sal próprio, na tabela `account_recovery`.
+
+Em **Esqueci minha senha**, o usuário informa o e-mail, vê a pergunta, responde e escolhe a nova senha. A troca encerra todas as sessões abertas. Proteções: limite de tentativas por IP e por e-mail, bloqueio de 15 minutos após 5 respostas erradas e mensagem genérica para resposta errada ou conta sem pergunta. Logado, o botão **Pergunta secreta** do menu lateral troca a pergunta mediante a senha atual; contas criadas antes desse recurso recebem um convite para cadastrar a pergunta uma vez por sessão.
+
+Limites: perguntas secretas são mais fracas que confirmação por e-mail ou MFA, porque respostas podem ser adivinhadas por pessoas próximas. Informar um e-mail mostra se ele tem pergunta cadastrada (o cadastro já revelava contas existentes). `tests/test_recovery.py` e `tests/browser_recovery.py` cobrem o fluxo.
+
+## Etapa 1 da revisão de módulos — novembro de 2026
+
+**Projetos.** Tarefas ganharam identificador estável, data de início, marcos e dependências. A visão **Cronograma** mostra um Gantt calculado pelo método do caminho crítico (`web/project.js`): período do projeto, caminho crítico, folga de cada tarefa e aviso quando uma tarefa começa antes de as dependências terminarem (o cronograma mostra a data mais cedo possível). Ciclos são recusados no editor e no servidor (`valid_task_graph`). Prazos antigos em formato livre continuam aceitos e ficam fora do cronograma. Testes: `tests/project.test.js`, `tests/browser_projects.py`.
+
+**Formulários.** Novos tipos: múltipla seleção (respostas unidas por `; `; opções não podem conter ponto e vírgula) e escala de 1 até 2–10. **Modo quiz**: resposta correta e pontos (0–100) por pergunta; a nota é calculada no editor e, nas respostas públicas, no servidor. O formulário público nunca recebe o gabarito. Respostas e exportações ganham a coluna **Nota**. Texto é comparado sem diferenciar maiúsculas, acentos ou espaços. Testes: `tests/test_forms.py`, `tests/workflows.test.js`, `tests/browser_quiz.py`.
+
+**Segurança.** Verificação em duas etapas com app autenticador (TOTP, RFC 6238, 6 dígitos a cada 30 s, tolerância de ±30 s), QR code gerado no navegador (`qrcode-generator`, MIT) e chave para digitação manual; 8 códigos de backup de uso único (guardados como hash); o mesmo código não pode ser reutilizado; limite de 5 códigos por minuto por e-mail. Ativar e desativar exigem a senha atual (e um código, para desativar). A recuperação de senha por pergunta secreta não dispensa o código. A tela **Segurança da conta** mostra a atividade recente (cadastro, entradas, falhas de senha e de código, uso de código de backup, mudanças de MFA e pergunta secreta, compartilhamentos e saídas; últimos 200 eventos com IP). Limite: a chave TOTP fica no banco sem criptografia adicional; quem perder o celular e os códigos de backup perde o acesso. Testes: `tests/test_mfa.py`, `tests/browser_security.py`.
+
+## Planilha: botão ＋ Inserir (vínculos de células)
+
+O botão **＋ Inserir** da planilha coloca numa célula um vínculo para outro arquivo do DRAP office (documento, apresentação, formulário, tabela etc.) ou para um site `https://`. A célula recebe o texto escolhido (ou o nome do arquivo); ao selecionar a célula, uma barra acima da grade mostra o vínculo com **Abrir** e **Remover vínculo**. A lista **Arquivos e links vinculados**, abaixo da grade, reúne todos os vínculos da pasta com atalhos para abrir e ir até a célula. Os vínculos ficam em `content.links` (até 200), são validados no servidor (somente `https://`) e respeitam as permissões: abrir um arquivo vinculado exige acesso a ele. Limites: o vínculo usa o endereço fixo da célula (inserir/excluir linhas não o move, como nos gráficos) e o XLSX leva apenas o texto da célula. Teste: `tests/browser_sheet_links.py`.

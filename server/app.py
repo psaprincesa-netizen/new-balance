@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from functools import cache
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
-from server.store import Store, InvalidInput
+from server.store import Store, InvalidInput, MfaRequired
 from server.workspace import Workspace, Conflict
 from server.database import ConfigurationError, store_from_environment
 
@@ -72,9 +72,6 @@ def handler_for(store):
                     '/sheet-protection.js': ('sheet-protection.js', 'text/javascript; charset=utf-8'),
                     '/document-tabs.js': ('document-tabs.js', 'text/javascript; charset=utf-8'),
                     '/project-tools.js': ('project-tools.js', 'text/javascript; charset=utf-8'),
-                    '/google.js': ('google.js', 'text/javascript; charset=utf-8'),
-                    '/google-callback.js': ('google-callback.js', 'text/javascript; charset=utf-8'),
-                    '/google-callback.html': ('google-callback.html', 'text/html; charset=utf-8'),
                     '/csv.js': ('csv.js', 'text/javascript; charset=utf-8'),
                     '/install': ('install.html', 'text/html; charset=utf-8'),
                     '/install/': ('install.html', 'text/html; charset=utf-8'),
@@ -91,11 +88,19 @@ def handler_for(store):
                           '/pivot.js': ('pivot.js', 'text/javascript; charset=utf-8'),
                           '/pivot-ui.js': ('pivot-ui.js', 'text/javascript; charset=utf-8'),
                           '/chart.js': ('chart.js', 'text/javascript; charset=utf-8'),
+                          '/project.js': ('project.js', 'text/javascript; charset=utf-8'),
+                          '/qr.js': ('qr.js', 'text/javascript; charset=utf-8'),
                           '/spreadsheet.js': ('spreadsheet.js', 'text/javascript; charset=utf-8'),
                           '/spreadsheet.css': ('spreadsheet.css', 'text/css; charset=utf-8'),
                           '/formula.js': ('formula.js', 'text/javascript; charset=utf-8'),
                           '/formula-engine.js': ('formula-engine.js', 'text/javascript; charset=utf-8'),
-                          '/style.css': ('style.css', 'text/css; charset=utf-8')}
+                          '/style.css': ('style.css', 'text/css; charset=utf-8'),
+                          '/sw.js': ('sw.js', 'text/javascript; charset=utf-8'),
+                          '/manifest.webmanifest': ('manifest.webmanifest', 'application/manifest+json'),
+                          '/icons/icon.svg': ('icons/icon.svg', 'image/svg+xml'),
+                          '/icons/icon-192.png': ('icons/icon-192.png', 'image/png'),
+                          '/icons/icon-512.png': ('icons/icon-512.png', 'image/png'),
+                          '/icons/apple-touch-icon.png': ('icons/apple-touch-icon.png', 'image/png')}
                 if path in ('/downloads/nexo.zip', '/downloads/drap-office.zip'):
                     package = WEB.parent / 'public' / 'downloads' / path.rsplit('/', 1)[1]
                     if package.is_file():
@@ -110,14 +115,16 @@ def handler_for(store):
                         db.execute('SELECT id FROM users LIMIT 1').fetchone()
                         db.execute('SELECT id FROM items LIMIT 1').fetchone()
                     return self.respond(200, {'status': 'ok'})
+                if path == '/api/recovery/questions':
+                    from server.store import SECURITY_QUESTIONS
+                    return self.respond(200, {'items': [{'id': key, 'text': text} for key, text in SECURITY_QUESTIONS.items()]})
                 if path.startswith('/api/forms/'):
                     return self.respond(200, workspace().public_form(path.removeprefix('/api/forms/')))
                 user = store.session_user(self.token())
-                if path.startswith('/api/google/'):
-                    if not user:return self.respond(401, {'error':'Entre na sua conta.'})
-                    workspace()
-                    from server.google_workspace import GoogleWorkspace
-                    return self.respond(200,GoogleWorkspace(store).get(user['id'],path.removeprefix('/api/google/'),query))
+                if path == '/api/account/events':
+                    if not user:
+                        return self.respond(401, {'error': 'Entre na sua conta.'})
+                    return self.respond(200, {'items': store.events(user['id'])})
                 if path == '/api/me':
                     return self.respond(200 if user else 401, user or {'error': 'Entre na sua conta.'})
                 if path in ('/api/bootstrap', '/api/library', '/api/analytics'):
@@ -175,6 +182,20 @@ def handler_for(store):
                 if not store.auth_allowed('public-form:' + ip, limit=20):
                     return self.respond(429, {'error': 'Muitas respostas. Aguarde um minuto.'})
                 return self.respond(201, workspace().submit_form(path.removeprefix('/api/forms/'), data.get('answers'), data.get('schema_id')))
+            if path in ('/api/recovery/question', '/api/recovery/reset'):
+                if any(not isinstance(v, str) for v in data.values()):
+                    raise InvalidInput('Campos devem ser textos.')
+                if len(data.get('password', '')) > 128 or len(data.get('answer', '')) > 100:
+                    raise InvalidInput('Dados muito longos.')
+                ip = self.client_address[0]
+                if os.environ.get('VERCEL'):
+                    ip = self.headers.get('x-forwarded-for', ip).split(',')[0].strip()
+                email_key = 'recovery:' + data.get('email', '')
+                if not store.auth_allowed('recovery-ip:' + ip, limit=20) or not store.auth_allowed(email_key, limit=10):
+                    return self.respond(429, {'error': 'Muitas tentativas. Aguarde um minuto.'})
+                if path == '/api/recovery/question':
+                    return self.respond(200, store.recovery_question(data.get('email', '')))
+                return self.respond(200, store.recover(data.get('email', ''), data.get('answer', ''), data.get('password', '')))
             if path in ('/api/register', '/api/login'):
                 if any(not isinstance(v, str) for v in data.values()):
                     raise InvalidInput('Campos devem ser textos.')
@@ -187,23 +208,35 @@ def handler_for(store):
                 if not store.auth_allowed('ip:' + ip, limit=60) or not store.auth_allowed(email_key):
                     return self.respond(429, {'error': 'Muitas tentativas. Aguarde um minuto.'})
                 if path == '/api/register':
-                    return self.respond(201, store.register(data.get('email', ''), data.get('name', ''), data.get('password', '')))
-                token = store.login(data.get('email', ''), data.get('password', ''))
+                    created = store.register(data.get('email', ''), data.get('name', ''), data.get('password', ''),
+                                             data.get('question'), data.get('answer'), require_recovery=True)
+                    store.log_event('register', user_id=created['id'], ip=ip)
+                    return self.respond(201, created)
+                if data.get('code') and not store.auth_allowed('mfa:' + data.get('email', ''), limit=5):
+                    return self.respond(429, {'error': 'Muitas tentativas de código. Aguarde um minuto.'})
+                try:
+                    token = store.login(data.get('email', ''), data.get('password', ''), data.get('code'))
+                except MfaRequired as exc:
+                    if exc.user_id:
+                        store.log_event('mfa_failed', user_id=exc.user_id, ip=ip)
+                    return self.respond(401, {'error': str(exc), 'mfa_required': True})
                 if not token:
+                    store.log_event('login_failed', email=data.get('email', ''), ip=ip)
                     return self.respond(401, {'error': 'E-mail ou senha incorretos.'})
+                session = store.session_user(token)
+                store.log_event('login', user_id=session['id'], ip=ip)
                 secure = '; Secure' if (os.environ.get('COOKIE_SECURE') == '1' or bool(os.environ.get('VERCEL'))) else ''
-                return self.respond(200, store.session_user(token),
+                return self.respond(200, session,
                                     'session=' + token + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400' + secure)
             if path == '/api/logout':
+                leaving = store.session_user(self.token())
+                if leaving:
+                    store.log_event('logout', user_id=leaving['id'])
                 store.logout(self.token())
                 return self.respond(200, {'ok': True}, 'session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')
             user = store.session_user(self.token())
             if not user:
                 return self.respond(401, {'error': 'Entre na sua conta.'})
-            if path.startswith('/api/google/'):
-                workspace()
-                from server.google_workspace import GoogleWorkspace
-                return self.respond(200,GoogleWorkspace(store).post(user['id'],path.removeprefix('/api/google/'),data))
             if path == '/api/import/preview':
                 from server.office import import_file
                 from server.schema import validate_content
@@ -213,6 +246,19 @@ def handler_for(store):
                 Workspace.validate(item)
                 validate_content(item['kind'], item['content'])
                 return self.respond(200, {'content': item['content'], 'warnings': warnings})
+            if path in ('/api/account/mfa/setup', '/api/account/mfa/enable', '/api/account/mfa/disable'):
+                if not store.auth_allowed('mfa-settings:' + user['id'], limit=10):
+                    return self.respond(429, {'error': 'Muitas tentativas. Aguarde um minuto.'})
+                if path.endswith('/setup'):
+                    return self.respond(200, store.mfa_setup(user['id'], data.get('password'), user['email']))
+                if path.endswith('/enable'):
+                    return self.respond(200, store.mfa_enable(user['id'], data.get('code', '')))
+                return self.respond(200, store.mfa_disable(user['id'], data.get('password'), data.get('code', '')))
+            if path == '/api/account/recovery':
+                if not store.auth_allowed('recovery-set:' + user['id'], limit=10):
+                    return self.respond(429, {'error': 'Muitas tentativas. Aguarde um minuto.'})
+                store.set_recovery(user['id'], data.get('password'), data.get('question'), data.get('answer'))
+                return self.respond(200, store.session_user(self.token()))
             if path == '/api/import':
                 from server.office import import_file
                 item, warnings = import_file(data.get('name'), data.get('data'))
@@ -229,7 +275,9 @@ def handler_for(store):
                     return self.respond(429, {'error': 'Aguarde um minuto antes de comentar novamente.'})
                 return self.respond(201, workspace().comment(user['id'], parts[2], data.get('body')))
             if len(parts) == 4 and parts[:2] == ['api', 'items'] and parts[3] == 'share':
-                return self.respond(200, workspace().share(user['id'], parts[2], data.get('email'), data.get('role')))
+                shared = workspace().share(user['id'], parts[2], data.get('email'), data.get('role'))
+                store.log_event('share', user_id=user['id'], detail=f"{data.get('email', '')} ({data.get('role', '')})")
+                return self.respond(200, shared)
             if len(parts) == 3 and parts[:2] == ['api', 'items']:
                 return self.respond(200, workspace().update(user['id'], parts[2], data))
             self.respond(404, {'error': 'Rota não encontrada.'})

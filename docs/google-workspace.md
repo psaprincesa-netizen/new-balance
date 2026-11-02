@@ -55,7 +55,7 @@ As transformações criam uma **cópia de valores calculados**, sem fórmulas/es
 
 ## Capacidades compartilhadas
 
-Compartilhamento entre contas DRAP, permissões por arquivo, comentários, histórico de versões e recuperação de rascunhos já existem. Coautoria em tempo real, menções/notificações, modo offline completo, sincronização Drive, publicação incorporável, complementos Google e Gemini continuam pendentes. Gmail, Agenda e criação de links Meet têm integração implementada, dependente de configuração OAuth e consentimento da conta; veja configurar-google.md. A implementação dessas capacidades exige arquitetura e, em alguns casos, conexão a provedores; não foram simuladas com botões sem funcionamento.
+Compartilhamento entre contas DRAP, permissões por arquivo, comentários, histórico de versões e recuperação de rascunhos já existem. Coautoria em tempo real, menções/notificações, modo offline completo, sincronização Drive, publicação incorporável, complementos Google e Gemini continuam pendentes. A integração externa com Gmail, Agenda e Meet foi retirada do escopo e da interface em 02/11/2026 por solicitação do proprietário. A agenda interna e a importação/exportação ICS continuam disponíveis. A implementação dessas capacidades exige arquitetura e, em alguns casos, conexão a provedores; não foram simuladas com botões sem funcionamento.
 
 ## Fontes oficiais
 

@@ -11,8 +11,8 @@ from server.store import Store
 def exercise(page,base):
     errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
     headers={'Origin':base};creds={'email':uuid.uuid4().hex+'@example.org','password':uuid.uuid4().hex+'-Test12','name':'Ana Teste'}
-    assert page.request.post(base+'/api/register',headers=headers,data=creds).ok
-    assert page.request.post(base+'/api/login',headers=headers,data=creds).ok
+    assert page.request.post(base+'/api/register',headers=headers,data={**creds,'question':'pet','answer':'resposta de teste'}).ok
+    assert page.request.post(base+'/api/login',headers=headers,data={**creds,'question':'pet','answer':'resposta de teste'}).ok
     def create(kind,title,content):
         response=page.request.post(base+'/api/items',headers=headers,data={'kind':kind,'title':title,'content':content});assert response.ok,response.text();return response.json()
     doc=create('document','Google Documento',{'text':'# Relatório\n\nTexto de exemplo\n\n## Metas\n\nMais conteúdo'})

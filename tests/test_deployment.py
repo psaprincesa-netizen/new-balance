@@ -95,7 +95,7 @@ class DeploymentTest(unittest.TestCase):
                         result = response.status, json.loads(response.read()), response.getheader('Set-Cookie')
                         connection.close()
                         return result
-                    data = {'name':'Ana','email':'ana@example.org','password':'senha-de-teste-longa'}
+                    data = {'name':'Ana','email':'ana@example.org','password':'senha-de-teste-longa','question':'pet','answer':'Rex'}
                     self.assertEqual(post('register',data)[0],201)
                     status, body, cookie = post('login',data)
                     self.assertEqual(status,200)
