@@ -12,7 +12,7 @@ from server.store import Store
 from server.database import PostgresStore
 
 
-def exercise(context, base):
+def exercise(context, base, disconnect=lambda value: None):
     page = context.new_page()
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
@@ -36,9 +36,17 @@ def exercise(context, base):
 
     # Wait until the worker controls the page and the shell is cached.
     page.evaluate("navigator.serviceWorker.ready")
-    page.wait_for_function("navigator.serviceWorker.controller !== null", timeout=15000)
-    cached = page.evaluate("caches.open('drap-shell-v2').then(c => c.keys()).then(k => k.map(r => new URL(r.url).pathname))")
-    assert '/' in cached and '/app.js' in cached, cached
+    page.wait_for_function("() => navigator.serviceWorker.controller !== null", timeout=15000)
+    page.evaluate("caches.open('drap-shell-v2').then(c => c.put('/app.js', new Response('stale editor')))")
+    page.evaluate("""async () => {
+        const registration = await navigator.serviceWorker.register('/sw.js', {updateViaCache:'none'});
+        const worker = registration.installing || registration.waiting;
+        if (worker && worker.state !== 'activated') await new Promise(resolve => worker.addEventListener('statechange', () => {if (worker.state === 'activated') resolve();}));
+    }""")
+    page.wait_for_function("() => navigator.serviceWorker.controller?.scriptURL.endsWith('/sw.js')")
+    assert page.evaluate("async () => !(await caches.keys()).includes('drap-shell-v2')")
+    cached = page.evaluate("caches.keys().then(async keys => (await Promise.all(keys.map(async key => (await (await caches.open(key)).keys()).map(r => new URL(r.url).pathname)))).flat())")
+    assert cached == ['/offline.html'], cached
     assert not any(path.startswith('/api/') for path in cached), cached
 
     # Offline: the banner appears and a save keeps the edit as a local draft.
@@ -55,14 +63,17 @@ def exercise(context, base):
     drafts = page.evaluate("Object.keys(localStorage).filter(k => k.startsWith('drap:draft:')).map(k => JSON.parse(localStorage.getItem(k)).title)")
     assert 'Rascunho sem rede' in drafts, drafts
 
-    # Offline reload: the cached shell loads and explains the missing connection.
+    # Offline reload: the public cached notice explains the missing connection.
+    disconnect(True)
     page.reload()
     expect(page.get_by_text('Você está sem conexão.', exact=False)).to_be_visible()
-    cached_api = page.evaluate("caches.open('drap-shell-v2').then(c => c.keys()).then(k => k.filter(r => new URL(r.url).pathname.startsWith('/api/')).length)")
+    cached_api = page.evaluate("caches.keys().then(keys => keys.filter(key => key.startsWith('drap-shell')).length)")
     assert cached_api == 0
 
-    # Back online: the page reopens on its own.
+    # Back online: reopen using the offline page link.
+    disconnect(False)
     context.set_offline(False)
+    page.get_by_role('link', name='Tentar novamente').click()
     expect(page.get_by_role('heading', name='Olá, Pwa. Vamos criar?')).to_be_visible(timeout=15000)
     assert not errors, errors
     print('PASS: manifesto, ícones, service worker, aviso offline, rascunho e reabertura', flush=True)
@@ -71,14 +82,21 @@ def exercise(context, base):
 def main():
     with tempfile.TemporaryDirectory() as temp:
         store = PostgresStore(os.environ['TEST_DATABASE_URL']) if os.environ.get('TEST_DATABASE_URL') else Store(Path(temp) / 'pwa.sqlite')
-        server = ThreadingHTTPServer(('127.0.0.1', 0), handler_for(store))
+        disconnected = [False]
+        class NetworkHandler(handler_for(store)):
+            def do_GET(self):
+                if disconnected[0]:
+                    self.close_connection = True
+                    return
+                super().do_GET()
+        server = ThreadingHTTPServer(('127.0.0.1', 0), NetworkHandler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         try:
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True, executable_path=os.environ.get('CHROMIUM_PATH', '/usr/bin/chromium'))
                 context = browser.new_context(viewport={'width': 1440, 'height': 1000})
                 context.set_default_timeout(15000)
-                exercise(context, f'http://127.0.0.1:{server.server_port}')
+                exercise(context, f'http://127.0.0.1:{server.server_port}', disconnect=lambda value: disconnected.__setitem__(0,value))
                 browser.close()
         finally:
             server.shutdown()

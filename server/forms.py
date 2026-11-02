@@ -9,7 +9,7 @@ from server.store import InvalidInput
 
 
 MULTI_SEPARATOR='; '
-PRIVATE_FIELD_KEYS=('correct','points')
+PRIVATE_FIELD_KEYS=('correct','correctAnswer','points')
 
 
 def full_fields(content):
@@ -36,6 +36,7 @@ def validate_answers(content, answers, schema_id):
         if not answer:
             continue
         kind=field['type']
+        if kind=='rating' and answer not in ('1','2','3','4','5'):raise InvalidInput('Escolha uma avaliação de 1 a 5.')
         if kind=='choice' and answer not in field.get('options',[]):
             raise InvalidInput('Selecione uma opção válida.')
         if kind=='multiple':
@@ -62,7 +63,7 @@ def _normalize(value):
 
 
 def is_graded(field):
-    correct=field.get('correct')
+    correct=field.get('correct',field.get('correctAnswer'))
     return bool(correct) if isinstance(correct,list) else isinstance(correct,str) and correct!=''
 
 
@@ -84,6 +85,7 @@ def score_response(content,answers):
     """Quiz score computed on the server, so public respondents never see the key."""
     score=total=0
     for answer,field in zip(answers,full_fields(content)):
+        field={**field,'correct':field.get('correct',field.get('correctAnswer'))}
         if not is_graded(field):
             continue
         points=field.get('points',1)
@@ -91,3 +93,28 @@ def score_response(content,answers):
         if answer_is_correct(answer,field):
             score+=points
     return {'score':score,'total':total}
+def quiz_score(content,answers):
+    if not content.get('quiz'):return {}
+    earned=maximum=0
+    for answer,field in zip(answers,content.get('fields',[])):
+        if 'correctAnswer' not in field:continue
+        points=field.get('points',1);maximum+=points
+        if answer.strip().casefold()==field['correctAnswer'].strip().casefold():earned+=points
+    return {'score':earned,'maxScore':maximum}
+
+def valid_quiz(content):
+    if type(content.get('quiz',False)) is not bool:return False
+    if not isinstance(content.get('fields',[]),list) or not isinstance(content.get('responses',[]),list):return False
+    for field in content.get('fields',[]):
+        if not isinstance(field,dict):return False
+        if 'points' in field and (type(field['points']) is not int or not 0<=field['points']<=100):return False
+        if 'correctAnswer' in field:
+            answer=field['correctAnswer']
+            if not isinstance(answer,str) or not 1<=len(answer)<=4000:return False
+            if field.get('type')=='choice' and answer not in field.get('options',[]):return False
+            if field.get('type')=='rating' and answer not in ('1','2','3','4','5'):return False
+    for response in content.get('responses',[]):
+        if not isinstance(response,dict):return False
+        if 'maxScore' in response:
+            if type(response.get('score')) is not int or type(response.get('maxScore')) is not int or not 0<=response['score']<=response['maxScore']<=10000:return False
+    return True

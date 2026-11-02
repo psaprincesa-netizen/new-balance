@@ -22,8 +22,9 @@ export function ensureTaskIds(tasks) {
     used.add(t.id);
   }
   for (const t of tasks) {
-    t.depends = (Array.isArray(t.depends) ? t.depends : []).filter((id) => id !== t.id && used.has(id));
+    t.depends = (Array.isArray(t.depends) ? t.depends : (t.dependsOn||[])).filter((id) => id !== t.id && used.has(id));
   }
+  for(const t of tasks)delete t.dependsOn;
   return tasks;
 }
 

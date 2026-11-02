@@ -100,7 +100,8 @@ def import_file(name, encoded):
                 body = '\n'.join(shape.text for shape in slide.shapes if shape.has_text_frame and shape != title and not shape.name.startswith('DRAP '))
                 notes = slide.notes_slide.notes_text_frame.text if slide.has_notes_slide and slide.notes_slide.notes_text_frame else ''
                 entry={'title': title.text if title is not None else '', 'body': body, 'notes': notes}
-                from server.slides_io import import_objects
+                from server.slides_io import import_objects, import_slide_options
+                entry.update(import_slide_options(slide))
                 objects=import_objects(slide,presentation)
                 if objects:entry['objects']=objects
                 slides.append(entry)

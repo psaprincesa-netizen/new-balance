@@ -120,15 +120,18 @@ def export_workbook(snapshot, output, charts=(), pivots=None):
         if x or y:ws.freeze_panes=ws.cell(y+1,x+1)
         ws.sheet_view.showGridLines=data.get('showGridlines',1)!=0
         export_rules(ws,sid,snapshot)
-    from openpyxl.chart import BarChart,LineChart,PieChart,Reference
+    from openpyxl.chart import BarChart,LineChart,PieChart,AreaChart,DoughnutChart,ScatterChart,RadarChart,Series,Reference
     from openpyxl.utils.cell import range_boundaries
     for i,definition in enumerate(charts):
         sheet=snapshot['sheets'].get(definition['sheetId'])
         if not sheet:continue
         ws=book[sheet['name']];x1,y1,x2,y2=range_boundaries(definition['range'])
-        chart={'bar':BarChart,'line':LineChart,'pie':PieChart}[definition['type']]();chart.title=definition['title']
-        chart.add_data(Reference(ws,min_col=x2,min_row=y1,max_row=y2),titles_from_data=True)
-        chart.set_categories(Reference(ws,min_col=x1,min_row=y1+1,max_row=y2))
+        chart={'bar':BarChart,'line':LineChart,'pie':PieChart,'area':AreaChart,'doughnut':DoughnutChart,'scatter':ScatterChart,'radar':RadarChart,'horizontal':BarChart}[definition['type']]();chart.title=definition['title']
+        if definition['type']=='scatter':chart.series.append(Series(Reference(ws,min_col=x2,min_row=y1+1,max_row=y2),Reference(ws,min_col=x1,min_row=y1+1,max_row=y2),title=str(ws.cell(y1,x2).value)))
+        else:
+            chart.add_data(Reference(ws,min_col=x2,min_row=y1,max_row=y2),titles_from_data=True)
+            chart.set_categories(Reference(ws,min_col=x1,min_row=y1+1,max_row=y2))
+        if definition['type']=='horizontal':chart.type='bar'
         chart.width=18;chart.height=10;ws.add_chart(chart,'D'+str(2+i*20))
     from server.pivots import export_pivots
     export_pivots(book,snapshot,[] if pivots is None else pivots)

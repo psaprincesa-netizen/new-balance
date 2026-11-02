@@ -23,12 +23,37 @@ def image_bytes(source):
     except Exception:raise InvalidInput('Imagem inválida ou resolução excessiva.') from None
 
 
+def valid_slide_options(slide):
+    return isinstance(slide,dict) and (type(slide.get('hidden',False)) is bool
+            and slide.get('transition','none') in ('none','fade','push')
+            and all(isinstance(slide.get(k,'#ffffff'),str) and re.fullmatch(r'#[a-fA-F0-9]{6}',slide.get(k,'#ffffff')) for k in ('background','foreground')))
+
+
+def import_slide_options(slide):
+    result={}
+    if slide._element.get('show')=='0':result['hidden']=True
+    for name in ('fade','push'):
+        if slide._element.xpath('./p:transition/p:'+name):result['transition']=name
+    try:result['background']='#'+str(slide.background.fill.fore_color.rgb)
+    except (AttributeError,TypeError):pass
+    if slide.shapes.title and slide.shapes.title.text_frame.paragraphs:
+        p=slide.shapes.title.text_frame.paragraphs[0]
+        try:result['foreground']='#'+str(p.runs[0].font.color.rgb if p.runs else p.font.color.rgb)
+        except (AttributeError,TypeError):
+            try:result['foreground']='#'+str(p.font.color.rgb)
+            except (AttributeError,TypeError):pass
+    if result.get('foreground','').lower()=='#172018':result.pop('foreground')
+    return result
+
+
 def valid_objects(objects):
     if not isinstance(objects,list) or len(objects)>30:return False
     ids=set()
     for obj in objects:
         if not isinstance(obj,dict) or not isinstance(obj.get('id'),str) or not 1<=len(obj['id'])<=100 or obj['id'] in ids:return False
         ids.add(obj['id'])
+        if type(obj.get('rotation',0)) not in (int,float) or not -360<=obj.get('rotation',0)<=360:return False
+        if 'group' in obj and (not isinstance(obj['group'],str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,100}',obj['group'])):return False
         if obj.get('type') not in ('image','text','rect','ellipse'):return False
         for k in ('x','y','w','h'):
             v=obj.get(k)
@@ -52,19 +77,27 @@ def export_slides(content,title,output):
     from pptx.dml.color import RGBColor
     from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
     from pptx.enum.text import PP_ALIGN
+    from pptx.oxml.xmlchemy import OxmlElement
     p=Presentation();p.slide_width=Inches(13.333333);p.slide_height=Inches(7.5)
     p.core_properties.title=title;p.core_properties.author='DRAP office'
     theme=content.get('theme','light');color='FFFFFF' if theme!='light' else '172018'
     for entry in content['slides']:
         slide=p.slides.add_slide(p.slide_layouts[1])
-        if theme!='light':
-            slide.background.fill.solid();slide.background.fill.fore_color.rgb=RGBColor.from_string('4B5320' if theme=='army' else '102237')
+        if entry.get('hidden'):slide._element.set('show','0')
+        if entry.get('transition','none')!='none':
+            transition=OxmlElement('p:transition');effect=OxmlElement('p:'+entry['transition'])
+            if entry['transition']=='push':effect.set('dir','l')
+            transition.append(effect);slide._element.insert_element_before(transition,'p:timing','p:extLst')
+        color=entry.get('foreground','#FFFFFF' if theme!='light' else '#172018')[1:]
+        if entry.get('background') or theme!='light':
+            slide.background.fill.solid();slide.background.fill.fore_color.rgb=RGBColor.from_string(entry.get('background','#4B5320' if theme=='army' else '#102237')[1:])
         for shape,text,y,h,size in [(slide.shapes.title,entry['title'],6,20,32),(slide.placeholders[1],entry['body'],30,62,22)]:
             shape.text=text;shape.left=int(p.slide_width*.06);shape.top=int(p.slide_height*y/100)
             shape.width=int(p.slide_width*(.42 if entry.get('objects') and y==30 else .88));shape.height=int(p.slide_height*h/100)
             for paragraph in shape.text_frame.paragraphs:
                 paragraph.font.size=Pt(size);paragraph.font.color.rgb=RGBColor.from_string(color)
         slide.notes_slide.notes_text_frame.text=entry['notes']
+        groups={}
         for obj in entry.get('objects',[]):
             x,y,w,h=[int(n*size/100) for n,size in zip([obj['x'],obj['y'],obj['w'],obj['h']],[p.slide_width,p.slide_height,p.slide_width,p.slide_height])]
             if obj['type']=='image':
@@ -79,18 +112,31 @@ def export_slides(content,title,output):
                 for paragraph in shape.text_frame.paragraphs:
                     paragraph.alignment={'left':PP_ALIGN.LEFT,'center':PP_ALIGN.CENTER,'right':PP_ALIGN.RIGHT}[obj.get('align','left')]
                     paragraph.font.size=Pt(obj.get('fontSize',24));paragraph.font.bold=obj.get('bold',False);paragraph.font.color.rgb=RGBColor.from_string(obj.get('color','#ffffff')[1:])
+            shape.rotation=obj.get('rotation',0)
             shape.name='DRAP '+obj['type']
+            if obj.get('group'):groups.setdefault(obj['group'],[]).append(shape)
+        for shapes in groups.values():
+            if len(shapes)>1:slide.shapes.add_group_shape(shapes)
     p.save(output)
 
 
 def import_objects(slide,presentation):
     from pptx.enum.shapes import MSO_SHAPE_TYPE,MSO_AUTO_SHAPE_TYPE
     result=[]
-    for shape in slide.shapes:
+    def walk(shapes,group=None,offset=(0,0),scale=(1,1)):
+        for shape in shapes:
+            if shape.shape_type==MSO_SHAPE_TYPE.GROUP:
+                transform=shape._element.grpSpPr.xfrm
+                sx=shape.width/transform.chExt.cx if transform.chExt.cx else 1;sy=shape.height/transform.chExt.cy if transform.chExt.cy else 1
+                yield from walk(shape.shapes,group or 'group-'+str(shape.shape_id),(offset[0]+scale[0]*(shape.left-transform.chOff.x*sx),offset[1]+scale[1]*(shape.top-transform.chOff.y*sy)),(scale[0]*sx,scale[1]*sy))
+            else:yield shape,group,offset,scale
+    for shape,group,offset,scale in walk(slide.shapes):
         kind='image' if shape.shape_type==MSO_SHAPE_TYPE.PICTURE else shape.name[5:] if shape.name.startswith('DRAP ') else None
         if kind not in ('image','text','rect','ellipse'):continue
-        x=max(0,min(99,shape.left/presentation.slide_width*100));y=max(0,min(99,shape.top/presentation.slide_height*100))
-        obj={'id':'object-'+str(shape.shape_id),'type':kind,'x':x,'y':y,'w':max(1,min(100-x,shape.width/presentation.slide_width*100)),'h':max(1,min(100-y,shape.height/presentation.slide_height*100))}
+        x=max(0,min(99,(offset[0]+shape.left*scale[0])/presentation.slide_width*100));y=max(0,min(99,(offset[1]+shape.top*scale[1])/presentation.slide_height*100))
+        obj={'id':'object-'+str(shape.shape_id),'type':kind,'x':x,'y':y,'w':max(1,min(100-x,shape.width*scale[0]/presentation.slide_width*100)),'h':max(1,min(100-y,shape.height*scale[1]/presentation.slide_height*100))}
+        if group:obj['group']=group
+        if shape.rotation:obj['rotation']=shape.rotation
         if kind=='image':
             with Image.open(io.BytesIO(shape.image.blob)) as im:
                 if im.width*im.height>40_000_000:raise InvalidInput('Imagem do PPTX excede 40 megapixels.')

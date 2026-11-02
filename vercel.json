@@ -10,6 +10,10 @@
   },
   "rewrites": [
     {
+      "source": "/install",
+      "destination": "/install.html"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/index?route=:path*"
     }
@@ -33,11 +37,41 @@
       ]
     },
     {
-      "source": "/sw.js",
+      "source": "/service-worker.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, max-age=0"
+        },
+        {
+          "key": "Service-Worker-Allowed",
+          "value": "/"
+        }
+      ]
+    },
+    {
+      "source": "/manifest.webmanifest",
       "headers": [
         {
           "key": "Cache-Control",
           "value": "no-cache"
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/manifest+json; charset=utf-8"
+        }
+      ]
+    },
+    {
+      "source": "/sw.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, max-age=0"
+        },
+        {
+          "key": "Service-Worker-Allowed",
+          "value": "/"
         }
       ]
     }

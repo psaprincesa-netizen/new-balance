@@ -1,3 +1,4 @@
+import {parseDataRange} from '../web/sheet-tools.js';
 import {createUniver} from '@univerjs/presets';
 import {CommandType,ICommandService,LocaleType,mergeLocales} from '@univerjs/core';
 import {SelectionMoveType} from '@univerjs/sheets';
@@ -91,8 +92,18 @@ export async function mountSpreadsheet(container,content,{id,name,readOnly,onCha
     dispose(){disposed=true;clearTimeout(timer);clearTimeout(nameBoxTimer);container.removeEventListener('keydown',nameBoxKey,true);subscription.dispose();selectionSubscription.dispose();commandSubscription.dispose();clipboardCommands.forEach(command=>command.dispose());univer.dispose();},
     select(address){const range=book.getActiveSheet().getRange(address);range.activate();return range;},
     set(address,value){if(readOnly)return;const range=book.getActiveSheet().getRange(address);range.setValue(typeof value==='string'&&value.startsWith('=')?normalizeFormula(value):value);range.activate();sync();onChange();},
-    read(address){const range=book.getActiveSheet().getRange(address);return {values:range.getRawValues(),formulas:range.getFormulas()};},
+    read(address){const bounded=parseDataRange(address),sheet=book.getActiveSheet();if(bounded.endRow>=sheet.getMaxRows()||bounded.endColumn>=sheet.getMaxColumns())throw Error('O intervalo ultrapassa a grade.');const range=sheet.getRange(address);return {values:range.getRawValues(),formulas:range.getFormulas()};},
     async paste(text,address){if(readOnly)return;const rows=text.includes('\t')?text.replace(/\r/g,'').replace(/\n$/,'').split('\n').map(r=>r.split('\t')):parseCSV(text,{maxRows:10000,maxCols:256,minCols:1});const anchor=book.getActiveSheet().getRange(address);const pos=anchor.getRange();const width=Math.max(...rows.map(r=>r.length));if(rows.length>10000||width>256||rows.length*width>50000)throw Error('Limite de colagem: 50 mil células, 10 mil linhas e 256 colunas.');const sheet=book.getActiveSheet();if(pos.startRow+rows.length>sheet.getMaxRows())sheet.insertRowsAfter(sheet.getMaxRows()-1,pos.startRow+rows.length-sheet.getMaxRows());if(pos.startColumn+width>sheet.getMaxColumns())sheet.insertColumnsAfter(sheet.getMaxColumns()-1,pos.startColumn+width-sheet.getMaxColumns());const values=rows.map(r=>Array.from({length:width},(_,i)=>r[i]??''));book.getActiveSheet().getRange(pos.startRow,pos.startColumn,rows.length,width).setValues(values);sync();onChange();},
+    async writeEmpty(address,values){
+      if(readOnly)return;
+      if(!/^[A-Z]{1,3}[1-9][0-9]{0,5}$/.test(address))throw Error('Informe uma única célula de destino, como H1.');
+      const sheet=book.getActiveSheet(),r=parseDataRange(address),height=values.length,width=values[0].length;
+      if(r.startRow+height>sheet.getMaxRows()||r.startColumn+width>sheet.getMaxColumns())throw Error('O resultado ultrapassa a grade. Insira linhas ou colunas antes de continuar.');
+      const target=sheet.getRange(r.startRow,r.startColumn,height,width),pos=target.getRange();
+      if(sheet.getMergedRanges().some(m=>{const b=m.getRange();return b.startRow<=pos.endRow&&b.endRow>=pos.startRow&&b.startColumn<=pos.endColumn&&b.endColumn>=pos.startColumn;}))throw Error('O destino contém células mescladas. Escolha outra área.');
+      if(target.getRawValues().some(row=>row.some(v=>v!==null&&v!==undefined&&v!==''))||target.getFormulas().some(row=>row.some(Boolean)))throw Error('O destino contém dados. Escolha uma área vazia.');
+      target.setValues(values.map(row=>row.map(v=>({v,t:typeof v==='number'?2:typeof v==='boolean'?3:1}))));target.activate();sync();onChange();
+    },
     csv(){sync();return toCSV(workbookRows(content.workbook,book.getActiveSheet().getSheetId()));},
     rows(){sync();return workbookRows(content.workbook,book.getActiveSheet().getSheetId());},
     listSheets(){return book.getSheets().map(s=>({id:s.getSheetId(),name:s.getSheetName()}));},

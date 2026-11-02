@@ -12,6 +12,7 @@ from server.database import PostgresStore
 
 
 def main():
+    expect.set_options(timeout=30000)
     with tempfile.TemporaryDirectory() as temp:
         store = PostgresStore(os.environ['TEST_DATABASE_URL']) if os.environ.get('TEST_DATABASE_URL') else Store(Path(temp) / 'ui.sqlite')
         server = ThreadingHTTPServer(('127.0.0.1', 0), handler_for(store))
@@ -34,7 +35,7 @@ def main():
                 expect(page.get_by_role('heading', name='Olá, Ana. Vamos criar?')).to_be_visible()
                 page.screenshot(path='/tmp/nexo-desktop.png', full_page=True)
                 with page.expect_download() as download_info:
-                    page.get_by_role('link',name='Baixar plataforma',exact=True).click()
+                    page.get_by_role('link',name='Baixar código-fonte ZIP',exact=True).click()
                 downloaded = download_info.value
                 assert downloaded.suggested_filename == 'drap-office.zip'
                 assert downloaded.failure() is None

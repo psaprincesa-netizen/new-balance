@@ -13,7 +13,14 @@ def exercise(page,base,title='Documento visual'):
     page.goto(base);page.get_by_role('button',name='Criar minha conta').click();page.get_by_label('Nome',exact=True).fill('Ana Teste');page.get_by_label('E-mail',exact=True).fill(uuid.uuid4().hex+'@example.org');page.get_by_label('Senha',exact=True).fill(uuid.uuid4().hex+'-Teste12');page.get_by_label('Pergunta secreta',exact=True).select_option(index=1);page.get_by_label('Resposta secreta',exact=True).fill('resposta de teste');page.get_by_role('button',name='Criar conta',exact=False).click();expect(page.get_by_role('heading',name='Olá, Ana. Vamos criar?')).to_be_visible()
     page.get_by_role('button',name='＋ Criar novo').click();page.locator('#create-form select').select_option('document');page.get_by_label('Nome do arquivo',exact=True).last.fill(title);page.get_by_role('button',name='Criar arquivo',exact=True).click();expect(page.locator('#preview')).to_have_attribute('data-ready','true',timeout=30000)
     visual=page.get_by_role('textbox',name='Página do documento',exact=True);expect(visual).to_have_attribute('contenteditable','true');visual.fill('Texto importante');visual.press('Control+A');page.get_by_role('button',name='Negrito',exact=True).click();page.get_by_role('button',name='Itálico',exact=True).click();expect(visual.locator('strong em,em strong')).to_have_text('Texto importante')
-    page.locator('#document-undo').click();page.locator('#document-redo').click();expect(visual.locator('strong em,em strong')).to_have_text('Texto importante')
+    page.locator('#document-zoom').select_option('125')
+    visual.evaluate("el => el.dataset.saveIdentity='original'")
+    page.get_by_role('button',name='Salvar',exact=True).click();expect(page.locator('#save-state')).to_contain_text('Versão')
+    expect(visual).to_have_attribute('data-save-identity','original')
+    page.locator('#document-undo').click();expect(visual.locator('em')).to_have_count(0)
+    page.locator('#document-redo').click();expect(visual.locator('strong em,em strong')).to_have_text('Texto importante')
+    assert page.locator('#preview').evaluate('el => el.style.zoom')=='1.25'
+
     for search,replacement in [('importante','essencial'),('essencial','importante')]:
         page.get_by_role('button',name='Localizar e substituir',exact=True).click();page.get_by_label('Localizar',exact=True).fill(search);page.get_by_label('Substituir por',exact=True).fill(replacement);page.get_by_role('button',name='Substituir todas',exact=True).click();expect(visual.locator('strong em,em strong')).to_have_text('Texto '+replacement)
     visual.focus();visual.press('Control+End');visual.press('Enter');page.get_by_role('button',name='Tabela',exact=True).click();expect(visual.locator('table')).to_be_visible();visual.locator('th').first.click();page.get_by_role('button',name='Adicionar linha',exact=True).click();page.get_by_role('button',name='Adicionar coluna',exact=True).click();expect(visual.locator('tr')).to_have_count(3);expect(visual.locator('tr').first.locator('th,td')).to_have_count(3)
@@ -30,9 +37,17 @@ def exercise(page,base,title='Documento visual'):
     expect(visual.locator('tr')).to_have_count(2);expect(page.locator('#word-count')).to_have_text('6 palavras')
     with page.expect_download() as dl:page.get_by_role('button',name='Baixar DOCX',exact=True).click()
     doc=Document(io.BytesIO(Path(dl.value.path()).read_bytes()));assert len(doc.tables)==1 and len(doc.inline_shapes)==1;assert any(run.bold and run.italic and 'Texto importante' in run.text for p in doc.paragraphs for run in p.runs)
+    page.locator('#doc-tab-add').click();expect(page.locator('#preview')).to_have_attribute('data-ready','true');visual.fill('Segunda aba')
+    page.locator('[data-doc-tab="0"]').click();expect(page.locator('#preview')).to_have_attribute('data-ready','true')
+    page.get_by_role('button',name='Salvar',exact=True).click();expect(page.locator('#save-state')).to_contain_text('Versão')
     item=next(i for i in page.request.get(base+'/api/items').json()['items'] if i['title']==title)
     ctx=page.context.browser.new_context();reader=ctx.new_page();creds={'email':uuid.uuid4().hex+'@example.org','password':uuid.uuid4().hex+'-Reader12'};headers={'Origin':base};assert reader.request.post(base+'/api/register',headers=headers,data={**creds,'question':'pet','answer':'resposta de teste','name':'Leitor'}).ok;assert reader.request.post(base+'/api/login',headers=headers,data=creds).ok;assert page.request.post(base+'/api/items/'+item['id']+'/share',headers=headers,data={'email':creds['email'],'role':'read'}).ok
-    reader.goto(base);reader.get_by_role('button',name=title,exact=False).click();expect(reader.locator('#preview')).to_have_attribute('data-ready','true',timeout=30000);expect(reader.get_by_role('textbox',name='Página do documento',exact=True)).to_have_attribute('contenteditable','false');expect(reader.get_by_role('button',name='Negrito',exact=True)).to_be_disabled();reader.get_by_role('button',name='Editar Markdown',exact=True).click();expect(reader.locator('#text')).to_be_disabled()
+    reader.goto(base);reader.get_by_role('button',name=title,exact=False).click();expect(reader.locator('#preview')).to_have_attribute('data-ready','true');expect(reader.get_by_role('textbox',name='Página do documento',exact=True)).to_have_attribute('contenteditable','false');expect(reader.get_by_role('button',name='Negrito',exact=True)).to_be_disabled();expect(reader.locator('#document-page')).to_be_disabled();expect(reader.locator('#document-numbered')).to_be_disabled();expect(reader.locator('#document-outline')).to_be_enabled();expect(reader.locator('#document-statistics')).to_be_enabled();reader.get_by_role('button',name='Editar Markdown',exact=True).click();expect(reader.locator('#text')).to_be_disabled()
+    reader.locator('[data-doc-tab="1"]').click();expect(reader.locator('#preview')).to_have_attribute('data-ready','true')
+    expect(reader.get_by_role('textbox',name='Página do documento',exact=True)).to_have_attribute('contenteditable','false')
+    expect(reader.locator('#document-image')).to_be_disabled();expect(reader.locator('#insert-table')).to_be_disabled()
+    reader.locator('[data-doc-tab="0"]').click();expect(reader.locator('#preview')).to_have_attribute('data-ready','true')
+    expect(reader.get_by_role('button',name='Negrito',exact=True)).to_be_disabled()
     assert page.request.post(base+'/api/items/'+item['id']+'/share',headers=headers,data={'email':creds['email'],'role':'remove'}).ok;reader.request.post(base+'/api/logout',headers=headers,data={});ctx.close()
     page.screenshot(path='/tmp/drap-document-verified.png',full_page=True);assert not errors,errors
     print('PASS: edição visual, negrito/itálico, desfazer/refazer, tabelas, imagem, colagem segura, Markdown, persistência, DOCX e leitura',flush=True)

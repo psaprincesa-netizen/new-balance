@@ -8,7 +8,7 @@ export function responseTable(content,formatDate=String){
       if(!names.has(key)){let name=q||'Pergunta',n=2;while(used.has(name))name=(q||'Pergunta')+' ('+(n++)+')';used.add(name);names.set(key,name);keys.push(key);}
       values.set(key,response.answers[i]??'');
     });
-    return {at:response.at,values,grade:typeof response.total==='number'&&response.total>0?response.score+' / '+response.total:''};
+    return {at:response.at,values,grade:typeof (response.total??response.maxScore)==='number'&&(response.total??response.maxScore)>0?response.score+' / '+(response.total??response.maxScore):''};
   });
   const graded=records.some(r=>r.grade);
   return {columns:['Data',...(graded?['Nota']:[]),...keys.map(k=>names.get(k))],rows:records.map(r=>[formatDate(r.at),...(graded?[r.grade]:[]),...keys.map(k=>r.values.get(k)??'')])};
@@ -43,6 +43,7 @@ export function answerError(value,field){
   if(value.length>4000)return 'Use até 4000 caracteres.';
   if(field.required&&!value.trim())return 'Preencha este campo obrigatório.';
   if(!value)return '';
+  if(field.type==='rating'&&!['1','2','3','4','5'].includes(value))return 'Escolha uma avaliação de 1 a 5.';
   if(field.type==='choice'&&!field.options.includes(value))return 'Selecione uma opção válida.';
   if(field.type==='multiple'){const picked=splitMultiple(value);if(new Set(picked).size!==picked.length||picked.some(v=>!field.options.includes(v)))return 'Selecione opções válidas.';}
   if(field.type==='scale'&&!(Number.isInteger(Number(value))&&Number(value)>=1&&Number(value)<=(field.max||5)))return 'Escolha um valor da escala.';
@@ -61,3 +62,5 @@ export function documentSlides(content){
     return slide;
   });
 }
+
+export function quizScore(content,answers){if(!content.quiz)return {};let score=0,maxScore=0;answers.forEach((answer,i)=>{const field=content.fields[i];if(field.correctAnswer===undefined)return;const points=field.points??1;maxScore+=points;if(answer.trim().toLocaleLowerCase()===field.correctAnswer.trim().toLocaleLowerCase())score+=points;});return {score,maxScore};}
