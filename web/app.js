@@ -853,7 +853,7 @@ function textEditor(root, c) {
 }
 async function sheetEditor(root, c) {
   root.classList.add('spreadsheet-editor');
-  root.innerHTML = `<div class="toolbar sheet-tools"><label>Intervalo <input id="sheet-address" aria-label="Intervalo da planilha" value="A1" size="10"></label><button id="sheet-select">Selecionar</button><label>Valor ou fórmula <input id="sheet-value" aria-label="Valor ou fórmula" placeholder="=SUM(A1:A5)"></label><button id="sheet-apply">Aplicar à célula</button><button id="csv-import">Importar CSV</button><button id="csv-export">Exportar CSV</button><button id="sheet-report">Criar relatório ↗</button><button id="sheet-chart-add">Criar gráfico</button><button id="sheet-pivot-add">Tabela dinâmica</button></div><div class="toolbar sheet-tools"><button id="sheet-calculate">∑ Inserir cálculo</button><button id="sheet-row">Inserir linha</button><button id="sheet-column">Inserir coluna</button><button id="sheet-clear">Limpar valores</button><button id="sheet-paste">Colar tabela</button><span class="muted">Clique numa célula e digite. Enter confirma; Tab avança. Selecione um intervalo para formatar.</span></div><div id="spreadsheet" aria-label="Editor de planilhas"><p>Carregando editor…</p></div><p class="muted sheet-help">Use a barra de ferramentas para formatar, mesclar, filtrar e ordenar. Clique com o botão direito para inserir/excluir linhas e colunas. As células, a barra de fórmulas e o campo acima aceitam SUM/IF/VLOOKUP e os equivalentes SOMA/SE/PROCV; os nomes são armazenados em inglês. Ao digitar números na grade, use vírgula decimal (1234,50). Salve para registrar no banco. XLSX preserva valores, fórmulas, estilos, mesclagens, filtros e validações comuns; regras avançadas ficam no arquivo DRAP e no JSON. Gráficos de colunas, linhas e pizza ficam abaixo da grade e no XLSX. Tabelas dinâmicas agrupam e resumem os dados abaixo da grade. Macros VBA ainda não estão disponíveis.</p><section id="sheet-charts" aria-label="Gráficos da planilha"></section><section id="sheet-pivots" aria-label="Tabelas dinâmicas"></section>`;
+  root.innerHTML = `<div class="toolbar sheet-tools"><label>Intervalo <input id="sheet-address" aria-label="Intervalo da planilha" value="A1" size="10"></label><button id="sheet-select">Selecionar</button><label>Valor ou fórmula <input id="sheet-value" aria-label="Valor ou fórmula" placeholder="=SUM(A1:A5)"></label><button id="sheet-apply">Aplicar à célula</button><button id="sheet-insert" class="primary">＋ Inserir</button><button id="csv-import">Importar CSV</button><button id="csv-export">Exportar CSV</button><button id="sheet-report">Criar relatório ↗</button><button id="sheet-chart-add">Criar gráfico</button><button id="sheet-pivot-add">Tabela dinâmica</button></div><div class="toolbar sheet-tools"><button id="sheet-calculate">∑ Inserir cálculo</button><button id="sheet-row">Inserir linha</button><button id="sheet-column">Inserir coluna</button><button id="sheet-clear">Limpar valores</button><button id="sheet-paste">Colar tabela</button><span class="muted">Clique numa célula e digite. Enter confirma; Tab avança. Selecione um intervalo para formatar.</span></div><div id="sheet-link-bar" class="sheet-link-bar" hidden></div><div id="spreadsheet" aria-label="Editor de planilhas"><p>Carregando editor…</p></div><p class="muted sheet-help">Use a barra de ferramentas para formatar, mesclar, filtrar e ordenar. Clique com o botão direito para inserir/excluir linhas e colunas. As células, a barra de fórmulas e o campo acima aceitam SUM/IF/VLOOKUP e os equivalentes SOMA/SE/PROCV; os nomes são armazenados em inglês. Ao digitar números na grade, use vírgula decimal (1234,50). Salve para registrar no banco. XLSX preserva valores, fórmulas, estilos, mesclagens, filtros e validações comuns; regras avançadas ficam no arquivo DRAP e no JSON. Gráficos de colunas, linhas e pizza ficam abaixo da grade e no XLSX. Tabelas dinâmicas agrupam e resumem os dados abaixo da grade. Macros VBA ainda não estão disponíveis.</p><section id="sheet-links" aria-label="Arquivos e links vinculados"></section><section id="sheet-charts" aria-label="Gráficos da planilha"></section><section id="sheet-pivots" aria-label="Tabelas dinâmicas"></section>`;
   const item=current;let pivotUI=null;
   try {
     if (!document.querySelector('#spreadsheet-css')) {
@@ -863,15 +863,16 @@ async function sheetEditor(root, c) {
     const {mountSpreadsheet}=await import('/spreadsheet.js');
     if(!root.isConnected || current!==item)return;
     const host=root.querySelector('#spreadsheet');host.textContent='';
-    const mounted=await mountSpreadsheet(host,c,{id:item.id,name:item.title,readOnly:item.role==='read',onChange:setDirty,onError:notify,onSelection:(address,value)=>{if(!root.isConnected||document.activeElement?.closest('.sheet-tools'))return;root.querySelector('#sheet-address').value=address;root.querySelector('#sheet-value').value=value;},onRender:()=>{renderCharts();pivotUI?.render();}});
+    const mounted=await mountSpreadsheet(host,c,{id:item.id,name:item.title,readOnly:item.role==='read',onChange:setDirty,onError:notify,onSelection:(address,value)=>{if(!root.isConnected)return;showCellLink(address);if(document.activeElement?.closest('.sheet-tools'))return;root.querySelector('#sheet-address').value=address;root.querySelector('#sheet-value').value=value;},onRender:()=>{renderCharts();pivotUI?.render();}});
     if(!root.isConnected||current!==item){mounted.dispose();return;}
     spreadsheet=mounted;
     pivotUI=mountPivots({root,content:c,spreadsheet,readOnly:item.role==='read',dirty:setDirty,dialog:showDialog,closeDialog,notify,download,escapeHtml:esc});
     host.dataset.ready='true';
     renderCharts();
+    renderLinks();
     const address=()=>document.querySelector('#sheet-address').value.trim().toUpperCase();
     const action=fn=>async()=>{try{await fn();}catch(e){notify(e.message);}};
-    bind('sheet-select',action(()=>{spreadsheet.select(address());const value=spreadsheet.read(address());document.querySelector('#sheet-value').value=value.formulas[0]?.[0]||(value.values[0]?.[0]??'');}));
+    bind('sheet-select',action(()=>{spreadsheet.select(address());showCellLink(address());const value=spreadsheet.read(address());document.querySelector('#sheet-value').value=value.formulas[0]?.[0]||(value.values[0]?.[0]??'');}));
     bind('sheet-apply',action(()=>spreadsheet.set(address(),document.querySelector('#sheet-value').value)));
     for(const kind of ['row','column','clear'])bind('sheet-'+kind,action(()=>spreadsheet.quick(kind,address())));
     bind('sheet-paste',()=>showDialog(`<h2>Colar tabela</h2><form id="sheet-paste-form"><label class="field">Célula inicial<input name="target" value="${esc(address().split(':')[0])}" required pattern="[A-Za-z]{1,3}[1-9][0-9]{0,5}"></label><label class="field">Dados copiados do Excel ou CSV<textarea name="data" rows="8" required></textarea></label><p id="paste-error" role="alert"></p><button class="primary">Colar dados</button></form>`,()=>bind('sheet-paste-form',async e=>{e.preventDefault();try{const f=new FormData(e.target);await spreadsheet.paste(f.get('data'),f.get('target').toUpperCase());closeDialog();notify('Dados inseridos na planilha.');}catch(err){document.querySelector('#paste-error').textContent=err.message;}},'submit')));
@@ -880,8 +881,56 @@ async function sheetEditor(root, c) {
     bind('csv-import',()=>pickFile('.csv',async text=>{try{await spreadsheet.paste(text,address());}catch(e){notify(e.message);}}));
     bind('sheet-chart-add',()=>showDialog(`<h2>Criar gráfico</h2><form id="chart-form"><label class="field">Título do gráfico<input name="title" value="${esc(current.title)}" maxlength="100" required></label><label class="field">Tipo de gráfico<select name="type"><option value="bar">Colunas</option><option value="line">Linhas</option><option value="pie">Pizza</option></select></label><label class="field">Intervalo de dados<input name="range" value="${esc(address().includes(':')?address():'A1:B5')}" required></label><p>Duas colunas: rótulos e valores, com cabeçalho. Até 200 linhas. O gráfico acompanha os valores dessas células.</p><p id="chart-error" role="alert" class="error"></p><button class="primary">Adicionar gráfico</button></form>`,()=>bind('chart-form',async e=>{e.preventDefault();try{await spreadsheet.flush();if((c.charts||[]).length>=10)throw Error('Limite de dez gráficos por arquivo.');const d=Object.fromEntries(new FormData(e.target));d.range=d.range.trim().toUpperCase();if(!/^[A-Z]{1,3}[1-9]\d{0,5}:[A-Z]{1,3}[1-9]\d{0,5}$/.test(d.range))throw Error('Use um intervalo como A1:B5.');d.sheetId=spreadsheet.activeSheetId();d.id=crypto.randomUUID();chartData(spreadsheet.chartRows(d.range,d.sheetId),d.type);(c.charts??=[]).push(d);closeDialog();setDirty();renderCharts();}catch(err){document.querySelector('#chart-error').textContent=err.message;}},'submit')));
     bind('csv-export',action(async()=>{await spreadsheet.flush();download(current.title+'.csv',spreadsheet.csv(),'text/csv');}));
+    bind('sheet-insert',()=>insertLinkDialog(address().split(':')[0]));
     bind('sheet-report',action(async()=>{await spreadsheet.flush();await convert('document',{text:'# '+current.title+'\n\n'+spreadsheet.rows().map(r=>r.join(' | ')).join('\n')},' — Relatório');}));
     if(item.role==='read')root.querySelectorAll('.sheet-tools input,.sheet-tools button:not(#csv-export)').forEach(el=>el.disabled=true);
+  // Cell links: a cell can point to another DRAP office file or to an external https address.
+  function cellLink(cell,sheetId=spreadsheet.activeSheetId()){return (c.links||[]).find(l=>l.sheetId===sheetId&&l.cell===cell);}
+  function linkLabel(l){return l.type==='item'?(items.find(i=>i.id===l.item)?.title||l.title):l.url;}
+  function openLink(l){if(l.type==='item')openItem(l.item);else window.open(l.url,'_blank','noopener,noreferrer');}
+  function showCellLink(address){
+    const bar=root.querySelector('#sheet-link-bar');if(!bar||!spreadsheet)return;
+    const l=cellLink(String(address).split(':')[0]);
+    if(!l){bar.hidden=true;bar.innerHTML='';return;}
+    bar.hidden=false;
+    bar.innerHTML=`<span>🔗 ${l.type==='item'?'Arquivo':'Link'} em ${esc(l.cell)}: <strong>${esc(linkLabel(l))}</strong></span><button id="cell-link-open" class="primary">Abrir ${l.type==='item'?'arquivo':'link'} ↗</button>${item.role!=='read'?'<button id="cell-link-remove">Remover vínculo</button>':''}`;
+    bind('cell-link-open',()=>openLink(l));
+    bind('cell-link-remove',()=>{c.links=c.links.filter(x=>x!==l);setDirty();showCellLink(l.cell);renderLinks();});
+  }
+  function renderLinks(){
+    const panel=root.querySelector('#sheet-links');if(!panel||!spreadsheet)return;
+    const sheets=new Map(spreadsheet.listSheets().map(s=>[s.id,s.name]));
+    const list=(c.links||[]);
+    panel.innerHTML=list.length?`<h3>Arquivos e links vinculados</h3><ul class="sheet-link-list">${list.map((l,i)=>`<li><span class="badge">${l.type==='item'?esc(TYPES[l.kind]?.single||'Arquivo'):'Link'}</span> <strong>${esc(linkLabel(l))}</strong> <span class="muted">${esc(sheets.get(l.sheetId)||'Aba removida')} · ${esc(l.cell)}</span> <button data-link-open="${i}">Abrir ↗</button><button data-link-cell="${i}">Ir para a célula</button></li>`).join('')}</ul>`:'';
+    panel.querySelectorAll('[data-link-open]').forEach(b=>b.onclick=()=>openLink(list[+b.dataset.linkOpen]));
+    panel.querySelectorAll('[data-link-cell]').forEach(b=>b.onclick=()=>{const l=list[+b.dataset.linkCell];try{spreadsheet.activateSheet?.(l.sheetId);spreadsheet.select(l.cell);showCellLink(l.cell);}catch(e){notify(e.message);}});
+  }
+  function insertLinkDialog(cell){
+    const files=items.filter(i=>i.id!==item.id&&!i.deleted);
+    showDialog(`<h2>Inserir na planilha</h2><form id="insert-link-form"><fieldset class="field"><legend>O que inserir</legend><label class="checklist"><input type="radio" name="type" value="item" ${files.length?'checked':''} ${files.length?'':'disabled'}>Arquivo do DRAP office</label><label class="checklist"><input type="radio" name="type" value="url" ${files.length?'':'checked'}>Link externo (site)</label></fieldset><label class="field" data-for="item">Arquivo<select name="item" aria-label="Arquivo a vincular">${files.map(f=>`<option value="${esc(f.id)}">${esc(f.title)} — ${esc(TYPES[f.kind]?.single||f.kind)}</option>`).join('')}</select></label><label class="field" data-for="url" hidden>Endereço (https)<input name="url" type="url" placeholder="https://" maxlength="2000"></label><label class="field">Texto exibido na célula<input name="text" maxlength="200" placeholder="Usa o nome do arquivo se ficar vazio"></label><label class="field">Célula<input name="cell" value="${esc(cell)}" required pattern="[A-Za-z]{1,3}[1-9][0-9]{0,5}" aria-label="Célula de destino"></label><p id="insert-link-error" class="error" role="alert"></p><div class="row"><button type="button" id="insert-link-cancel">Cancelar</button><button class="primary">Inserir</button></div></form>`,()=>{
+      const form=document.querySelector('#insert-link-form');
+      const toggle=()=>{const type=new FormData(form).get('type');form.querySelectorAll('[data-for]').forEach(el=>el.hidden=el.dataset.for!==type);};
+      form.querySelectorAll('[name="type"]').forEach(r=>r.onchange=toggle);toggle();
+      bind('insert-link-cancel',closeDialog);
+      bind('insert-link-form',async e=>{
+        e.preventDefault();const d=new FormData(form),error=document.querySelector('#insert-link-error');
+        try{
+          const type=d.get('type'),target=String(d.get('cell')).toUpperCase(),sheetId=spreadsheet.activeSheetId();
+          let link;
+          if(type==='item'){const f=files.find(x=>x.id===d.get('item'));if(!f)throw Error('Escolha um arquivo.');link={type:'item',item:f.id,kind:f.kind,title:f.title.slice(0,200)};}
+          else{let url;try{url=new URL(d.get('url'));}catch{throw Error('Informe um endereço completo, começando com https://');}if(url.protocol!=='https:')throw Error('Use um endereço https://');link={type:'url',url:url.href};}
+          if(!cellLink(target,sheetId)&&(c.links||[]).length>=200)throw Error('Limite de 200 vínculos por planilha.');
+          const text=String(d.get('text')||'').trim()||(link.type==='item'?link.title:link.url);
+          await spreadsheet.flush();
+          spreadsheet.set(target,text.startsWith('=')?"'"+text:text);
+          c.links=(c.links||[]).filter(l=>!(l.sheetId===sheetId&&l.cell===target));
+          c.links.push({...link,sheetId,cell:target});
+          setDirty();closeDialog();renderLinks();showCellLink(target);
+          notify(link.type==='item'?'Arquivo vinculado à célula '+target+'.':'Link inserido na célula '+target+'.');
+        }catch(err){error.textContent=err.message;}
+      },'submit');
+    });
+  }
   function renderCharts(){
     if(!spreadsheet||!root.isConnected)return;
     const panel=root.querySelector('#sheet-charts');

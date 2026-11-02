@@ -995,3 +995,8 @@ body.offline::before {
 .answer-group.scale legend { width: 100%; }
 .quiz-key { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 8px; padding: 8px; background: #f3f5ec; border-radius: 6px; }
 .quiz-key input[type="number"] { width: 70px; }
+
+/* Spreadsheet cell links */
+.sheet-link-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 8px 0; padding: 8px 12px; background: #eef1e6; border: 1px solid #c8cfbc; border-radius: 8px; }
+.sheet-link-list { list-style: none; padding: 0; display: grid; gap: 6px; }
+.sheet-link-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

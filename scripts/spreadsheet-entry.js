@@ -98,6 +98,7 @@ export async function mountSpreadsheet(container,content,{id,name,readOnly,onCha
     listSheets(){return book.getSheets().map(s=>({id:s.getSheetId(),name:s.getSheetName()}));},
     rangeRows(address,sheetId){const r=parsePivotRange(address),sheet=book.getSheetBySheetId(sheetId);if(!sheet)throw Error('A aba de origem foi removida. Configure outra fonte.');if(r.endRow>=sheet.getMaxRows()||r.endColumn>=sheet.getMaxColumns())throw Error('O intervalo ultrapassa o tamanho da aba.');return sheet.getRange(r.startRow,r.startColumn,r.height,r.width).getRawValues();},
     activeSheetId(){return book.getActiveSheet().getSheetId();},
+    activateSheet(sheetId){const sheet=book.getSheetBySheetId(sheetId);if(!sheet)throw Error('A aba deste vínculo foi removida.');sheet.activate();},
     chartRows(address,sheetId){const sheet=book.getSheetBySheetId(sheetId);if(!sheet)throw Error('A aba de origem foi removida.');const range=sheet.getRange(address);const r=range.getRange();if(r.endRow-r.startRow>200||r.endColumn-r.startColumn!==1)throw Error('Selecione duas colunas, cabeçalho e até 200 linhas de dados.');return range.getRawValues();},
     api:univerAPI,
   };

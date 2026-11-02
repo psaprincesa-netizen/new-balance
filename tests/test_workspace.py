@@ -107,3 +107,17 @@ class BoardScheduleValidationTest(unittest.TestCase):
         self.assertTrue(valid_content('board', {'tasks': [{**base, 'due': '03/01/2026'}]}))
         self.assertFalse(valid_content('board', {'tasks': [{**base, 'start': '01/01/2026'}]}))
         self.assertFalse(valid_content('board', {'tasks': [{**base, 'due': '', 'milestone': True}]}))
+
+
+class SheetLinksValidationTest(unittest.TestCase):
+    def test_sheet_links(self):
+        from server.schema import valid_sheet_links
+        item = {'type': 'item', 'item': 'abc', 'title': 'Contrato', 'kind': 'document', 'sheetId': 's1', 'cell': 'B2'}
+        url = {'type': 'url', 'url': 'https://exemplo.com', 'sheetId': 's1', 'cell': 'C2'}
+        self.assertTrue(valid_sheet_links([item, url]))
+        self.assertFalse(valid_sheet_links([item, {**item}]))
+        self.assertFalse(valid_sheet_links([{**url, 'url': 'javascript:alert(1)'}]))
+        self.assertFalse(valid_sheet_links([{**url, 'url': 'http://exemplo.com'}]))
+        self.assertFalse(valid_sheet_links([{**item, 'cell': 'b2'}]))
+        self.assertFalse(valid_sheet_links([{**item, 'extra': 1}]))
+        self.assertFalse(valid_sheet_links([url] * 201))
