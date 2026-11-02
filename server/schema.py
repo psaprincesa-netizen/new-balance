@@ -78,6 +78,39 @@ def valid_form_field(f):
     return isinstance(correct, str) and len(correct) <= 4000
 
 
+CELL = re.compile(r'^[A-Z]{1,3}[1-9][0-9]{0,5}$')
+
+
+def valid_sheet_links(links):
+    """Cells linked to another DRAP file or to an external https address."""
+    if not isinstance(links, list) or len(links) > 200:
+        return False
+    seen = set()
+    for link in links:
+        if not isinstance(link, dict) or not isinstance(link.get('sheetId'), str) or len(link['sheetId']) > 100:
+            return False
+        if not isinstance(link.get('cell'), str) or not CELL.match(link['cell']):
+            return False
+        key = (link['sheetId'], link['cell'])
+        if key in seen:
+            return False
+        seen.add(key)
+        if link.get('type') == 'item':
+            if not (isinstance(link.get('item'), str) and 0 < len(link['item']) <= 64
+                    and isinstance(link.get('title', ''), str) and len(link.get('title', '')) <= 200
+                    and isinstance(link.get('kind', ''), str) and len(link.get('kind', '')) <= 20):
+                return False
+            if set(link) - {'type', 'item', 'title', 'kind', 'sheetId', 'cell'}:
+                return False
+        elif link.get('type') == 'url':
+            url = link.get('url')
+            if not (isinstance(url, str) and url.startswith('https://') and len(url) <= 2000) or set(link) - {'type', 'url', 'sheetId', 'cell'}:
+                return False
+        else:
+            return False
+    return True
+
+
 def valid_content(kind, c):
     def strings(values, maximum=200):
         return isinstance(values, list) and len(values) <= maximum and all(isinstance(v, str) for v in values)
@@ -106,6 +139,7 @@ def valid_content(kind, c):
         return isinstance(c.get('text'), str) and valid_images(c.get('images',[]))
     if kind == 'sheet':
         if not valid_pivots(c.get('pivots',[])):return False
+        if not valid_sheet_links(c.get('links', [])):return False
         if 'workbook' in c:
             return valid_workbook(c['workbook']) and valid_charts(c.get('charts',[]),c['workbook'])
         rows = c.get('cells')
