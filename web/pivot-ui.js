@@ -1,5 +1,5 @@
 import {AGGREGATES,parsePivotRange,pivotHeaders,calculatePivot,pivotDetails,safeCsvRows} from './pivot.js';
-import {toCSV} from './formula.js';
+import {toCSV} from './csv.js';
 export function mountPivots({root,content,spreadsheet,readOnly,dirty,dialog,closeDialog,notify,download,escapeHtml:esc}){
   const panel=root.querySelector('#sheet-pivots');
   let cached=[];

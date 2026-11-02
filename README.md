@@ -6,11 +6,15 @@ Esta é uma **primeira versão funcional**, não a implementação completa de t
 
 ## Vercel e download
 
-Produção: https://new-balance-pi.vercel.app · [Baixar código-fonte ZIP](https://new-balance-pi.vercel.app/downloads/drap-office.zip).
+Produção: https://new-balance-pi.vercel.app · [Instalar e criar atalho](https://new-balance-pi.vercel.app/install) · [Baixar código-fonte ZIP](https://new-balance-pi.vercel.app/downloads/drap-office.zip).
 
 A adaptação para Vercel inclui frontend estático, função Python e backend PostgreSQL com TLS, sem usar disco temporário para persistir dados. Siga [o guia de publicação](docs/vercel.md) e [a auditoria de riscos](docs/auditoria-vercel.md). O projeto Vercel `new-balance` está vinculado ao Neon existente; o build aplica o schema antes de disponibilizar a função.
 
-`npm run build` prepara `public/` e o ZIP servido pelo botão **Baixar plataforma**. `npm run download` gera `dist/drap-office.zip`. Esses pacotes contêm código-fonte, não dados de contas ou instalador desktop.
+**Instalar e criar atalho** abre a confirmação do navegador quando disponível. Depois de confirmar, o sistema disponibiliza o ícone do aplicativo. A página `/install` orienta Windows, macOS, Linux/ChromeOS, Android e iPhone/iPad; nesses últimos, use Safari → Compartilhar → Adicionar à Tela de Início. A compatibilidade depende do sistema e do navegador, sem garantia para todos os modelos. A instalação é de um aplicativo web (PWA); instaladores EXE/DMG/APK e distribuição em lojas ainda não existem.
+
+É necessário ter internet para entrar, abrir e salvar arquivos. O service worker armazena somente o aviso público de falta de conexão; não mantém cópias de contas, respostas da API ou documentos. Atualizações não recarregam editores abertos. Quando não há instalação automática, a ajuda abre em outra aba para preservar a edição em andamento.
+
+`npm run build` prepara `public/`, o service worker versionado e o ZIP servido pelo link **Baixar código-fonte ZIP**. `npm run download` gera `dist/drap-office.zip`. Esses pacotes contêm código-fonte, não dados de contas ou instalador desktop, e não criam atalhos sozinhos.
 
 ## Executar
 
@@ -65,7 +69,7 @@ Teste opcional de interface real, com Playwright Python e Chromium instalados:
 python3 -m tests.browser_smoke
 ```
 
-O script de navegador usa `/usr/bin/chromium` por padrão, configura servidor e banco temporários e apaga seus dados ao terminar. Não usa nem altera contas reais. Gere a mesma configuração instalando `playwright==1.62.0` em um virtualenv se necessário. O build inclui o motor de fórmulas e suas licenças. As bibliotecas Python geram e leem arquivos Office e ICS reais.
+O script de navegador usa `/usr/bin/chromium` por padrão, configura servidor e banco temporários e apaga seus dados ao terminar. Não usa nem altera contas reais. Gere a mesma configuração instalando `playwright==1.55.0` em um virtualenv se necessário. O build inclui o motor de fórmulas e suas licenças. As bibliotecas Python geram e leem arquivos Office e ICS reais.
 
 Validação realizada: **30 testes Python e 4 testes JavaScript aprovados**, verificações de sintaxe aprovadas e jornada no Chromium aprovada nos dez editores, incluindo persistência, conversões, fórmulas, teclado, tarefas, eventos, lixeira, restauração e layout de 390 px. Nenhum erro JavaScript ou CSP na jornada. O teste inclui apresentação e tabela criadas por conversão.
 
@@ -103,10 +107,16 @@ A interface não envia conteúdo para ferramentas de IA ou serviços Office. No 
 
 O servidor da biblioteca padrão é para desenvolvimento. A Vercel fornece HTTPS e o runtime de produção. Ainda faltam recuperação de conta, auditoria administrativa, observabilidade, backups ensaiados e testes de carga. A preparação do schema foi validada no build remoto Vercel. Testes de carga e restauração do banco gerenciado ainda não foram realizados.
 
-A verificação automatizada está em `.github/workflows/verify.yml`: build, testes de domínio/API e oito jornadas reais no Chromium. O ZIP inclui essa configuração.
+A verificação automatizada está em `.github/workflows/verify.yml`: build, testes de domínio/API e doze jornadas reais no Chromium. O ZIP inclui essa configuração.
 
 Em Planilhas, selecione um intervalo com cabeçalhos e clique em **Tabela dinâmica** para configurar agrupamentos, cálculo e filtro. Os resumos seguem os valores da fonte; no XLSX são exportados como tabelas comuns. O JSON preserva a configuração dinâmica.
 
 Documentos e notas aceitam imagens locais incorporadas, com descrição e largura ajustáveis; o DOCX preserva imagens, tabelas, listas e links suportados. A agenda permite editar compromissos existentes. Tabelas importam CSV, mantêm filtros, alternam a ordem e convertem 200 registros completos em planilha. Formulários preservam respostas a perguntas com títulos repetidos; exportações CSV e planilha não descartam essas colunas. Leitores podem abrir links autorizados de portais, filtrar tabelas e baixar documentos/diagramas sem ganhar permissão de edição.
 
 Documentos e notas abrem em edição visual: selecione texto e use título, negrito, itálico, listas e checklist; clique nas células para editar tabelas e use os controles para adicionar/remover linhas e colunas. Há desfazer/refazer, busca/substituição de texto e alternância para Markdown. A colagem traz texto simples; imagens são inseridas pelo botão próprio. O conteúdo continua no formato compatível de texto/Markdown com imagens incorporadas.
+
+Recursos inspirados nas referências do Google Workspace: estrutura/estatísticas e configuração de página nos documentos; limpeza, divisão, transposição e estatísticas nas planilhas; alinhamento, fundos, slides ocultos, transições e controles de apresentação. Consulte o [inventário Google Workspace](docs/google-workspace.md) para recursos e limites; a suíte ainda não replica todas as ferramentas dos três produtos.
+
+O botão **＋ Inserir**, na barra auxiliar de cada editor, reúne anexos, biblioteca e links. Documentos/notas também inserem conteúdo de DOCX/TXT/Markdown na posição do cursor; imagens e tabelas usam os controles existentes. Cada anexo aceita até 1 MB, com até 20 anexos/vínculos por arquivo e respeito ao limite total do conteúdo. Anexos acompanham o arquivo e o JSON; não são incorporados ao DOCX/XLSX/PPTX. Vínculos da biblioteca não alteram as permissões do original.
+
+O carregamento inicial usa uma biblioteca de metadados, sem baixar todos os documentos. Busca por conteúdo, indicadores e backup completo são consultados quando necessários. O build gera `web/app.bundle.js`; execute-o depois de editar os módulos JavaScript. PostgreSQL reutiliza até quatro conexões por instância, com TLS verificado e transações isoladas. A revisão de desempenho está coberta por `tests/test_library.py`, `tests/browser_library.py` e `tests/postgres_smoke.py`.

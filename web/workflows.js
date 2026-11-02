@@ -8,9 +8,9 @@ export function responseTable(content,formatDate=String){
       if(!names.has(key)){let name=q||'Pergunta',n=2;while(used.has(name))name=(q||'Pergunta')+' ('+(n++)+')';used.add(name);names.set(key,name);keys.push(key);}
       values.set(key,response.answers[i]??'');
     });
-    return {at:response.at,values};
+    return {at:response.at,values,score:response.score,maxScore:response.maxScore};
   });
-  return {columns:['Data',...keys.map(k=>names.get(k))],rows:records.map(r=>[formatDate(r.at),...keys.map(k=>r.values.get(k)??'')])};
+  const graded=records.some(r=>r.score!==undefined);return {columns:['Data',...keys.map(k=>names.get(k)),...(graded?['Nota obtida','Nota máxima']:[])],rows:records.map(r=>[formatDate(r.at),...keys.map(k=>r.values.get(k)??''),...(graded?[String(r.score??''),String(r.maxScore??'')]:[])])};
 }
 export function recordsWorkbook(columns,rows,types=[]){
   if(!columns.length||columns.length>1024||(rows.length+1)*columns.length>50000)throw Error('A conversão aceita até 50 mil células. Exporte CSV para levar todos os registros.');
@@ -26,6 +26,7 @@ export function answerError(value,field){
   if(value.length>4000)return 'Use até 4000 caracteres.';
   if(field.required&&!value.trim())return 'Preencha este campo obrigatório.';
   if(!value)return '';
+  if(field.type==='rating'&&!['1','2','3','4','5'].includes(value))return 'Escolha uma avaliação de 1 a 5.';
   if(field.type==='choice'&&!field.options.includes(value))return 'Selecione uma opção válida.';
   if(field.type==='number'&&!Number.isFinite(Number(value)))return 'Informe um número válido.';
   if(field.type==='email'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))return 'Informe um e-mail válido.';
@@ -42,3 +43,5 @@ export function documentSlides(content){
     return slide;
   });
 }
+
+export function quizScore(content,answers){if(!content.quiz)return {};let score=0,maxScore=0;answers.forEach((answer,i)=>{const field=content.fields[i];if(field.correctAnswer===undefined)return;const points=field.points??1;maxScore+=points;if(answer.trim().toLocaleLowerCase()===field.correctAnswer.trim().toLocaleLowerCase())score+=points;});return {score,maxScore};}

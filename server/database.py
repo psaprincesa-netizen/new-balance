@@ -1,5 +1,6 @@
 """Persistent PostgreSQL for serverless; SQLite remains available for local use."""
 from contextlib import contextmanager
+import atexit
 import os
 import sqlite3
 import threading
@@ -36,6 +37,7 @@ class PostgresStore(Store):
         try:
             import psycopg  # noqa: F401
             import certifi
+            from psycopg_pool import ConnectionPool
         except ImportError:
             raise ConfigurationError('Instale as dependências de requirements.txt.') from None
         parsed = urlsplit(url)
@@ -49,6 +51,14 @@ class PostgresStore(Store):
         self.url = url
         self.sslrootcert = settings.get('sslrootcert', certifi.where())
         self.schema_managed = True
+        from psycopg.rows import dict_row
+        self.pool = ConnectionPool(
+            self.url, min_size=0, max_size=4, timeout=10, max_idle=60, max_lifetime=300,
+            check=ConnectionPool.check_connection,
+            kwargs={'row_factory': dict_row, 'connect_timeout': 10, 'sslmode': 'verify-full',
+                    'sslrootcert': self.sslrootcert, 'prepare_threshold': None},
+        )
+        atexit.register(self.pool.close)
         if initialize:
             with self.connect() as db:
                 db.execute('CREATE SCHEMA IF NOT EXISTS nexo')
@@ -59,17 +69,14 @@ class PostgresStore(Store):
     @contextmanager
     def connect(self):
         import psycopg
-        from psycopg.rows import dict_row
+        from psycopg_pool import PoolTimeout
         try:
-            with psycopg.connect(self.url, row_factory=dict_row, connect_timeout=10,
-                                 sslmode='verify-full', sslrootcert=self.sslrootcert,
-                                 prepare_threshold=None) as db:
-                db.execute("SET LOCAL statement_timeout = '15s'")
-                db.execute('SET LOCAL search_path TO nexo')
+            with self.pool.connection() as db:
+                db.execute("SET LOCAL statement_timeout = '15s'; SET LOCAL search_path TO nexo")
                 yield PostgresConnection(db)
         except sqlite3.IntegrityError:
             raise
-        except psycopg.Error as exc:
+        except (psycopg.Error, PoolTimeout) as exc:
             # Never send a DSN or provider diagnostic containing credentials to the browser.
             error = ConfigurationError('Banco de dados indisponível. Verifique a conexão e tente novamente.')
             reasons = ('certificate verify failed', 'password authentication failed',
@@ -77,7 +84,7 @@ class PostgresStore(Store):
                        'timeout expired', 'could not translate host name',
                        'no schema has been selected', 'channel binding')
             error.diagnostic = {
-                'type': type(exc).__name__, 'sqlstate': exc.sqlstate,
+                'type': type(exc).__name__, 'sqlstate': getattr(exc, 'sqlstate', None),
                 'reason': next((reason for reason in reasons if reason in str(exc)), 'unclassified'),
             }
             raise error from None

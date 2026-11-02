@@ -31,6 +31,14 @@ class ApiTest(unittest.TestCase):
         connection.close()
         return result
 
+    def test_editor_modules_are_served(self):
+        for path in ['/document-tools.js','/sheet-tools.js','/insert-menu.js']:
+            connection=http.client.HTTPConnection('127.0.0.1',self.server.server_port)
+            connection.request('GET',path);response=connection.getresponse()
+            self.assertEqual(response.status,200)
+            self.assertIn('javascript',response.getheader('Content-Type'))
+            self.assertIn(b'export ',response.read());connection.close()
+
     def test_account_journey(self):
         account = {'email': 'ana@example.org', 'name': 'Ana', 'password': 'uma-senha-segura-123'}
         self.assertEqual(self.request('GET', '/api/health')[0], 200)

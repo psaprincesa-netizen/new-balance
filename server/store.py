@@ -80,6 +80,8 @@ class Store:
             return token
 
     def session_user(self, token):
+        if not token:
+            return None
         with self.connect() as db:
             row = db.execute('''SELECT u.id, u.email, u.name FROM users u
                 JOIN sessions s ON s.user_id = u.id

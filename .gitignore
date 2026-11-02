@@ -16,3 +16,6 @@ web/spreadsheet.css
 docs/licencas-formulas.txt
 docs/licencas-planilha.txt
 web/document.js
+
+web/service-worker.js
+web/app.bundle.js

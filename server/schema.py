@@ -3,9 +3,11 @@ from datetime import datetime, timezone
 import math
 import re
 from server.store import InvalidInput
+from server.rich_document import valid_rich,valid_tabs
 from server.pivots import valid_pivots
-from server.document_io import valid_images
-from server.slides_io import valid_objects
+from server.attachments import valid_attachments
+from server.document_io import valid_images, valid_page
+from server.slides_io import valid_objects, valid_slide_options
 
 
 def valid_content(kind, c):
@@ -30,11 +32,13 @@ def valid_content(kind, c):
         except ValueError:
             return False
 
-    if not isinstance(c, dict):
+    if not isinstance(c, dict) or not valid_attachments(c.get("attachments", [])):
         return False
     if kind in ('document', 'note'):
-        return isinstance(c.get('text'), str) and valid_images(c.get('images',[]))
+        return isinstance(c.get('text'), str) and valid_images(c.get('images',[])) and valid_page(c.get('page',{})) and ('rich' not in c or valid_rich(c['rich'])) and valid_tabs(c)
     if kind == 'sheet':
+        from server.sheet_protection import valid_protection
+        if not valid_protection(c):return False
         if not valid_pivots(c.get('pivots',[])):return False
         if 'workbook' in c:
             return valid_workbook(c['workbook']) and valid_charts(c.get('charts',[]),c['workbook'])
@@ -51,8 +55,11 @@ def valid_content(kind, c):
                 and len({s['name'].casefold() for s in sheets}) == len(sheets)
                 and rows == sheets[active]['cells'])
     if kind == 'slides':
-        return c.get('theme', 'light') in ('light', 'army', 'navy') and bool(c.get('slides')) and objects(c.get('slides'), lambda s: all(isinstance(s.get(k), str) for k in ('title', 'body', 'notes')) and valid_objects(s.get('objects',[])), 100)
+        return valid_slide_options(c.get('master',{})) and c.get('theme', 'light') in ('light', 'army', 'navy') and bool(c.get('slides')) and objects(c.get('slides'), lambda s: all(isinstance(s.get(k), str) for k in ('title', 'body', 'notes')) and valid_objects(s.get('objects',[])) and valid_slide_options(s), 100)
     if kind == 'board':
+        from server.project_tools import validate_dependencies
+        if not isinstance(c.get('tasks'),list) or any(not isinstance(task,dict) for task in c['tasks']):return False
+        if not validate_dependencies(c['tasks']):return False
         return objects(c.get('tasks'), lambda t: isinstance(t.get('title'), str) and isinstance(t.get('due'), str)
                        and t.get('status') in ('A fazer', 'Em andamento', 'Concluído')
                        and t.get('priority', 'Normal') in ('Baixa', 'Normal', 'Alta', 'Urgente')
@@ -63,9 +70,11 @@ def valid_content(kind, c):
                        and isinstance(e.get('location', ''), str) and len(e.get('location', '')) <= 500
                        and isinstance(e.get('description', ''), str) and len(e.get('description', '')) <= 4000)
     if kind == 'form':
+        from server.forms import valid_quiz
+        if not valid_quiz(c):return False
         return (strings(c.get('questions'), 100)
                 and ('fields' not in c or (isinstance(c['fields'], list) and len(c['fields']) == len(c['questions']) and objects(c['fields'], lambda f:
-                    f.get('type') in ('text', 'email', 'number', 'date', 'choice') and type(f.get('required')) is bool
+                    f.get('type') in ('text', 'longtext', 'email', 'number', 'date', 'choice', 'rating') and type(f.get('required')) is bool
                     and strings(f.get('options', []), 50), 100)))
                 and objects(c.get('responses'), lambda r: type(r.get('at')) in (int, float) and strings(r.get('answers'), 100) and strings(r.get('questions'), 100) and len(r['answers']) == len(r['questions'])))
     if kind == 'table':
@@ -146,7 +155,7 @@ def valid_charts(charts,book):
     if not isinstance(charts,list) or len(charts)>10:return False
     ids=set()
     for chart in charts:
-        if not isinstance(chart,dict) or chart.get('type') not in ('bar','line','pie'):return False
+        if not isinstance(chart,dict) or chart.get('type') not in ('bar','line','pie','area','doughnut','scatter','horizontal','radar'):return False
         if not isinstance(chart.get('id'),str) or chart['id'] in ids or len(chart['id'])>100:return False
         ids.add(chart['id'])
         if not isinstance(chart.get('title'),str) or not 1<=len(chart['title'])<=100:return False

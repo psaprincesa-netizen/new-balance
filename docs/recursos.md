@@ -104,3 +104,33 @@ Editor visual com títulos, parágrafos, negrito/itálico combinados, listas/che
 Salvar preserva a instância do editor: célula selecionada, aba da barra, rolagem e histórico de desfazer/refazer da sessão. Alterações posteriores continuam sendo persistidas e geram novas versões. A caixa de endereço nativa atualiza os controles para a seleção atual; valores colados também atualizam o campo auxiliar. `tests/browser_ribbon.py` verifica comandos reais da barra e o XLSX, sem usar a API do editor para aplicar formatação. A memória de desfazer continua restrita à sessão aberta; reabrir o arquivo usa o histórico de versões do DRAP.
 
 O menu Colar e as variantes de colagem usam os comandos nativos registrados, mantendo permissões, valores e estilos. A leitura de intervalos para edição auxiliar, gráficos e tabelas dinâmicas usa os valores numéricos originais, mesmo quando a grade mostra moeda ou percentual. Os testes de gráficos e resumos incluem fontes formatadas como moeda.
+
+## Comparação com Google Workspace — 26/10/2026
+
+Veja o [inventário Google](google-workspace.md), com recursos existentes, adicionados e pendentes e links às fontes oficiais. Esta seção atualiza a matriz inicial: documentos agora têm estrutura navegável, estatísticas, listas numeradas, citação/código/linha horizontal e configuração global de página/fonte/espaçamento; planilhas têm seis transformações para um destino vazio e estatísticas; apresentações têm alinhamento/distribuição, fundos, ocultação, transições simples e controles do apresentador. As opções suportadas de página chegam ao DOCX; fundo, cor, ocultação e transições chegam ao PPTX. A edição de texto permanece contínua; coautoria, abas de documentos, paginação profissional, animação de objetos, serviços Google e IA continuam pendentes.
+
+## Botão auxiliar ＋ Inserir
+
+Disponível na barra de todos os editores. **Documento** insere o conteúdo de DOCX/TXT/Markdown em documentos/notas, preservando o texto existente e remapeando imagens para evitar colisões. TXT exige UTF-8 e trata a marcação como texto literal. DOCX passa pelo importador validado e informa perdas de layout. **Arquivo / outros** anexa qualquer formato como bytes para download (PDF, Office, ZIP, áudio etc.); não executa nem pré-visualiza conteúdo ativo. **Da biblioteca** adiciona vínculo ou copia o conteúdo de documento/nota autorizado. **Link**, **Imagem** e **Tabela** completam o menu conforme o editor.
+
+Anexos: até 1 MB por arquivo, 20 anexos/vínculos e limite total do documento. A seleção múltipla é validada antes de aplicar alterações. Persistem em `content.attachments`, no histórico, nos rascunhos e no JSON. Compartilhar o arquivo disponibiliza seus anexos; vincular outro arquivo não concede acesso ao original. Leitores podem baixar/abrir itens autorizados, mas não inserir/remover. Exportações Office não incluem a lista de anexos/vínculos, e a interface informa essa diferença. A inserção de DOCX analisa o documento sem criar um arquivo adicional na biblioteca.
+
+Verificação: `tests/browser_insert.py` percorre os controles reais com DOCX/imagem, TXT literal, PDF, links, biblioteca, limites, download byte a byte, reabertura, permissões/revogação, celular e planilha. `tests/test_attachments.py` cobre validação, histórico, acesso e parsing autenticado sem criação de itens. `tests/insert-menu.test.js` cobre isolamento das imagens e limites de conteúdo.
+
+## Instalação no computador e celular
+
+O botão **Instalar e criar atalho** solicita a instalação como aplicativo web quando o navegador oferece essa função. A confirmação é obrigatória; depois dela, o sistema disponibiliza o ícone. `/install` contém orientações por sistema, detecção do aparelho, link copiável/compartilhável e ajuda para Safari/iPhone/iPad. Windows, macOS, Linux/ChromeOS e Android dependem de navegador compatível; não há garantia para todos os modelos ou instaladores nativos EXE/DMG/APK. O ZIP continua disponível como código-fonte para desenvolvimento.
+
+Login, abertura e salvamento exigem internet. A página offline não exibe dados privados; o cache do service worker contém apenas esse aviso. A instalação e as atualizações não recarregam editores abertos. Os testes verificam manifesto/ícones, critérios reais de instalação no Chromium, fluxo de confirmação simulado, preservação da edição, tamanhos de tela e ausência de dados privados no cache. A validação não substitui instalação manual em dispositivos Windows/macOS/Android/iOS reais.
+
+## Desempenho da biblioteca
+
+A entrada consulta sessão e lista leve de arquivos em uma chamada. A lista não transfere o conteúdo dos documentos: ele é buscado ao abrir um arquivo. Busca por conteúdo e indicadores são consultados sob demanda com as mesmas permissões; exportar o espaço continua incluindo o conteúdo completo. Criar e salvar atualiza o catálogo local pela resposta do servidor. O JavaScript inicial é empacotado e não inclui o parser de fórmulas; documentos e planilhas carregam seus editores quando usados.
+
+## Ampliação dos editores — 28/10/2026
+
+Documentos armazenam uma árvore de texto rico junto ao Markdown de compatibilidade. Fonte, cor, tamanho e marcas por trecho, abas, notas, sumário atualizável, cabeçalho/rodapé, modelos, mesclagem e HTML. A edição manual de Markdown converte a aba para formatação básica e avisa essa perda. DOCX exporta todas as abas em seções de conteúdo separadas por quebras; reimportação não reconstrói as abas.
+
+Planilhas têm cinco tipos adicionais de gráficos e proteção de intervalos aplicada pelo servidor. A proteção controla gravações compartilhadas no DRAP, não é senha de XLSX. Slides têm grupos, rotação, estilo para novos slides, layout de duas colunas e janela separada do apresentador.
+
+Projetos têm dependências e cronograma; agenda tem visão mensal; formulários têm quizzes, texto longo e avaliação. Gmail/Agenda/Meet usam OAuth individual, com tokens criptografados e renovação. Configuração e limites em [configurar-google.md](configurar-google.md).

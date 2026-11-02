@@ -1,8 +1,15 @@
-import {responseTable,recordsWorkbook,answerError,localDateTime,safeCsv,documentSlides} from './workflows.js';
-import {mountSlides,slideMarkup,printSlides,raster} from './slides.js';
+import {dependencyError,mountTimeline,mountCalendarMonth} from './project-tools.js';
+import {mountDocumentTabs,syncDocumentTab} from './document-tabs.js';
+import {mountSheetProtection} from './sheet-protection.js';
+import {mountAdvancedDocument} from './document-advanced.js';
+import {mountInsertMenu,prepareDocumentInsertion} from './insert-menu.js';
+import {mountDocumentTools,printDocument} from './document-tools.js';
+import {mountSheetTools} from './sheet-tools.js';
+import {responseTable,recordsWorkbook,quizScore,answerError,localDateTime,safeCsv,documentSlides} from './workflows.js';
+import {mountSlides,slideMarkup,slideStyle,printSlides,raster} from './slides.js';
 import {mountPivots} from './pivot-ui.js';
 import {chartSvg,chartData} from './chart.js';
-import { cellValue, parseCSV, toCSV } from "./formula.js";
+import { parseCSV, toCSV } from "./csv.js";
 const app = document.querySelector("#app"),
   modal = document.querySelector("#modal");
 const TYPES = {
@@ -159,6 +166,7 @@ function bind(id, fn, event = "click") {
   document.getElementById(id)?.addEventListener(event, fn);
 }
 function setDirty() {
+  if(current&&['document','note'].includes(current.kind))syncDocumentTab(current.content);
   dirty = true;
   clearTimeout(stashDraft.timer);
   stashDraft.timer=setTimeout(stashDraft,300);
@@ -197,7 +205,7 @@ function defaults(kind) {
   }
 }
 function auth(register = false) {
-  app.innerHTML = `<main class="auth"><section class="auth-aside"><div class="brand"><span class="brand-name">DRAP <span>office</span></span></div><h1>Um espaço.<br>Infinitas<br>possibilidades.</h1><p>Documentos, dados e ideias conectados.<br>Seu trabalho ganha um novo lugar.</p><small>PLATAFORMA DE PRODUTIVIDADE • VERSÃO INICIAL</small></section><section class="auth-panel"><form id="auth"><p class="eyebrow">SEU ESPAÇO DE TRABALHO</p><h2>${register ? "Crie sua conta" : "Bem-vindo de volta"}</h2><p class="muted">${register ? "Comece a organizar suas ideias." : "Entre para continuar de onde parou."}</p>${register ? '<label class="field">Nome<input name="name" autocomplete="name" maxlength="100" required></label>' : ""}<label class="field">E-mail<input name="email" type="email" autocomplete="email" maxlength="254" required></label><label class="field">Senha<input name="password" type="password" autocomplete="${register ? "new-password" : "current-password"}" minlength="${register ? 12 : 1}" maxlength="128" required></label>${register ? "<small>Use pelo menos 12 caracteres. Não reutilize senhas.</small>" : ""}<p id="auth-error" class="error" role="alert"></p><button class="primary" type="submit">${register ? "Criar conta" : "Entrar no DRAP office"} →</button><p class="field"><button id="toggle-auth" type="button">${register ? "Já tenho conta" : "Criar minha conta"}</button></p><small>Seus arquivos são privados até você compartilhá-los.<br>Recuperação de senha ainda não disponível nesta versão.</small></form></section></main>`;
+  app.innerHTML = `<main class="auth"><section class="auth-aside"><div class="brand"><span class="brand-name">DRAP <span>office</span></span></div><h1>Um espaço.<br>Infinitas<br>possibilidades.</h1><p>Documentos, dados e ideias conectados.<br>Seu trabalho ganha um novo lugar.</p><small>PLATAFORMA DE PRODUTIVIDADE • VERSÃO INICIAL</small></section><section class="auth-panel"><form id="auth"><p class="eyebrow">SEU ESPAÇO DE TRABALHO</p><h2>${register ? "Crie sua conta" : "Bem-vindo de volta"}</h2><p class="muted">${register ? "Comece a organizar suas ideias." : "Entre para continuar de onde parou."}</p>${register ? '<label class="field">Nome<input name="name" autocomplete="name" maxlength="100" required></label>' : ""}<label class="field">E-mail<input name="email" type="email" autocomplete="email" maxlength="254" required></label><label class="field">Senha<input name="password" type="password" autocomplete="${register ? "new-password" : "current-password"}" minlength="${register ? 12 : 1}" maxlength="128" required></label>${register ? "<small>Use pelo menos 12 caracteres. Não reutilize senhas.</small>" : ""}<p id="auth-error" class="error" role="alert"></p><button class="primary" type="submit">${register ? "Criar conta" : "Entrar no DRAP office"} →</button><p class="field"><button id="toggle-auth" type="button">${register ? "Já tenho conta" : "Criar minha conta"}</button></p><small>Seus arquivos são privados até você compartilhá-los.<br>Recuperação de senha ainda não disponível nesta versão.</small><a class="auth-install" href="/install" target="_blank" rel="noopener" data-install-action>Instalar e criar atalho no aparelho</a></form></section></main>`;
   bind("toggle-auth", () => auth(!register));
   bind(
     "auth",
@@ -220,18 +228,40 @@ function auth(register = false) {
     "submit",
   );
 }
-async function allPages(path) {
-  const result = [];
-  let offset = 0;
+async function allPages(path, firstPage=null) {
+  const result = firstPage ? [...firstPage.items] : [];
+  let offset = firstPage ? firstPage.next_offset : 0;
+  if (offset === null) return result;
   do {
-    const page = await api(path + "?offset=" + offset);
+    const page = await api(path + (path.includes("?") ? "&" : "?") + "offset=" + offset);
     result.push(...page.items);
     offset = page.next_offset;
   } while (offset !== null);
   return result;
 }
-async function refresh() {
-  items = await allPages("/api/items");
+async function refresh(sequence=navigationSequence) {
+  const account=user?.id;
+  const latest = await allPages("/api/library");
+  if(account===user?.id&&sequence===navigationSequence)items=latest;
+}
+let searchMatches=null,searchSequence=0,navigationSequence=0;
+function rememberItem(item) {
+  const {content,...summary}=item;
+  items=[summary,...items.filter(entry=>entry.id!==item.id)].sort((a,b)=>b.updated-a.updated||a.title.localeCompare(b.title)||a.id.localeCompare(b.id));
+}
+function updateSearch() {
+  const sequence=++searchSequence,text=query;
+  searchMatches=null;clearTimeout(updateSearch.timer);
+  const paint=()=>{const target=document.querySelector('#file-list');if(target){target.innerHTML=fileList(filtered());wireFiles();}};
+  paint();
+  if(!text.trim())return;
+  updateSearch.timer=setTimeout(async()=>{
+    try {
+      const matches=await allPages('/api/library?q='+encodeURIComponent(text));
+      if(sequence!==searchSequence||query!==text||current)return;
+      searchMatches=new Set(matches.map(item=>item.id));paint();
+    } catch(error) {if(sequence===searchSequence)notify(error.message);}
+  },250);
 }
 let spreadsheet = null,documentEditor=null;
 function shell(body) {
@@ -242,6 +272,7 @@ function shell(body) {
     ["shared", "♧", "Compartilhados"],
     ["analytics", "▥", "Indicadores"],
     ["automation", "⌘", "Conexões"],
+    ["google", "G", "Google Workspace"],
     ["coverage", "⊞", "Recursos"],
     ["trash", "♲", "Lixeira"],
   ]
@@ -251,7 +282,7 @@ function shell(body) {
     )
     .join(
       "",
-    )}</nav><footer>FEITO PARA CONECTAR<br>Uma conta. Todas as suas ideias.<br><button id="backup">Exportar meu espaço</button><button id="import">Importar JSON</button><button id="import-office">Importar Office / Agenda</button><a class="download-platform" href="/downloads/drap-office.zip" download="drap-office.zip">Baixar plataforma ↓</a></footer></aside><main class="main"><header class="topbar"><input class="search" id="search" type="search" placeholder="Buscar em todos os arquivos…" aria-label="Buscar arquivos" value="${esc(query)}"><div class="row"><span class="user-name muted">${esc(user.name)}</span><span class="avatar">${esc(user.name.slice(0, 2).toUpperCase())}</span><a class="download-top" href="/downloads/drap-office.zip" download="drap-office.zip" aria-label="Baixar plataforma" title="Baixar código da plataforma">↓</a><button id="logout" title="Sair da conta">Sair</button></div></header><div class="content">${body}</div></main></div>`;
+    )}</nav><footer>FEITO PARA CONECTAR<br>Uma conta. Todas as suas ideias.<br><button id="backup">Exportar meu espaço</button><button id="import">Importar JSON</button><button id="import-office">Importar Office / Agenda</button><a class="download-platform" href="/install" target="_blank" rel="noopener" data-install-action>Instalar e criar atalho ↓</a><a class="download-source" href="/downloads/drap-office.zip" download="drap-office.zip">Baixar código-fonte ZIP</a></footer></aside><main class="main"><header class="topbar"><input class="search" id="search" type="search" placeholder="Buscar em todos os arquivos…" aria-label="Buscar arquivos" value="${esc(query)}"><div class="row"><span class="user-name muted">${esc(user.name)}</span><span class="avatar">${esc(user.name.slice(0, 2).toUpperCase())}</span><a class="download-top" href="/install" target="_blank" rel="noopener" data-install-action aria-label="Instalar plataforma" title="Instalar e criar atalho no computador ou celular">↓</a><button id="logout" title="Sair da conta">Sair</button></div></header><div class="content">${body}</div></main></div>`;
   document
     .querySelectorAll("[data-nav]")
     .forEach((n) => (n.onclick = () => navigate(n.dataset.nav)));
@@ -259,6 +290,7 @@ function shell(body) {
   bind("logout", async () => {
     if (!(await leave())) return;
     await api("/api/logout", {});
+    ++navigationSequence;++searchSequence;clearTimeout(updateSearch.timer);searchMatches=null;
     user = null;
     items = [];
     current = null;
@@ -280,24 +312,21 @@ function shell(body) {
         const search = document.querySelector("#search");
         search.focus();
         search.setSelectionRange(query.length, query.length);
+        updateSearch();
         return;
       }
-      const target = document.querySelector("#file-list");
-      if (target) target.innerHTML = fileList(filtered());
-      wireFiles();
+      updateSearch();
     },
     "input",
   );
-  bind("backup", () =>
-    download(
-      "drap-office-espaco.json",
-      JSON.stringify(
-        { format: "drap-office/1", items: items.filter((i) => i.owner === user.id) },
-        null,
-        2,
-      ),
-    ),
-  );
+  bind("backup", async () => {
+    const button=document.querySelector('#backup');button.disabled=true;
+    try {
+      const full=await allPages('/api/items');
+      download('drap-office-espaco.json',JSON.stringify({format:'drap-office/1',items:full.filter(item=>item.owner===user.id)},null,2));
+    } catch(error) {notify(error.message);}
+    finally {button.disabled=false;}
+  });
   bind("import", importBackup);
   colors();
 }
@@ -313,21 +342,31 @@ async function leave() {
 }
 async function navigate(next) {
   if (!(await leave())) return;
-  dirty = false;
-  current = null;
-  view = next;
-  query = "";
-  await refresh();
+  const sequence=++navigationSequence;
+  ++searchSequence;clearTimeout(updateSearch.timer);searchMatches=null;
+  dirty = false;current = null;view = next;query = "";
+  // Leave the editor immediately so its controls cannot mutate a file while
+  // navigation is awaiting the network. Show known metadata, then revalidate.
   render();
+  if(['analytics','automation','coverage','google'].includes(next))return;
+  const list=document.querySelector('#file-list');list?.setAttribute('aria-busy','true');
+  try {
+    await refresh(sequence);
+    if(sequence===navigationSequence&&!current){
+      const matches=filtered();
+      list.innerHTML=fileList(view==='home'?matches.slice(0,8):matches);
+      const count=document.querySelector('#file-count');if(count)count.textContent=matches.length+' arquivos';
+      wireFiles();
+    }
+  } catch(error) {if(sequence===navigationSequence)notify(error.message);}
+  finally {list?.removeAttribute('aria-busy');}
 }
 function filtered() {
   return items.filter(
     (i) =>
       (view === "trash" ? i.deleted : !i.deleted) &&
       (view !== "shared" || i.owner !== user.id) &&
-      `${i.title} ${TYPES[i.kind]?.name} ${JSON.stringify(i.content)}`
-        .toLowerCase()
-        .includes(query.toLowerCase()),
+      (`${i.title} ${TYPES[i.kind]?.name}`.toLowerCase().includes(query.toLowerCase()) || searchMatches?.has(i.id)),
   );
 }
 function fileList(list) {
@@ -353,6 +392,7 @@ function render() {
   if (current) return editor();
   if (view === "analytics") return analytics();
   if (view === "automation") return automation();
+  if (view === "google") return googleWorkspace();
   if (view === "coverage") return coverage();
   const home = view === "home";
   shell(
@@ -367,7 +407,7 @@ function render() {
             )
             .join("")}</div>`
         : ""
-    }<div class="row between section-head"><h2>${home ? "Arquivos recentes" : "Biblioteca"}</h2><span class="muted">${filtered().length} arquivos</span></div><section class="files" id="file-list">${fileList(home ? filtered().slice(0, 8) : filtered())}</section>`,
+    }<div class="row between section-head"><h2>${home ? "Arquivos recentes" : "Biblioteca"}</h2><span class="muted" id="file-count">${filtered().length} arquivos</span></div><section class="files" id="file-list">${fileList(home ? filtered().slice(0, 8) : filtered())}</section>`,
   );
   bind("new", () => createDialog());
   bind("hero-new", () => createDialog());
@@ -429,8 +469,7 @@ function createDialog(kind = "document") {
               content: defaults(data.kind),
             });
             closeDialog();
-            await refresh();
-            await openItem(item.id);
+            await openItem(item.id,item);
           } catch (err) {
             document.querySelector("#create-error").textContent = err.message;
           }
@@ -440,10 +479,18 @@ function createDialog(kind = "document") {
     },
   );
 }
-async function openItem(id) {
+async function openItem(id,loaded=null) {
   if (!(await leave())) return;
+  const sequence=++navigationSequence;
+  const kind=loaded?.kind||items.find(item=>item.id===id)?.kind;
+  // Fetch the editor while the authorized file request is in flight.
+  if(['document','note'].includes(kind))void import('/document.js').catch(()=>{});
+  if(kind==='sheet')void import('/spreadsheet.js').catch(()=>{});
+  notify('Abrindo arquivo…');
   try {
-    current = await api("/api/items/" + id);
+    const result = loaded || await api("/api/items/" + id);
+    if(sequence!==navigationSequence)return;
+    current = result;rememberItem(result);
     dirty = false;
     if (current.role !== 'read') {
       let draft;
@@ -456,9 +503,9 @@ async function openItem(id) {
       }
     }
     selectedSlide = 0;
-    editor();
+    editor();notify('');
   } catch (e) {
-    notify(e.message);
+    if(sequence===navigationSequence)notify(e.message);
   }
 }
 async function save() {
@@ -486,7 +533,7 @@ async function save() {
     clearTimeout(stashDraft.timer);
     try { localStorage.removeItem(draftKey()); } catch {}
     notify("Arquivo salvo. Seu trabalho está em dia.");
-    await refresh();
+    rememberItem(saved);
     if (keepSheet) document.querySelector('#save-state').textContent = `Versão ${current.version} · ${date(current.updated)}`;
     else editor();
   } catch (e) {
@@ -526,7 +573,7 @@ function editor() {
   const t = TYPES[current.kind],
     read = current.role === "read";
   shell(
-    `<div class="editor-head"><button id="back">←</button>${icon(current.kind)}<input id="title" class="title-input" aria-label="Nome do arquivo" maxlength="200" value="${esc(current.title)}" ${read ? "disabled" : ""}><span class="badge">${t.single}</span><button id="save" class="primary" ${read ? "disabled" : ""}>Salvar</button></div><div class="toolbar"><span id="save-state" class="muted">${dirty ? "Alterações não salvas" : `Versão ${current.version} · ${date(current.updated)}`}</span><button id="export">Exportar JSON</button>${["document","note","sheet","table","slides","calendar"].includes(current.kind) ? '<button id="export-office">Baixar ' + ({document:"DOCX",note:"DOCX",sheet:"XLSX",table:"XLSX",slides:"PPTX",calendar:"ICS"}[current.kind]) + '</button>' : ""}<button id="print">Imprimir / PDF</button><button id="history">Histórico</button><button id="comments">Comentários</button>${current.role === "owner" ? '<button id="share">Compartilhar</button>' : ""}<button id="trash" class="danger" ${read ? "disabled" : ""}>${current.deleted ? "Restaurar" : "Mover para lixeira"}</button></div><div id="editor-body" class="editor"></div>`,
+    `<div class="editor-head"><button id="back">←</button>${icon(current.kind)}<input id="title" class="title-input" aria-label="Nome do arquivo" maxlength="200" value="${esc(current.title)}" ${read ? "disabled" : ""}><span class="badge">${t.single}</span><button id="save" class="primary" ${read ? "disabled" : ""}>Salvar</button></div><div class="toolbar"><span id="save-state" class="muted">${dirty ? "Alterações não salvas" : `Versão ${current.version} · ${date(current.updated)}`}</span><button id="export">Exportar JSON</button>${["document","note","sheet","table","slides","calendar"].includes(current.kind) ? '<button id="export-office">Baixar ' + ({document:"DOCX",note:"DOCX",sheet:"XLSX",table:"XLSX",slides:"PPTX",calendar:"ICS"}[current.kind]) + '</button>' : ""}<button id="aux-insert" aria-haspopup="dialog" ${read ? "disabled" : ""}>＋ Inserir</button><button id="print">Imprimir / PDF</button><button id="history">Histórico</button><button id="comments">Comentários</button>${current.role === "owner" ? '<button id="share">Compartilhar</button>' : ""}<button id="trash" class="danger" ${read ? "disabled" : ""}>${current.deleted ? "Restaurar" : "Mover para lixeira"}</button></div><div id="editor-body" class="editor"></div>`,
   );
   bind("back", () => navigate("files"));
   bind(
@@ -546,7 +593,7 @@ function editor() {
     );
   });
   bind("export-office", exportOffice);
-  bind("print", () => current.kind==="slides"?printSlides(current.content):window.print());
+  bind("print", () => current.kind==="slides"?printSlides(current.content):["document","note"].includes(current.kind)?printDocument(current.content.page):window.print());
   bind("history", historyDialog);
   bind("comments", commentsDialog);
   bind("share", shareDialog);
@@ -604,36 +651,43 @@ function editor() {
   if (read)
     root
       .querySelectorAll("input,textarea,select,button")
-      .forEach(n=>{const allowed={slides:'[data-slide],#present',document:'#export-text,#document-mode',note:'#export-text,#document-mode',portal:'[data-link]',diagram:'#diagram-svg',table:'#table-filter,#table-csv',form:'#form-csv'}[current.kind];if(!allowed||!n.matches(allowed))n.disabled=true;});
+      .forEach(n=>{const allowed={slides:'[data-slide],#present,#present-separate',document:'[data-doc-tab],#rich-html,#document-zoom,#export-text,#document-mode,#document-outline,#document-statistics,[data-outline]',note:'[data-doc-tab],#rich-html,#document-zoom,#export-text,#document-mode,#document-outline,#document-statistics,[data-outline]',calendar:'#month-prev,#month-next,#month-today',portal:'[data-link]',diagram:'#diagram-svg',table:'#table-filter,#table-csv',form:'#form-csv'}[current.kind];if(!allowed||!n.matches(allowed))n.disabled=true;});
+  const insertPanel=document.createElement('section');insertPanel.id='inserted-content';insertPanel.className='inserted-content';root.after(insertPanel);
+  mountInsertMenu(insertPanel,current,{dialog:showDialog,close:closeDialog,bind,escape:esc,notify,dirty:setDirty,api,download,items:()=>items,openItem,flush:async()=>{await spreadsheet?.flush();},insertDocument:['document','note'].includes(current.kind)?source=>root.insertDocument(source):null});
   colors();
 }
 function textEditor(root, c) {
   documentEditor?.dispose();documentEditor=null;const token={};root.documentToken=token;
   c.text ??= "";
-  let visual=true,doc=null;
+  let visual=true,doc=null,documentTools=null,advancedTools=null;
   try{visual=sessionStorage.getItem('drap-document-mode')!=='markdown';}catch{}
   const readOnly=current.role==='read';
-  root.innerHTML = `<div class="toolbar"><button id="document-mode">Editar Markdown</button><button id="document-paragraph">Parágrafo</button><button data-format="# ">Título</button><button data-format="## ">Subtítulo</button><button data-format="**">Negrito</button><button data-format="*">Itálico</button><button data-format="- ">Lista</button><button data-format="- [ ] ">Checklist</button><button id="insert-table">Tabela</button><button id="insert-link">Link</button><button id="document-image">Inserir imagem</button><button id="document-images">Gerenciar imagens</button><button id="find-replace">Localizar e substituir</button><button id="to-slides">Criar apresentação ↗</button><button id="export-text">Baixar texto</button><button id="document-undo">Desfazer</button><button id="document-redo">Refazer</button><span class="muted" id="word-count"></span></div><div class="toolbar" id="document-table-tools"><span id="document-table-hint">Selecione uma célula para editar a tabela.</span><button data-document-command="row">Adicionar linha</button><button data-document-command="column">Adicionar coluna</button><button data-document-command="deleteRow">Excluir linha</button><button data-document-command="deleteColumn">Excluir coluna</button><button data-document-command="deleteTable">Excluir tabela</button></div><div class="document"><textarea id="text" aria-label="Conteúdo do documento" placeholder="Escreva sua próxima ideia… Use # para títulos e **texto** para negrito.">${esc(c.text)}</textarea><article id="preview" class="preview">${markdown(c.text,c.images)}</article></div>`;
-  const update = () => {
+  root.innerHTML = `<div class="toolbar"><button id="document-mode">Editar Markdown</button><button id="document-paragraph">Parágrafo</button><button data-format="# ">Título</button><button data-format="## ">Subtítulo</button><button data-format="**">Negrito</button><button data-format="*">Itálico</button><button data-format="- ">Lista</button><button data-format="- [ ] ">Checklist</button><button id="insert-table">Tabela</button><button id="insert-link">Link</button><button id="document-image">Inserir imagem</button><button id="document-images">Gerenciar imagens</button><button id="find-replace">Localizar e substituir</button><button id="to-slides">Criar apresentação ↗</button><button id="export-text">Baixar texto</button><button id="document-undo">Desfazer</button><button id="document-redo">Refazer</button><span class="muted" id="word-count"></span></div><div class="toolbar" id="document-table-tools"><span id="document-table-hint">Selecione uma célula para editar a tabela.</span><button data-document-command="row">Adicionar linha</button><button data-document-command="column">Adicionar coluna</button><button data-document-command="deleteRow">Excluir linha</button><button data-document-command="deleteColumn">Excluir coluna</button><button data-document-command="deleteTable">Excluir tabela</button></div><div class="document"><p id="markdown-format-notice" class="muted" hidden>Ao alterar o Markdown, esta aba será convertida para formatação básica. Cores, fontes por trecho, notas de rodapé e mesclagens não são preservadas nessa conversão.</p><textarea id="text" aria-label="Conteúdo do documento" placeholder="Escreva sua próxima ideia… Use # para títulos e **texto** para negrito.">${esc(c.text)}</textarea><article id="preview" class="preview">${markdown(c.text,c.images)}</article></div>`;
+  const update = (fromMarkdown=false) => {
+    if(fromMarkdown)delete c.rich;
     if(doc)doc.refresh();else document.querySelector("#preview").innerHTML = markdown(c.text,c.images);
     document.querySelector("#word-count").textContent =
       `${doc?doc.words():(c.text.trim()?c.text.trim().split(/\s+/).length:0)} palavras`;
+    documentTools?.refresh();advancedTools?.refresh();
   };
+  documentTools=mountDocumentTools(root,c,{editor:()=>doc,changed:setDirty,dialog:showDialog,bind,close:closeDialog,escape:esc,readOnly});
+  mountDocumentTabs(root,c,{readOnly,dirty:setDirty,reopen:()=>textEditor(root,c),dialog:showDialog,bind,close:closeDialog,escape:esc});
+  advancedTools=mountAdvancedDocument(root,c,{editor:()=>doc,readOnly,dirty:setDirty,dialog:showDialog,bind,close:closeDialog,notify,escape:esc});
   update();
   if(c.images?.length)root.querySelector('#export-text').textContent='Baixar HTML com imagens';
-  const setMode=()=>{root.querySelector('.document').classList.toggle('visual-mode',visual);root.querySelector('#text').hidden=visual;root.querySelector('#document-mode').textContent=visual?'Editar Markdown':'Editar visualmente';root.querySelector('#document-table-tools').hidden=!visual;for(const id of ['document-paragraph','document-undo','document-redo'])root.querySelector('#'+id).hidden=!visual;};
+  const setMode=()=>{advancedTools?.setVisual(visual);root.querySelector('#markdown-format-notice').hidden=visual;root.querySelector('.document').classList.toggle('visual-mode',visual);root.querySelector('#text').hidden=visual;root.querySelector('#document-mode').textContent=visual?'Editar Markdown':'Editar visualmente';root.querySelector('#document-table-tools').hidden=!visual;for(const id of ['numbered','quote','code','divider'])root.querySelector('#document-'+id).hidden=!visual;for(const id of ['document-paragraph','document-undo','document-redo'])root.querySelector('#'+id).hidden=!visual;};
   setMode();
   bind('document-mode',()=>{visual=!visual;try{sessionStorage.setItem('drap-document-mode',visual?'visual':'markdown');}catch{}setMode();});
   bind('document-paragraph',()=>{if(visual)doc?.format('paragraph');});
   for(const command of ['undo','redo'])bind('document-'+command,()=>{if(visual)doc?.format(command);else{root.querySelector('#text').focus();document.execCommand(command);}});
   root.querySelectorAll('[data-document-command]').forEach(el=>el.onclick=()=>doc?.format(el.dataset.documentCommand));
-  import('/document.js').then(({mountDocument})=>{if(!root.isConnected||root.documentToken!==token)return;root.querySelector('#preview').textContent='';doc=mountDocument(root.querySelector('#preview'),c,{readOnly,onChange:(text,words)=>{c.text=text;root.querySelector('#text').value=text;root.querySelector('#word-count').textContent=words+' palavras';setDirty();},notify,onState:state=>{root.querySelector('#document-table-hint').textContent=state.table?'Tabela selecionada:':'Selecione uma célula para editar a tabela.';root.querySelectorAll('[data-document-command]').forEach(el=>el.disabled=readOnly||!state.table);root.querySelector('#document-undo').disabled=readOnly||!state.undo;root.querySelector('#document-redo').disabled=readOnly||!state.redo;}});documentEditor=doc;root.querySelectorAll('[data-document-command]').forEach(el=>el.disabled=readOnly||!doc.state().table);root.querySelector('#document-undo').disabled=true;root.querySelector('#document-redo').disabled=true;root.querySelector('#preview').dataset.ready='true';root.querySelector('#word-count').textContent=doc.words()+' palavras';}).catch(e=>{if(!root.isConnected||root.documentToken!==token)return;visual=false;setMode();notify('O editor visual não carregou. A edição Markdown continua disponível.');});
+  import('/document.js').then(({mountDocument})=>{if(!root.isConnected||root.documentToken!==token)return;root.querySelector('#preview').textContent='';doc=mountDocument(root.querySelector('#preview'),c,{readOnly,onChange:(text,words)=>{c.text=text;root.querySelector('#text').value=text;root.querySelector('#word-count').textContent=words+' palavras';documentTools?.refresh();advancedTools?.refresh();setDirty();},notify,onState:state=>{root.querySelector('#document-table-hint').textContent=state.table?'Tabela selecionada:':'Selecione uma célula para editar a tabela.';root.querySelectorAll('[data-document-command]').forEach(el=>el.disabled=readOnly||!state.table);root.querySelector('#document-undo').disabled=readOnly||!state.undo;root.querySelector('#document-redo').disabled=readOnly||!state.redo;}});documentEditor=doc;root.querySelectorAll('[data-document-command]').forEach(el=>el.disabled=readOnly||!doc.state().table);root.querySelector('#document-undo').disabled=true;root.querySelector('#document-redo').disabled=true;root.querySelector('#preview').dataset.ready='true';root.querySelector('#word-count').textContent=doc.words()+' palavras';documentTools?.refresh();}).catch(e=>{if(!root.isConnected||root.documentToken!==token)return;visual=false;setMode();notify('O editor visual não carregou. A edição Markdown continua disponível.');});
 
   bind(
     "text",
     (e) => {
       c.text = e.target.value;
-      update();
+      update(true);
       setDirty();
     },
     "input",
@@ -653,15 +707,24 @@ function textEditor(root, c) {
           "end",
         );
         c.text = input.value;
-        update();
+        update(true);
         setDirty();
         input.focus();
       }),
   );
   function insertSnippet(text) {
     if(visual&&doc){doc.insert(text);return;}
-    const input=document.querySelector('#text');input.setRangeText(text,input.selectionStart,input.selectionEnd,'end');c.text=input.value;update();setDirty();input.focus();
+    const input=document.querySelector('#text');input.setRangeText(text,input.selectionStart,input.selectionEnd,'end');c.text=input.value;update(true);setDirty();input.focus();
   }
+  root.insertDocument=source=>{
+    if(readOnly)return;
+    if(visual&&!doc)throw Error('Aguarde o editor carregar antes de inserir o documento.');
+    if(visual&&doc.state().table)throw Error('Coloque o cursor fora da tabela antes de inserir outro documento.');
+    const prepared=prepareDocumentInsertion(source,c),previous=c.images;
+    c.images=[...(c.images||[]),...prepared.images];
+    try{if(visual&&prepared.rich)doc.insertNode(prepared.rich.content);else insertSnippet('\n'+prepared.text+'\n');}catch(error){if(previous===undefined)delete c.images;else c.images=previous;throw error;}
+    if(c.images.length)root.querySelector('#export-text').textContent='Baixar HTML com imagens';
+  };
   bind('document-image',()=>{
     const input=document.createElement('input');input.type='file';input.accept='image/png,image/jpeg,image/webp';
     input.onchange=async()=>{if(!input.files[0])return;try{const {src,ratio}=await raster(input.files[0]);if(!root.isConnected)return;if((c.images||[]).length>=20||JSON.stringify(c).length+src.length>1800000)throw Error('Limite de imagens do documento atingido. Remova imagens não usadas ou crie outro documento.');const im={id:crypto.randomUUID(),src,ratio,alt:input.files[0].name.slice(0,200),width:80};(c.images??=[]).push(im);insertSnippet('\n!['+im.alt.replaceAll(']','')+'](drap-image:'+im.id+')\n');document.querySelector('#export-text').textContent='Baixar HTML com imagens';}catch(e){notify(e.message);}};input.click();
@@ -669,11 +732,11 @@ function textEditor(root, c) {
   bind('document-images',()=>showDialog(`<h2>Imagens do documento</h2>${(c.images||[]).map((im,i)=>`<article class="card"><img src="${esc(im.src)}" alt="${esc(im.alt)}" style="max-width:120px;max-height:100px"><label class="field">Descrição<input data-image-alt="${i}" aria-label="Descrição da imagem ${i+1}" maxlength="200" value="${esc(im.alt)}"></label><label class="field">Largura (%)<input type="number" min="10" max="100" data-image-width="${i}" aria-label="Largura da imagem ${i+1}" value="${im.width||80}"></label><button data-image-remove="${i}">Remover imagem ${i+1}</button></article>`).join('')||'<p>Nenhuma imagem inserida.</p>'}<button id="images-close">Concluir</button>`,()=>{
     modal.querySelectorAll('[data-image-alt]').forEach(el=>el.oninput=()=>{c.images[+el.dataset.imageAlt].alt=el.value;update();setDirty();});
     modal.querySelectorAll('[data-image-width]').forEach(el=>el.onchange=()=>{const value=Number(el.value);if(!Number.isFinite(value))return;c.images[+el.dataset.imageWidth].width=Math.max(10,Math.min(100,value));el.value=c.images[+el.dataset.imageWidth].width;update();setDirty();});
-    modal.querySelectorAll('[data-image-remove]').forEach(el=>el.onclick=()=>{const im=c.images[+el.dataset.imageRemove];c.text=c.text.split('\n').filter(line=>!line.includes('](drap-image:'+im.id+')')).join('\n');c.images.splice(+el.dataset.imageRemove,1);closeDialog();setDirty();textEditor(root,c);});bind('images-close',closeDialog);
+    modal.querySelectorAll('[data-image-remove]').forEach(el=>el.onclick=()=>{const im=c.images[+el.dataset.imageRemove];doc?.removeImage(im.id);c.text=c.text.split('\n').filter(line=>!line.includes('](drap-image:'+im.id+')')).join('\n');c.images.splice(+el.dataset.imageRemove,1);closeDialog();setDirty();textEditor(root,c);});bind('images-close',closeDialog);
   }));
   bind('insert-table',()=>insertSnippet('\n| Coluna 1 | Coluna 2 |\n| --- | --- |\n| Valor | Valor |\n'));
   bind('insert-link',()=>showDialog('<h2>Inserir link</h2><form id="link-form"><label class="field">Texto do link<input name="label" required></label><label class="field">URL HTTPS<input name="url" type="url" required></label><button class="primary">Inserir</button></form>',()=>bind('link-form',e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));if(!/^https?:\/\//i.test(d.url))return notify('Use um endereço HTTP ou HTTPS.');closeDialog();insertSnippet('['+d.label.replaceAll(']','')+']('+d.url.replaceAll(')','%29')+')');},'submit')));
-  bind('find-replace',()=>showDialog('<h2>Localizar e substituir</h2><form id="replace-form"><label class="field">Localizar<input name="search" required></label><label class="field">Substituir por<input name="replacement"></label><button class="primary">Substituir todas</button></form>',()=>bind('replace-form',e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));if(visual&&doc){const count=doc.replace(d.search,d.replacement);closeDialog();notify(count+' ocorrências substituídas.');return;}const count=c.text.split(d.search).length-1;c.text=c.text.replaceAll(d.search,d.replacement);closeDialog();setDirty();textEditor(root,c);notify(count+' ocorrências substituídas.');},'submit')));
+  bind('find-replace',()=>showDialog('<h2>Localizar e substituir</h2><form id="replace-form"><label class="field">Localizar<input name="search" required></label><label class="field">Substituir por<input name="replacement"></label><button class="primary">Substituir todas</button></form>',()=>bind('replace-form',e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));if(visual&&doc){const count=doc.replace(d.search,d.replacement);closeDialog();notify(count+' ocorrências substituídas.');return;}const count=c.text.split(d.search).length-1;c.text=c.text.replaceAll(d.search,d.replacement);delete c.rich;closeDialog();setDirty();textEditor(root,c);notify(count+' ocorrências substituídas.');},'submit')));
   bind("export-text", () =>
     c.images?.length?download(current.title+".html",'<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>'+esc(current.title)+'</title><body>'+(doc?doc.html():markdown(c.text,c.images))+'</body></html>',"text/html"):download(current.title + ".md", c.text, "text/markdown"),
   );
@@ -707,6 +770,8 @@ async function sheetEditor(root, c) {
     renderCharts();
     const address=()=>document.querySelector('#sheet-address').value.trim().toUpperCase();
     const action=fn=>async()=>{try{await fn();}catch(e){notify(e.message);}};
+    mountSheetProtection(root,c,spreadsheet,{owner:item.role==='owner',readOnly:item.role==='read',address,dialog:showDialog,bind,close:closeDialog,dirty:setDirty,escape:esc,notify});
+    mountSheetTools(root,spreadsheet,{address,dialog:showDialog,bind,close:closeDialog,escape:esc,notify,readOnly:item.role==='read'});
     bind('sheet-select',action(()=>{spreadsheet.select(address());const value=spreadsheet.read(address());document.querySelector('#sheet-value').value=value.formulas[0]?.[0]||(value.values[0]?.[0]??'');}));
     bind('sheet-apply',action(()=>spreadsheet.set(address(),document.querySelector('#sheet-value').value)));
     for(const kind of ['row','column','clear'])bind('sheet-'+kind,action(()=>spreadsheet.quick(kind,address())));
@@ -714,10 +779,10 @@ async function sheetEditor(root, c) {
     bind('sheet-calculate',()=>showDialog(`<h2>Inserir cálculo</h2><form id="sheet-calc-form"><label class="field">Operação<select name="operation" aria-label="Operação"><option value="SUM">Soma</option><option value="AVERAGE">Média</option><option value="MIN">Mínimo</option><option value="MAX">Máximo</option><option value="COUNT">Contar números</option><option value="COUNTA">Contar preenchidas</option></select></label><label class="field">Intervalo de origem<input name="source" value="${esc(address())}" required pattern="[A-Za-z]{1,3}[1-9][0-9]{0,5}(:[A-Za-z]{1,3}[1-9][0-9]{0,5})?"></label><label class="field">Célula do resultado<input name="target" placeholder="Ex.: D1" required pattern="[A-Za-z]{1,3}[1-9][0-9]{0,5}"></label><p>Escolha uma célula fora do intervalo de origem. O resultado acompanhará as alterações dos dados.</p><p id="calc-error" role="alert"></p><button class="primary">Inserir fórmula</button></form>`,()=>bind('sheet-calc-form',async e=>{e.preventDefault();try{const f=new FormData(e.target),source=f.get('source').toUpperCase(),target=f.get('target').toUpperCase();const parse=a=>{const m=/^([A-Z]+)([0-9]+)$/.exec(a);return {c:[...m[1]].reduce((n,c)=>n*26+c.charCodeAt(0)-64,0),r:+m[2]};};const [a,b]=source.split(':'),start=parse(a),end=parse(b||a),dest=parse(target);if(start.r>end.r||start.c>end.c)throw Error('Use um intervalo em ordem crescente.');if(dest.r>=start.r&&dest.r<=end.r&&dest.c>=start.c&&dest.c<=end.c)throw Error('A célula do resultado precisa ficar fora da origem.');spreadsheet.set(target,'='+f.get('operation')+'('+source+')');await spreadsheet.flush();closeDialog();notify('Fórmula inserida em '+target+'.');}catch(err){document.querySelector('#calc-error').textContent=err.message;}},'submit')));
 
     bind('csv-import',()=>pickFile('.csv',async text=>{try{await spreadsheet.paste(text,address());}catch(e){notify(e.message);}}));
-    bind('sheet-chart-add',()=>showDialog(`<h2>Criar gráfico</h2><form id="chart-form"><label class="field">Título do gráfico<input name="title" value="${esc(current.title)}" maxlength="100" required></label><label class="field">Tipo de gráfico<select name="type"><option value="bar">Colunas</option><option value="line">Linhas</option><option value="pie">Pizza</option></select></label><label class="field">Intervalo de dados<input name="range" value="${esc(address().includes(':')?address():'A1:B5')}" required></label><p>Duas colunas: rótulos e valores, com cabeçalho. Até 200 linhas. O gráfico acompanha os valores dessas células.</p><p id="chart-error" role="alert" class="error"></p><button class="primary">Adicionar gráfico</button></form>`,()=>bind('chart-form',async e=>{e.preventDefault();try{await spreadsheet.flush();if((c.charts||[]).length>=10)throw Error('Limite de dez gráficos por arquivo.');const d=Object.fromEntries(new FormData(e.target));d.range=d.range.trim().toUpperCase();if(!/^[A-Z]{1,3}[1-9]\d{0,5}:[A-Z]{1,3}[1-9]\d{0,5}$/.test(d.range))throw Error('Use um intervalo como A1:B5.');d.sheetId=spreadsheet.activeSheetId();d.id=crypto.randomUUID();chartData(spreadsheet.chartRows(d.range,d.sheetId),d.type);(c.charts??=[]).push(d);closeDialog();setDirty();renderCharts();}catch(err){document.querySelector('#chart-error').textContent=err.message;}},'submit')));
+    bind('sheet-chart-add',()=>showDialog(`<h2>Criar gráfico</h2><form id="chart-form"><label class="field">Título do gráfico<input name="title" value="${esc(current.title)}" maxlength="100" required></label><label class="field">Tipo de gráfico<select name="type"><option value="bar">Colunas</option><option value="line">Linhas</option><option value="pie">Pizza</option><option value="area">Área</option><option value="doughnut">Rosca</option><option value="horizontal">Barras horizontais</option><option value="scatter">Dispersão XY</option><option value="radar">Radar</option></select></label><label class="field">Intervalo de dados<input name="range" value="${esc(address().includes(':')?address():'A1:B5')}" required></label><p>Duas colunas: rótulos e valores, com cabeçalho. Até 200 linhas. O gráfico acompanha os valores dessas células.</p><p id="chart-error" role="alert" class="error"></p><button class="primary">Adicionar gráfico</button></form>`,()=>bind('chart-form',async e=>{e.preventDefault();try{await spreadsheet.flush();if((c.charts||[]).length>=10)throw Error('Limite de dez gráficos por arquivo.');const d=Object.fromEntries(new FormData(e.target));d.range=d.range.trim().toUpperCase();if(!/^[A-Z]{1,3}[1-9]\d{0,5}:[A-Z]{1,3}[1-9]\d{0,5}$/.test(d.range))throw Error('Use um intervalo como A1:B5.');d.sheetId=spreadsheet.activeSheetId();d.id=crypto.randomUUID();chartData(spreadsheet.chartRows(d.range,d.sheetId),d.type);(c.charts??=[]).push(d);closeDialog();setDirty();renderCharts();}catch(err){document.querySelector('#chart-error').textContent=err.message;}},'submit')));
     bind('csv-export',action(async()=>{await spreadsheet.flush();download(current.title+'.csv',spreadsheet.csv(),'text/csv');}));
     bind('sheet-report',action(async()=>{await spreadsheet.flush();await convert('document',{text:'# '+current.title+'\n\n'+spreadsheet.rows().map(r=>r.join(' | ')).join('\n')},' — Relatório');}));
-    if(item.role==='read')root.querySelectorAll('.sheet-tools input,.sheet-tools button:not(#csv-export)').forEach(el=>el.disabled=true);
+    if(item.role==='read')root.querySelectorAll('.sheet-tools input,.sheet-tools button:not(#csv-export):not(#sheet-stats)').forEach(el=>el.disabled=true);
   function renderCharts(){
     if(!spreadsheet||!root.isConnected)return;
     const panel=root.querySelector('#sheet-charts');
@@ -729,61 +794,42 @@ async function sheetEditor(root, c) {
 }
 function slideEditor(root,c){mountSlides(root,c,{dirty:setDirty,notify,present,readOnly:current.role==='read',initialIndex:selectedSlide,onSelect:i=>{selectedSlide=i;}});}
 function present(slides, theme="light") {
-  let i = 0;
-  const div = document.createElement("section");
-  div.className = "present";
-  div.dataset.theme=theme;
-  div.setAttribute("role", "dialog");
-  div.setAttribute("aria-label", "Apresentação");
-  document.body.append(div);
-  function close() {
-    div.remove();
-    document.removeEventListener("keydown", key);
+  const visible=slides.map((slide,index)=>({...slide,original:index+1})).filter(s=>!s.hidden);
+  if(!visible.length)return notify('Todos os slides estão ocultos. Exiba pelo menos um para apresentar.');
+  let i=0,notes=false,black=false,auto=null;const started=Date.now(),previousFocus=document.activeElement;
+  const div=document.createElement('section');div.className='present';div.dataset.theme=theme;div.setAttribute('role','dialog');div.setAttribute('aria-modal','true');div.setAttribute('aria-label','Apresentação');document.body.append(div);
+  function close(){clearInterval(auto);clearInterval(clock);if(document.fullscreenElement===div)document.exitFullscreen().catch(()=>{});div.remove();document.removeEventListener('keydown',key);previousFocus?.focus();}
+  function move(delta){i=Math.max(0,Math.min(visible.length-1,i+delta));black=false;render();}
+  function render(){
+    const slide=visible[i];div.innerHTML=`<small>${esc(current.title)} · ${i+1} / ${visible.length} · Slide ${slide.original} · <span id="present-clock"></span></small><div class="slide-stage present-transition-${esc(slide.transition||'none')} ${black?'present-black':''}" data-theme="${esc(theme)}" style="${slideStyle(slide)}">${slideMarkup(slide,{heading:'h1'})}</div>${notes?`<aside class="present-notes"><strong>Notas do apresentador (visíveis nesta tela)</strong><p>${esc(slide.notes||'Sem notas.')}</p><small>Próximo: ${esc(visible[i+1]?.title||'Fim da apresentação')}</small></aside>`:''}<div class="row controls"><button id="previous" ${i===0?'disabled':''}>← Anterior</button><button id="next-slide" ${i===visible.length-1?'disabled':''}>Próximo →</button><button id="present-notes" aria-pressed="${notes}">Notas</button><button id="present-black" aria-pressed="${black}">Tela preta (B)</button><button id="present-auto">${auto?'Pausar':'Avançar a cada 5 s'}</button><button id="present-fullscreen">Tela cheia</button><button id="close-present">Sair (Esc)</button></div>`;
+    div.querySelector('#previous').onclick=()=>move(-1);div.querySelector('#next-slide').onclick=()=>move(1);div.querySelector('#close-present').onclick=close;
+    div.querySelector('#present-notes').onclick=()=>{notes=!notes;render();};div.querySelector('#present-black').onclick=()=>{black=!black;render();};
+    div.querySelector('#present-fullscreen').onclick=()=>div.requestFullscreen?.().catch(()=>notify('Tela cheia indisponível neste navegador.'));
+    div.querySelector('#present-auto').onclick=()=>{if(auto){clearInterval(auto);auto=null;}else auto=setInterval(()=>{if(i===visible.length-1){clearInterval(auto);auto=null;render();}else move(1);},5000);render();};
+    tick();div.querySelector('#close-present').focus({preventScroll:true});
   }
-  function render() {
-    div.innerHTML = `<small>${esc(current.title)} · ${i + 1} / ${slides.length}</small><div class="slide-stage" data-theme="${esc(theme)}">${slideMarkup(slides[i],{heading:'h1'})}</div><div class="row controls"><button id="previous">← Anterior</button><button id="next-slide">Próximo →</button><button id="close-present">Sair (Esc)</button></div>`;
-    div.querySelector("#previous").onclick = () => {
-      i = Math.max(0, i - 1);
-      render();
-    };
-    div.querySelector("#next-slide").onclick = () => {
-      i = Math.min(slides.length - 1, i + 1);
-      render();
-    };
-    div.querySelector("#close-present").onclick = close;
-  }
-  function key(e) {
-    if (e.key === "Escape") close();
-    if (e.key === "ArrowRight") {
-      i = Math.min(slides.length - 1, i + 1);
-      render();
-    }
-    if (e.key === "ArrowLeft") {
-      i = Math.max(0, i - 1);
-      render();
-    }
-  }
-  document.addEventListener("keydown", key);
-  render();
-  div.querySelector("button").focus();
+  function tick(){const elapsed=Math.floor((Date.now()-started)/1000),el=div.querySelector('#present-clock');if(el)el.textContent=Math.floor(elapsed/60)+':'+String(elapsed%60).padStart(2,'0');}
+  function key(e){if(e.key==='Escape'){e.preventDefault();close();}else if(['ArrowRight','PageDown',' '].includes(e.key)&&!(e.key===' '&&e.target.tagName==='BUTTON')){e.preventDefault();move(1);}else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();move(-1);}else if(e.key==='Home'){e.preventDefault();i=0;render();}else if(e.key==='End'){e.preventDefault();i=visible.length-1;render();}else if(e.key.toLowerCase()==='b'){e.preventDefault();black=!black;render();}else if(e.key==='Tab'){const buttons=[...div.querySelectorAll('button:not(:disabled)')],first=buttons[0],last=buttons.at(-1);if(e.shiftKey&&e.target===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&e.target===last){e.preventDefault();first.focus();}}}
+  const clock=setInterval(tick,1000);document.addEventListener('keydown',key);render();
 }
 function boardEditor(root, c) {
   c.tasks ??= [];
   const statuses=['A fazer','Em andamento','Concluído'];
   const priorities=['Baixa','Normal','Alta','Urgente'];
   root.innerHTML=`<form id="add-task" class="toolbar"><input name="title" placeholder="O que precisa ser feito?" aria-label="Nome da tarefa" maxlength="200" required><input name="due" type="date" aria-label="Prazo"><select name="priority" aria-label="Prioridade da tarefa">${priorities.map(p=>`<option ${p==='Normal'?'selected':''}>${p}</option>`).join('')}</select><button class="primary">＋ Adicionar tarefa</button></form><div class="board">${statuses.map(status=>`<section class="column"><h3>${status} <span class="badge">${c.tasks.filter(t=>t.status===status).length}</span></h3>${c.tasks.map((t,i)=>t.status===status?`<article class="card"><h3>${esc(t.title)}</h3><span class="badge">${esc(t.priority || 'Normal')}</span><p class="muted">${t.due?'Prazo: '+esc(t.due):'Sem prazo'}${t.assignee?'<br>Responsável: '+esc(t.assignee):''}</p>${(t.subtasks||[]).map((s,j)=>`<label class="checklist"><input type="checkbox" data-subtask="${i}:${j}" ${s.done?'checked':''}>${esc(s.title)}</label>`).join('')}<select data-task="${i}" aria-label="Estado de ${esc(t.title)}">${statuses.map(s=>`<option ${s===status?'selected':''}>${s}</option>`).join('')}</select><div class="row"><button data-edit-task="${i}">Detalhes</button><button data-remove-task="${i}" class="danger">Excluir</button></div></article>`:'').join('')}</section>`).join('')}</div>`;
-  bind('add-task',e=>{e.preventDefault();if(c.tasks.length>=1000)return notify('Limite de 1000 tarefas.');c.tasks.push({...Object.fromEntries(new FormData(e.target)),status:'A fazer',assignee:'',subtasks:[]});setDirty();boardEditor(root,c);},'submit');
-  root.querySelectorAll('[data-task]').forEach(n=>n.onchange=()=>{c.tasks[+n.dataset.task].status=n.value;setDirty();boardEditor(root,c);});
-  root.querySelectorAll('[data-remove-task]').forEach(n=>n.onclick=()=>{c.tasks.splice(+n.dataset.removeTask,1);setDirty();boardEditor(root,c);});
+  bind('add-task',e=>{e.preventDefault();if(c.tasks.length>=1000)return notify('Limite de 1000 tarefas.');c.tasks.push({id:crypto.randomUUID(),...Object.fromEntries(new FormData(e.target)),status:'A fazer',assignee:'',subtasks:[]});setDirty();boardEditor(root,c);},'submit');
+  root.querySelectorAll('[data-task]').forEach(n=>n.onchange=()=>{const task=c.tasks[+n.dataset.task],old=task.status;task.status=n.value;const error=dependencyError(c.tasks);if(error){task.status=old;n.value=old;return notify(error);}setDirty();boardEditor(root,c);});
+  root.querySelectorAll('[data-remove-task]').forEach(n=>n.onclick=()=>{const removed=c.tasks.splice(+n.dataset.removeTask,1)[0];for(const task of c.tasks)task.dependsOn=(task.dependsOn||[]).filter(id=>id!==removed.id);setDirty();boardEditor(root,c);});
   root.querySelectorAll('[data-subtask]').forEach(n=>n.onchange=()=>{const [i,j]=n.dataset.subtask.split(':').map(Number);c.tasks[i].subtasks[j].done=n.checked;setDirty();});
+  mountTimeline(root,c,esc);
   root.querySelectorAll('[data-edit-task]').forEach(n=>n.onclick=()=>{
-    const task=c.tasks[+n.dataset.editTask];
-    showDialog(`<h2>Detalhes da tarefa</h2><form id="task-details"><label class="field">Título da tarefa<input name="title" value="${esc(task.title)}" maxlength="200" required></label><label class="field">Responsável<input name="assignee" value="${esc(task.assignee||'')}" maxlength="100"></label><label class="field">Data limite<input name="due" type="date" value="${esc(task.due)}"></label><label class="field">Prioridade<select name="priority">${priorities.map(p=>`<option ${p===(task.priority||'Normal')?'selected':''}>${p}</option>`).join('')}</select></label><label class="field">Subtarefas, uma por linha<textarea name="subtasks" rows="5">${esc((task.subtasks||[]).map(s=>s.title).join('\n'))}</textarea></label><p id="task-error" class="error" role="alert"></p><button class="primary">Aplicar detalhes</button></form>`,()=>bind('task-details',e=>{
-      e.preventDefault();const data=Object.fromEntries(new FormData(e.target));
+    const task=c.tasks[+n.dataset.editTask];for(const entry of c.tasks)entry.id??=crypto.randomUUID();
+    showDialog(`<h2>Detalhes da tarefa</h2><form id="task-details"><label class="field">Título da tarefa<input name="title" value="${esc(task.title)}" maxlength="200" required></label><label class="field">Responsável<input name="assignee" value="${esc(task.assignee||'')}" maxlength="100"></label><label class="field">Data de início<input name="start" type="date" value="${esc(task.start||'')}"></label><label class="field">Depende destas tarefas<select name="dependsOn" multiple aria-label="Dependências da tarefa">${c.tasks.filter(t=>t!==task).map(t=>`<option value="${esc(t.id)}" ${(task.dependsOn||[]).includes(t.id)?'selected':''}>${esc(t.title)}</option>`).join('')}</select></label><label class="field">Data limite<input name="due" type="date" value="${esc(task.due)}"></label><label class="field">Prioridade<select name="priority">${priorities.map(p=>`<option ${p===(task.priority||'Normal')?'selected':''}>${p}</option>`).join('')}</select></label><label class="field">Subtarefas, uma por linha<textarea name="subtasks" rows="5">${esc((task.subtasks||[]).map(s=>s.title).join('\n'))}</textarea></label><p id="task-error" class="error" role="alert"></p><button class="primary">Aplicar detalhes</button></form>`,()=>bind('task-details',e=>{
+      e.preventDefault();const form=new FormData(e.target),data=Object.fromEntries(form);data.dependsOn=form.getAll('dependsOn');if(data.start&&(!data.due||data.start>data.due)){document.querySelector('#task-error').textContent='O prazo deve ser igual ou posterior ao início.';return;}
       const titles=data.subtasks.split('\n').map(t=>t.trim()).filter(Boolean);
       if(titles.length>50 || titles.some(t=>t.length>200)){document.querySelector('#task-error').textContent='Até 50 subtarefas, com 200 caracteres cada.';return;}
       data.subtasks=titles.map(title=>({title,done:task.subtasks?.find(s=>s.title===title)?.done || false}));
-      Object.assign(task,data);closeDialog();setDirty();boardEditor(root,c);
+      const error=dependencyError(c.tasks.map(t=>t===task?{...task,...data}:t));if(error){document.querySelector('#task-error').textContent=error;return;}Object.assign(task,data);closeDialog();setDirty();boardEditor(root,c);
     },'submit'));
   });
 }
@@ -822,6 +868,7 @@ function calendarEditor(root, c) {
     },
     "submit",
   );
+  mountCalendarMonth(root,c,{escape:esc,readOnly:current.role==='read',edit:index=>root.querySelector(`[data-edit-event="${index}"]`).click()});
   root.querySelectorAll('[data-edit-event]').forEach(button=>button.onclick=()=>{
     const event=c.events[+button.dataset.editEvent];
     showDialog(`<h2>Editar compromisso</h2><form id="edit-event"><label class="field">Título do compromisso<input name="title" value="${esc(event.title)}" maxlength="200" required></label><label class="field">Início<input name="start" type="datetime-local" value="${localDateTime(event.start)}" required></label><label class="field">Fim<input name="end" type="datetime-local" value="${localDateTime(event.end)}" required></label><label class="field">Local<input name="location" value="${esc(event.location||'')}" maxlength="500"></label><label class="field">Descrição<textarea name="description" aria-label="Descrição do compromisso" maxlength="4000">${esc(event.description||'')}</textarea></label><p>Esta alteração afeta somente este compromisso.</p><p id="event-error" role="alert"></p><button class="primary">Aplicar compromisso</button></form>`,()=>bind('edit-event',e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));if(new Date(d.end)<=new Date(d.start)){document.querySelector('#event-error').textContent='O fim deve ser posterior ao início.';return;}Object.assign(event,{title:d.title,location:d.location,description:d.description,start:new Date(d.start).toISOString(),end:new Date(d.end).toISOString()});closeDialog();setDirty();calendarEditor(root,c);},'submit'));
@@ -837,20 +884,23 @@ function calendarEditor(root, c) {
 }
 function answerField(question, field, index) {
   const attrs=`name="q${index}" ${field.required?'required':''}`;
-  return `<label class="field">${esc(question)}${field.required?' *':''}${field.type==='choice'?`<select ${attrs}><option value="">Selecione…</option>${(field.options||[]).map(o=>`<option>${esc(o)}</option>`).join('')}</select>`:`<input ${attrs} type="${field.type}" ${field.type==='number'?'step="any"':''} maxlength="4000">`}</label>`;
+  return `<label class="field">${esc(question)}${field.required?' *':''}${['choice','rating'].includes(field.type)?`<select ${attrs}><option value="">Selecione…</option>${(field.type==='rating'?['1','2','3','4','5']:(field.options||[])).map(o=>`<option>${esc(o)}</option>`).join('')}</select>`:(field.type==='longtext'?`<textarea ${attrs} rows="5" maxlength="4000"></textarea>`:`<input ${attrs} type="${field.type}" ${field.type==='number'?'step="any"':''} maxlength="4000">`)}</label>`;
 }
 function formEditor(root,c) {
   c.questions ??=[];c.responses ??=[];
   c.fields ??=c.questions.map(()=>({type:'text',required:true,options:[]}));
-  const fieldTypes={text:'Texto',email:'E-mail',number:'Número',date:'Data',choice:'Escolha única'};
-  root.innerHTML=`<div class="toolbar"><button id="add-question">＋ Pergunta de texto</button><button id="form-table">Respostas → Tabela</button><button id="form-sheet">Respostas → Planilha</button><button id="form-csv">Baixar respostas CSV</button>${current.role==='owner'?'<button id="form-publish">Link de coleta</button>':''}<span>${c.responses.length} respostas</span></div><h3>Perguntas</h3>${c.questions.map((q,i)=>`<article class="card"><div class="row"><input data-question="${i}" value="${esc(q)}" aria-label="Pergunta ${i+1}" maxlength="300"><select data-field-type="${i}" aria-label="Tipo da pergunta ${i+1}">${Object.entries(fieldTypes).map(([type,label])=>`<option value="${type}" ${c.fields[i].type===type?'selected':''}>${label}</option>`).join('')}</select><button data-remove-question="${i}">Excluir</button></div><label class="checklist"><input type="checkbox" data-field-required="${i}" ${c.fields[i].required?'checked':''}>Obrigatória</label>${c.fields[i].type==='choice'?`<label class="field">Opções, uma por linha<textarea data-field-options="${i}">${esc(c.fields[i].options.join('\n'))}</textarea></label>`:''}</article>`).join('')}<hr><h3>Responder neste espaço</h3><form id="respond-form">${c.questions.map((q,i)=>answerField(q,c.fields[i],i)).join('')}<button class="primary" ${c.questions.length?'':'disabled'}>Registrar resposta</button></form><h3 class="section-head">Respostas registradas</h3>${c.responses.map(r=>`<div class="card"><small>${date(r.at)}</small>${r.answers.map((a,i)=>`<p>${esc(r.questions?.[i]||'Pergunta '+(i+1))}: ${esc(a)}</p>`).join('')}</div>`).join('')}`;
+  const fieldTypes={text:'Texto',email:'E-mail',number:'Número',date:'Data',choice:'Escolha única',longtext:'Texto longo',rating:'Avaliação de 1 a 5'};
+  root.innerHTML=`<div class="toolbar"><button id="add-question">＋ Pergunta de texto</button><button id="form-table">Respostas → Tabela</button><button id="form-sheet">Respostas → Planilha</button><button id="form-csv">Baixar respostas CSV</button>${current.role==='owner'?'<button id="form-publish">Link de coleta</button>':''}<span>${c.responses.length} respostas</span></div><label class="checklist"><input id="form-quiz" type="checkbox" ${c.quiz?'checked':''}> Quiz com correção automática</label><p class="muted">O gabarito fica visível apenas a quem tem acesso ao arquivo. A correção compara o texto, ignorando maiúsculas e espaços nas extremidades.</p><h3>Perguntas</h3>${c.questions.map((q,i)=>`<article class="card"><div class="row"><input data-question="${i}" value="${esc(q)}" aria-label="Pergunta ${i+1}" maxlength="300"><select data-field-type="${i}" aria-label="Tipo da pergunta ${i+1}">${Object.entries(fieldTypes).map(([type,label])=>`<option value="${type}" ${c.fields[i].type===type?'selected':''}>${label}</option>`).join('')}</select><button data-remove-question="${i}">Excluir</button></div><label class="checklist"><input type="checkbox" data-field-required="${i}" ${c.fields[i].required?'checked':''}>Obrigatória</label>${c.fields[i].type==='choice'?`<label class="field">Opções, uma por linha<textarea data-field-options="${i}">${esc(c.fields[i].options.join('\n'))}</textarea></label>`:''}${c.quiz?`<div class="row"><label class="field">Resposta correta<input data-correct-answer="${i}" value="${esc(c.fields[i].correctAnswer||'')}" maxlength="4000" placeholder="Vazio: sem pontuação"></label><label class="field">Pontos<input data-quiz-points="${i}" type="number" min="0" max="100" value="${c.fields[i].points??1}"></label></div>`:''}</article>`).join('')}<hr><h3>Responder neste espaço</h3><form id="respond-form">${c.questions.map((q,i)=>answerField(q,c.fields[i],i)).join('')}<button class="primary" ${c.questions.length?'':'disabled'}>Registrar resposta</button></form><h3 class="section-head">Respostas registradas</h3>${c.responses.map(r=>`<div class="card"><small>${date(r.at)}</small>${r.score!==undefined?`<strong class="badge">Nota: ${r.score} / ${r.maxScore}</strong>`:''}${r.answers.map((a,i)=>`<p>${esc(r.questions?.[i]||'Pergunta '+(i+1))}: ${esc(a)}</p>`).join('')}</div>`).join('')}`;
+  bind('form-quiz',event=>{c.quiz=event.target.checked;setDirty();formEditor(root,c);},'change');
+  root.querySelectorAll('[data-correct-answer]').forEach(input=>input.oninput=()=>{const field=c.fields[+input.dataset.correctAnswer];if(input.value)field.correctAnswer=input.value;else delete field.correctAnswer;setDirty();});
+  root.querySelectorAll('[data-quiz-points]').forEach(input=>input.onchange=()=>{c.fields[+input.dataset.quizPoints].points=Math.max(0,Math.min(100,Math.round(Number(input.value)||0)));setDirty();});
   root.querySelectorAll('[data-question]').forEach(n=>n.oninput=()=>{const i=+n.dataset.question;c.questions[i]=n.value;const label=root.querySelector(`[name="q${i}"]`).closest('label');label.firstChild.textContent=n.value+(c.fields[i].required?' *':'');setDirty();});
   root.querySelectorAll('[data-remove-question]').forEach(n=>n.onclick=()=>{c.questions.splice(+n.dataset.removeQuestion,1);c.fields.splice(+n.dataset.removeQuestion,1);setDirty();formEditor(root,c);});
-  root.querySelectorAll('[data-field-type]').forEach(n=>n.onchange=()=>{c.fields[+n.dataset.fieldType].type=n.value;setDirty();formEditor(root,c);});
+  root.querySelectorAll('[data-field-type]').forEach(n=>n.onchange=()=>{c.fields[+n.dataset.fieldType].type=n.value;delete c.fields[+n.dataset.fieldType].correctAnswer;setDirty();formEditor(root,c);});
   root.querySelectorAll('[data-field-required]').forEach(n=>n.onchange=()=>{const i=+n.dataset.fieldRequired;c.fields[i].required=n.checked;const field=root.querySelector(`[name="q${i}"]`);field.required=n.checked;field.closest('label').firstChild.textContent=c.questions[i]+(n.checked?' *':'');setDirty();});
   root.querySelectorAll('[data-field-options]').forEach(n=>n.onchange=()=>{const options=n.value.split('\n').map(s=>s.trim()).filter(Boolean);if(options.length>50)return notify('Até 50 opções.');c.fields[+n.dataset.fieldOptions].options=options;setDirty();formEditor(root,c);});
   bind('add-question',()=>{if(c.questions.length>=100)return notify('Limite de 100 perguntas.');c.questions.push('Nova pergunta');c.fields.push({type:'text',required:true,options:[]});setDirty();formEditor(root,c);});
-  bind('respond-form',e=>{e.preventDefault();if(c.responses.length>=1000)return notify('Limite de 1000 respostas.');const d=new FormData(e.target),answers=c.questions.map((_,i)=>d.get('q'+i)||'');for(let i=0;i<answers.length;i++){const error=answerError(answers[i],c.fields[i]);if(error){notify('Pergunta '+(i+1)+': '+error);return;}}c.responses.push({at:Date.now(),questions:[...c.questions],answers});setDirty();formEditor(root,c);},'submit');
+  bind('respond-form',e=>{e.preventDefault();if(c.responses.length>=1000)return notify('Limite de 1000 respostas.');const d=new FormData(e.target),answers=c.questions.map((_,i)=>d.get('q'+i)||'');for(let i=0;i<answers.length;i++){const error=answerError(answers[i],c.fields[i]);if(error){notify('Pergunta '+(i+1)+': '+error);return;}}c.responses.push({at:Date.now(),questions:[...c.questions],answers,...quizScore(c,answers)});setDirty();formEditor(root,c);},'submit');
   const responseRows=()=>responseTable(c,date);
   bind('form-csv',()=>{const data=responseRows();download(current.title+'-respostas.csv',toCSV(safeCsv([data.columns,...data.rows])),'text/csv');});
   bind('form-table',()=>{if(!c.responses.length)return notify('Registre uma resposta primeiro.');const data=responseRows();if(data.columns.length>26||data.rows.length>200)return notify('A tabela aceita 26 campos e 200 registros. Use Respostas → Planilha ou Baixar respostas CSV para levar todos os dados.');convert('table',data,' — Respostas');});
@@ -1014,8 +1064,7 @@ async function convert(kind, content, suffix) {
       content,
     });
     dirty = false;
-    await refresh();
-    await openItem(i.id);
+    await openItem(i.id,i);
     notify("Novo arquivo criado. O original foi preservado.");
   } catch (e) {
     notify(e.message);
@@ -1212,22 +1261,21 @@ function importBackup() {
     }
   },64_000_000);
 }
-function analytics() {
-  const active = items.filter((i) => !i.deleted),
-    tasks = active
-      .filter((i) => i.kind === "board")
-      .flatMap((i) => i.content.tasks || []),
-    done = tasks.filter((t) => t.status === "Concluído").length,
-    responses = active
-      .filter((i) => i.kind === "form")
-      .reduce((s, i) => s + (i.content.responses || []).length, 0);
+async function analytics() {
+  const sequence=navigationSequence;
+  shell('<p class="loading-files" role="status">Carregando indicadores…</p>');
+  let metrics;
+  try {metrics=await api('/api/analytics');}
+  catch(error) {if(sequence===navigationSequence)notify(error.message);return;}
+  if(sequence!==navigationSequence||current||view!=='analytics')return;
+  const {active,tasks,done,responses,by_kind}=metrics;
   shell(
     `<p class="eyebrow">DADOS DO SEU ESPAÇO</p><h1>Uma visão do que acontece.</h1><p class="muted">Indicadores calculados a partir dos arquivos aos quais você tem acesso.</p><div class="metrics">${[
-      ["Arquivos ativos", active.length],
-      ["Tarefas concluídas", `${done}/${tasks.length}`],
+      ["Arquivos ativos", active],
+      ["Tarefas concluídas", `${done}/${tasks}`],
       [
         "Conclusão de tarefas",
-        `${tasks.length ? Math.round((done / tasks.length) * 100) : 0}%`,
+        `${tasks ? Math.round((done / tasks) * 100) : 0}%`,
       ],
       ["Respostas coletadas", responses],
     ]
@@ -1242,10 +1290,15 @@ function analytics() {
     )
       .map(
         ([k, t]) =>
-          `<div class="row between"><span>${t.name}</span><strong>${active.filter((i) => i.kind === k).length}</strong></div>`,
+          `<div class="row between"><span>${t.name}</span><strong>${by_kind[k]||0}</strong></div>`,
       )
       .join("")}</div></section>`,
   );
+}
+async function googleWorkspace(){
+  shell('<h1>Gmail, Agenda e Meet</h1><div id="google-root"><p role="status">Carregando conexão…</p></div>');
+  const root=document.querySelector('#google-root');
+  try{const {renderGoogle}=await import('/google.js');if(root.isConnected)await renderGoogle(root,{api,escape:esc,notify,dialog:showDialog,bind,close:closeDialog});}catch(error){if(root.isConnected)root.textContent=error.message;}
 }
 function automation() {
   shell(
@@ -1273,41 +1326,41 @@ function automation() {
       )
       .join(
         "",
-      )}</div><h2 class="section-head">Serviços externos</h2><div class="card"><h3>E-mail, reuniões, armazenamento remoto e IA</h3><p class="muted">Não conectados. Nenhuma mensagem ou arquivo é enviado para terceiros. As próximas etapas exigem seleção dos provedores, OAuth, contratos de integração e testes. Não são simulados como serviços ativos.</p></div>`,
+      )}</div><h2 class="section-head">Serviços externos</h2><div class="card"><h3>E-mail, reuniões, armazenamento remoto e IA</h3><p class="muted">Gmail, Google Agenda e links Meet estão disponíveis na seção Google Workspace após configuração OAuth e autorização da sua conta. Armazenamento remoto, sincronização Drive e IA continuam pendentes.</p></div>`,
   );
 }
 function coverage() {
   shell(
-    `<p class="eyebrow">ESCOPO TRANSPARENTE</p><h1>Uma plataforma em evolução.</h1><p class="muted">A lista enviada define a direção da suíte. Esta versão implementa um núcleo próprio, sem equivalência completa com Microsoft 365.</p><div class="coverage">${[
+    `<p class="eyebrow">ESCOPO TRANSPARENTE</p><h1>Uma plataforma em evolução.</h1><p class="muted">A lista enviada define a direção da suíte. Esta versão implementa um núcleo próprio, sem equivalência completa com Microsoft 365 ou Google Workspace.</p><div class="coverage">${[
       [
         "Documentos e notas",
         "Disponível",
-        "Edição visual, títulos, negrito/itálico, listas, tabelas editáveis, links, imagens, checklist, desfazer/refazer, busca/substituição, Markdown, DOCX e impressão.",
+        "Edição visual, títulos, negrito/itálico, listas, tabelas editáveis, links, imagens, checklist, desfazer/refazer, busca/substituição, Markdown, DOCX e impressão. Estrutura, contagem, página, fonte/tamanho/cor por trecho, sublinhado, tachado, sobrescrito/subscrito, recuos, abas, sumário atualizável, notas de rodapé, cabeçalho/rodapé, numeração no DOCX, mesclagem, modelos e HTML formatado.",
         "Pendentes: paginação profissional, bibliografia, mala direta e revisão com alterações rastreadas.",
       ],
       [
         "Planilhas",
         "Disponível",
-        "Editor Univer: múltiplas abas, intervalos, fórmulas, desfazer/refazer, formatação, mesclagem, ordenação, filtros, validação, formatação condicional, gráficos de colunas/linhas/pizza, tabelas dinâmicas, CSV e XLSX.",
-        "Pendentes: gráficos avançados, pivôs nativos no XLSX, múltiplos níveis de agrupamento, Solver, DAX, Power Query, macros e equivalência de todas as funções Excel.",
+        "Editor Univer: múltiplas abas, intervalos, fórmulas, desfazer/refazer, formatação, mesclagem, ordenação, filtros, validação, formatação condicional, gráficos de colunas, linhas, pizza, área, rosca, barras, dispersão e radar, proteção de intervalos validada no servidor, tabelas dinâmicas, CSV e XLSX. Limpeza de espaços, duplicatas e linhas vazias, divisão em colunas, transposição, substituição e estatísticas.",
+        "Pendentes: gráficos de múltiplas séries, pivôs nativos no XLSX, múltiplos níveis de agrupamento, Solver, DAX, Power Query, macros e equivalência de todas as funções Excel.",
       ],
       [
         "Apresentações",
         "Disponível",
-        "Slides, imagens, caixas de texto, formas, arrastar/redimensionar, camadas, desfazer/refazer, temas, reordenação, notas, apresentação por teclado e PPTX com imagens e objetos editáveis.",
-        "Pendentes: áudio/vídeo, mestre, animações, transições, recorte avançado e exportação de vídeo.",
+        "Slides, imagens, caixas de texto, formas, arrastar/redimensionar, camadas, desfazer/refazer, temas, reordenação, notas, apresentação por teclado e PPTX com imagens e objetos editáveis. Fundos, alinhamento, distribuição, slides ocultos, transições, notas durante apresentação, cronômetro e avanço automático. Console separado da janela do público, rotação, agrupamento, seleção múltipla, layout em duas colunas e estilo para novos slides.",
+        "Pendentes: áudio/vídeo, mestre completo com layouts herdados, animações de objetos, transições avançadas, recorte avançado e exportação de vídeo.",
       ],
       [
         "Projetos e agenda",
         "Disponível",
-        "Kanban, responsáveis, prioridades, subtarefas, agenda, geração de repetições e arquivos ICS.",
-        "Pendentes: dependências, caminho crítico, notificações e convites externos.",
+        "Kanban, responsáveis, prioridades, subtarefas, dependências sem ciclos, bloqueio de início por predecessoras, cronograma, agenda mensal, repetições e ICS.",
+        "Pendentes: caminho crítico, notificações e convites externos.",
       ],
       [
         "Formulários e tabelas",
         "Disponível",
-        "Formulários tipados, coleta pública revogável, respostas persistentes; tabelas com tipos, ordenação, filtro e deduplicação.",
-        "Pendentes: quizzes, anexos, ramificação condicional, relacionamentos e consultas entre tabelas.",
+        "Formulários tipados com texto longo e avaliação, quizzes com gabarito privado e correção no servidor, coleta pública revogável, respostas e notas exportáveis; tabelas com tipos, ordenação, filtro e deduplicação.",
+        "Pendentes: anexos nas respostas, ramificação condicional, relacionamentos e consultas entre tabelas.",
       ],
       [
         "Diagramas e portais",
@@ -1319,7 +1372,7 @@ function coverage() {
         "Arquivos e colaboração",
         "Disponível",
         "Histórico, lixeira, rascunhos locais recuperáveis, comentários, acessos listáveis e conflitos de versões.",
-        "Pendentes: armazenamento binário geral, sincronização offline completa, coautoria em tempo real e criptografia de arquivos.",
+        "Anexos de até 1 MB, vínculos e inserção de documentos pelo botão ＋ Inserir estão disponíveis. Pendentes: armazenamento de arquivos grandes, sincronização offline completa, coautoria em tempo real e criptografia de arquivos.",
       ],
       [
         "BI e automação",
@@ -1328,10 +1381,10 @@ function coverage() {
         "Pendentes: modelagem analítica, conectores, agendamento e designer de fluxos.",
       ],
       [
-        "Correio, reuniões e IA",
-        "Planejado",
-        "Requisitos identificados; nenhum provedor conectado.",
-        "SMTP/IMAP ou APIs, OAuth, WebRTC, telefonia, OCR e IA exigem implementações dedicadas.",
+        "Google Workspace e IA",
+        "Requer conexão",
+        "Integração Gmail para busca, leitura, envio e lixeira; Agenda para eventos e links Meet. OAuth individual com proteção dos tokens no servidor.",
+        "Configure o cliente Google e conecte a conta. Drive, anexos de e-mail, participantes/convidados, telefonia, OCR e IA permanecem pendentes.",
       ],
       [
         "Segurança e operação",
@@ -1363,7 +1416,7 @@ document.addEventListener("keydown", (e) => {
 try {
   const formToken=new URLSearchParams(location.search).get('form');
   if (formToken) await publicForm(formToken);
-  else { user = await api("/api/me"); await refresh(); render(); }
+  else { const initial=await api("/api/bootstrap"); user=initial.user; items=await allPages("/api/library",initial); if(new URLSearchParams(location.search).get("google")==="connected")view="google";render(); }
 } catch (e) {
   if (e.status === 401) auth();
   else
@@ -1388,8 +1441,7 @@ async function importOffice() {
         reader.readAsDataURL(file);
       });
       const result = await api('/api/import', {name: file.name, data});
-      await refresh();
-      await openItem(result.item.id);
+      await openItem(result.item.id,result.item);
       showDialog('<h2>Arquivo importado</h2>' + result.warnings.map(w => '<p>' + esc(w) + '</p>').join('') + '<button id="import-done" class="primary">Continuar edição</button>', () => bind('import-done', closeDialog));
     } catch (e) { notify(e.message); }
   };
@@ -1409,6 +1461,7 @@ async function exportOffice() {
       throw Error(error.error || 'Falha na exportação.');
     }
     download(current.title + '.' + extension, await response.blob(), response.headers.get('Content-Type'));
+    if(current.content.attachments?.length)notify('Arquivo Office exportado. Anexos e vínculos permanecem no DRAP e na exportação JSON.');
   } catch (e) { notify(e.message); }
 }
 

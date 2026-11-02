@@ -65,7 +65,28 @@ def handler_for(store):
                 raise InvalidInput('Paginação inválida.')
             offset = int(offset_text)
             if method == 'GET':
-                assets = {'/document.js': ('document.js', 'text/javascript; charset=utf-8'), '/workflows.js': ('workflows.js', 'text/javascript; charset=utf-8'), '/slides.js': ('slides.js', 'text/javascript; charset=utf-8'), '/': ('index.html', 'text/html; charset=utf-8'),
+                assets = {
+                    '/app.bundle.js': ('app.bundle.js', 'text/javascript; charset=utf-8'),
+                    '/document-advanced.js': ('document-advanced.js', 'text/javascript; charset=utf-8'),
+                    '/presenter.js': ('presenter.js', 'text/javascript; charset=utf-8'),
+                    '/sheet-protection.js': ('sheet-protection.js', 'text/javascript; charset=utf-8'),
+                    '/document-tabs.js': ('document-tabs.js', 'text/javascript; charset=utf-8'),
+                    '/project-tools.js': ('project-tools.js', 'text/javascript; charset=utf-8'),
+                    '/google.js': ('google.js', 'text/javascript; charset=utf-8'),
+                    '/google-callback.js': ('google-callback.js', 'text/javascript; charset=utf-8'),
+                    '/google-callback.html': ('google-callback.html', 'text/html; charset=utf-8'),
+                    '/csv.js': ('csv.js', 'text/javascript; charset=utf-8'),
+                    '/install': ('install.html', 'text/html; charset=utf-8'),
+                    '/install/': ('install.html', 'text/html; charset=utf-8'),
+                    '/install.html': ('install.html', 'text/html; charset=utf-8'),
+                    '/install.css': ('install.css', 'text/css; charset=utf-8'),
+                    '/install-platform.js': ('install-platform.js', 'text/javascript; charset=utf-8'),
+                    '/pwa.js': ('pwa.js', 'text/javascript; charset=utf-8'),
+                    '/service-worker.js': ('service-worker.js', 'text/javascript; charset=utf-8'),
+                    '/manifest.webmanifest': ('manifest.webmanifest', 'application/manifest+json; charset=utf-8'),
+                    '/offline.html': ('offline.html', 'text/html; charset=utf-8'),
+                    **{'/icons/'+name: ('icons/'+name, 'image/png') for name in ('icon-192.png','icon-512.png','maskable-512.png','apple-touch-icon.png')},
+                    '/insert-menu.js': ('insert-menu.js', 'text/javascript; charset=utf-8'), '/document-tools.js': ('document-tools.js', 'text/javascript; charset=utf-8'), '/sheet-tools.js': ('sheet-tools.js', 'text/javascript; charset=utf-8'), '/document.js': ('document.js', 'text/javascript; charset=utf-8'), '/workflows.js': ('workflows.js', 'text/javascript; charset=utf-8'), '/slides.js': ('slides.js', 'text/javascript; charset=utf-8'), '/': ('index.html', 'text/html; charset=utf-8'),
                           '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
                           '/pivot.js': ('pivot.js', 'text/javascript; charset=utf-8'),
                           '/pivot-ui.js': ('pivot-ui.js', 'text/javascript; charset=utf-8'),
@@ -92,8 +113,24 @@ def handler_for(store):
                 if path.startswith('/api/forms/'):
                     return self.respond(200, workspace().public_form(path.removeprefix('/api/forms/')))
                 user = store.session_user(self.token())
+                if path.startswith('/api/google/'):
+                    if not user:return self.respond(401, {'error':'Entre na sua conta.'})
+                    workspace()
+                    from server.google_workspace import GoogleWorkspace
+                    return self.respond(200,GoogleWorkspace(store).get(user['id'],path.removeprefix('/api/google/'),query))
                 if path == '/api/me':
                     return self.respond(200 if user else 401, user or {'error': 'Entre na sua conta.'})
+                if path in ('/api/bootstrap', '/api/library', '/api/analytics'):
+                    if not user:
+                        return self.respond(401, {'error': 'Entre na sua conta.'})
+                    if path == '/api/analytics':
+                        return self.respond(200, workspace().analytics(user['id']))
+                    rows = workspace().list(user['id'], limit=100, offset=offset, summary=True,
+                                            search=query.get('q', [''])[0])
+                    result = {'items': rows, 'next_offset': offset + len(rows) if len(rows) == 100 else None}
+                    if path == '/api/bootstrap':
+                        result['user'] = user
+                    return self.respond(200, result)
                 if not path.startswith('/api/items'):
                     return self.respond(404, {'error': 'Rota não encontrada.'})
                 if not user:
@@ -163,6 +200,19 @@ def handler_for(store):
             user = store.session_user(self.token())
             if not user:
                 return self.respond(401, {'error': 'Entre na sua conta.'})
+            if path.startswith('/api/google/'):
+                workspace()
+                from server.google_workspace import GoogleWorkspace
+                return self.respond(200,GoogleWorkspace(store).post(user['id'],path.removeprefix('/api/google/'),data))
+            if path == '/api/import/preview':
+                from server.office import import_file
+                from server.schema import validate_content
+                if not isinstance(data.get('name'), str) or not data['name'].lower().endswith('.docx'):
+                    raise InvalidInput('Escolha um documento DOCX para inserir conteúdo.')
+                item, warnings = import_file(data.get('name'), data.get('data'))
+                Workspace.validate(item)
+                validate_content(item['kind'], item['content'])
+                return self.respond(200, {'content': item['content'], 'warnings': warnings})
             if path == '/api/import':
                 from server.office import import_file
                 item, warnings = import_file(data.get('name'), data.get('data'))

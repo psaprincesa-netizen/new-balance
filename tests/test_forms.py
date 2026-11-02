@@ -43,3 +43,11 @@ class PublicFormTest(unittest.TestCase):
         self.assertEqual(len(current['content']['responses']),6)
         self.assertEqual(current['version'],7)
         with self.assertRaises(Conflict):self.ws.update(self.user,self.item['id'],self.item)
+
+    def test_quiz_private_key_and_server_scoring(self):
+        content={'quiz':True,'questions':['Capital?','Avaliação','Comentário'],'fields':[{'type':'choice','required':True,'options':['Brasília','Recife'],'correctAnswer':'Brasília','points':5},{'type':'rating','required':True,'options':[]},{'type':'longtext','required':False,'options':[]}],'responses':[]}
+        item=self.ws.create(self.user,{'kind':'form','title':'Quiz','content':content});token=self.ws.publication(self.user,item['id'],True)['token'];schema=self.ws.public_form(token)
+        self.assertNotIn('correctAnswer',str(schema));self.assertNotIn('points',str(schema));self.ws.submit_form(token,['Brasília','5','Ótimo'],schema['schema_id'])
+        result=self.ws.get(self.user,item['id'])['content']['responses'][0];self.assertEqual(result['score'],5);self.assertEqual(result['maxScore'],5)
+        self.ws.submit_form(token,['Recife','4',''],schema['schema_id']);self.assertEqual(self.ws.get(self.user,item['id'])['content']['responses'][1]['score'],0)
+        with self.assertRaises(InvalidInput):self.ws.submit_form(token,['Recife','6',''],schema['schema_id'])
