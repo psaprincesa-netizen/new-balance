@@ -247,11 +247,14 @@ def valid_workbook(book):
     resources=book.get('resources',[])
     return isinstance(resources,list) and len(resources)<=50 and all(isinstance(r,dict) and isinstance(r.get('name'),str) and isinstance(r.get('data'),str) for r in resources)
 
+CHART_TYPES=('bar','stacked','hbar','line','area','pie','doughnut','scatter')
+
+
 def valid_charts(charts,book):
     if not isinstance(charts,list) or len(charts)>10:return False
     ids=set()
     for chart in charts:
-        if not isinstance(chart,dict) or chart.get('type') not in ('bar','line','pie'):return False
+        if not isinstance(chart,dict) or chart.get('type') not in CHART_TYPES:return False
         if not isinstance(chart.get('id'),str) or chart['id'] in ids or len(chart['id'])>100:return False
         ids.add(chart['id'])
         if not isinstance(chart.get('title'),str) or not 1<=len(chart['title'])<=100:return False
@@ -265,7 +268,8 @@ def valid_charts(charts,book):
             for c in s:n=n*26+ord(c)-64
             return n
         c1,r1,c2,r2=match.groups();x1,x2=col(c1),col(c2);y1,y2=int(r1),int(r2)
-        if x2-x1!=1 or not 0<y2-y1<=200 or x2>1024 or y2>100000:return False
+        width=x2-x1
+        if not 1<=width<=6 or (chart['type'] in ('pie','doughnut') and width!=1) or not 0<y2-y1<=200 or x2>1024 or y2>100000:return False
     return True
 
 

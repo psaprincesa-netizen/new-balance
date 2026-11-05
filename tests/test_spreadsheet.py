@@ -63,3 +63,16 @@ class SpreadsheetTest(unittest.TestCase):
         self.assertEqual(chart.series[0].val.numRef.f,"'Orçamento'!$B$2")
         item['content']['charts'][0]['range']='A1:XFD1000000'
         with self.assertRaises(InvalidInput):validate_content('sheet',item['content'])
+
+    def test_new_chart_types_export_to_excel(self):
+        item=self.fixture()
+        item['content']['charts']=[{'id':k,'type':k,'title':k,'sheetId':'sheet-0','range':'A1:C2' if k not in ('pie','doughnut') else 'A1:B2'}
+                                   for k in ('stacked','hbar','area','doughnut','scatter')]
+        validate_content('sheet',item['content']);data,_=export_file(item,'xlsx')
+        charts=load_workbook(io.BytesIO(data)).worksheets[0]._charts
+        self.assertEqual([type(c).__name__ for c in charts],['BarChart','BarChart','AreaChart','DoughnutChart','ScatterChart'])
+        self.assertEqual((charts[0].grouping,len(charts[0].series)),('stacked',2))
+        self.assertEqual(charts[1].type,'bar')
+        self.assertEqual(len(charts[4].series),2)
+        item['content']['charts']=[{'id':'p','type':'pie','title':'p','sheetId':'sheet-0','range':'A1:C2'}]
+        with self.assertRaises(InvalidInput):validate_content('sheet',item['content'])
