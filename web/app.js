@@ -1572,13 +1572,13 @@ function coverage() {
         "Documentos e notas",
         "Disponível",
         "Edição visual, títulos, negrito/itálico, listas, tabelas editáveis, links, imagens, checklist, desfazer/refazer, busca/substituição, Markdown, DOCX e impressão.",
-        "Pendentes: paginação profissional, bibliografia, mala direta e revisão com alterações rastreadas.",
+        "Também: sumário automático, quebra de página, cabeçalho, rodapé e numeração de páginas na impressão/PDF e no DOCX. Pendentes: bibliografia, mala direta e revisão com alterações rastreadas.",
       ],
       [
         "Planilhas",
         "Disponível",
-        "Editor Univer: múltiplas abas, intervalos, fórmulas, desfazer/refazer, formatação, mesclagem, ordenação, filtros, validação, formatação condicional, gráficos de colunas/linhas/pizza, tabelas dinâmicas, CSV e XLSX.",
-        "Pendentes: gráficos avançados, pivôs nativos no XLSX, múltiplos níveis de agrupamento, Solver, DAX, Power Query, macros e equivalência de todas as funções Excel.",
+        "Editor Univer: múltiplas abas, intervalos, fórmulas, desfazer/refazer, formatação, mesclagem, ordenação, filtros, validação, formatação condicional, gráficos de colunas, colunas empilhadas, barras, linhas, área, pizza, rosca e dispersão com até 6 séries, tabelas dinâmicas com subgrupos e subtotais, vínculos de células para arquivos e sites, CSV e XLSX.",
+        "Pendentes: pivôs nativos no XLSX, Solver, DAX, Power Query, macros e equivalência de todas as funções Excel.",
       ],
       [
         "Apresentações",

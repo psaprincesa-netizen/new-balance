@@ -40,3 +40,4 @@ jobs:
           python -m tests.browser_quiz
           python -m tests.browser_security
           python -m tests.browser_sheet_links
+          python -m tests.browser_stage2

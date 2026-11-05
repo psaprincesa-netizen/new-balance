@@ -5,6 +5,8 @@ export const CHART_TYPES={bar:'Colunas',stacked:'Colunas empilhadas',hbar:'Barra
 const SINGLE_SERIES=new Set(['pie','doughnut']);
 const number=v=>v!==''&&v!=null&&Number.isFinite(Number(v));
 const fmt=v=>escape(Number(Number(v).toPrecision(5)));
+// Tooltip label: the category alone for one series, category · series for several.
+const tip=(d,i,s)=>d.series.length>1?d.labels[i]+' · '+s.name:d.labels[i];
 
 // rows: header + data rows; first column = labels (or X for scatter), next 1..6 columns = numeric series.
 export function chartData(rows,type='bar') {
@@ -53,15 +55,15 @@ function cartesian(d,type){
   let body=axes(min,max,y);
   if(type==='bar'){
     const w=step*.7/d.series.length;
-    d.series.forEach((s,k)=>s.values.forEach((v,i)=>{body+=`<rect x="${x(i)-step*.35+k*w}" y="${Math.min(zero,y(v))}" width="${Math.max(1,w-1)}" height="${Math.max(1,Math.abs(zero-y(v)))}" fill="${palette[(d.series.length>1?k:i)%palette.length]}"><title>${escape(d.labels[i]+' · '+s.name)}: ${v}</title></rect>`;}));
+    d.series.forEach((s,k)=>s.values.forEach((v,i)=>{body+=`<rect x="${x(i)-step*.35+k*w}" y="${Math.min(zero,y(v))}" width="${Math.max(1,w-1)}" height="${Math.max(1,Math.abs(zero-y(v)))}" fill="${palette[(d.series.length>1?k:i)%palette.length]}"><title>${escape(tip(d,i,s))}: ${v}</title></rect>`;}));
   } else if(stacked){
     for(let i=0;i<n;i++){let pos=0,neg=0;d.series.forEach((s,k)=>{const v=s.values[i],base=v>=0?pos:neg,top=base+v;if(v>=0)pos=top;else neg=top;
-      body+=`<rect x="${x(i)-step*.35}" y="${Math.min(y(base),y(top))}" width="${step*.7}" height="${Math.max(1,Math.abs(y(base)-y(top)))}" fill="${palette[k%palette.length]}"><title>${escape(d.labels[i]+' · '+s.name)}: ${v}</title></rect>`;});}
+      body+=`<rect x="${x(i)-step*.35}" y="${Math.min(y(base),y(top))}" width="${step*.7}" height="${Math.max(1,Math.abs(y(base)-y(top)))}" fill="${palette[k%palette.length]}"><title>${escape(tip(d,i,s))}: ${v}</title></rect>`;});}
   } else {
     d.series.forEach((s,k)=>{const color=palette[k%palette.length],pts=s.values.map((v,i)=>x(i)+','+y(v)).join(' ');
       if(type==='area')body+=`<polygon points="${x(0)},${zero} ${pts} ${x(n-1)},${zero}" fill="${color}" fill-opacity="${d.series.length>1?0.35:0.55}" stroke="${color}" stroke-width="2"/>`;
       else body+=`<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="3"/>`;
-      s.values.forEach((v,i)=>body+=`<circle cx="${x(i)}" cy="${y(v)}" r="${type==='area'?3:4}" fill="${color}"><title>${escape(d.labels[i]+' · '+s.name)}: ${v}</title></circle>`);});
+      s.values.forEach((v,i)=>body+=`<circle cx="${x(i)}" cy="${y(v)}" r="${type==='area'?3:4}" fill="${color}"><title>${escape(tip(d,i,s))}: ${v}</title></circle>`);});
   }
   d.labels.forEach((l,i)=>{if(i%Math.max(1,Math.ceil(n/10))===0)body+=`<text x="${x(i)}" y="320" text-anchor="middle" font-size="11">${escape(l.slice(0,12))}</text>`;});
   return body+legend(d.series);
@@ -71,7 +73,7 @@ function horizontal(d){
   const n=d.labels.length;let min=0,max=0;for(const s of d.series)for(const v of s.values){min=Math.min(min,v);max=Math.max(max,v);}
   const span=max-min||1,X=v=>170+(v-min)/span*510,step=270/n,Y=i=>45+step*i,zero=X(0),h=step*.75/d.series.length;let body='';
   for(let i=0;i<=4;i++){const v=min+span*i/4,xx=X(v);body+=`<path d="M${xx} 40 V318" stroke="#dce4da"/><text x="${xx}" y="332" text-anchor="middle" font-size="11">${fmt(v)}</text>`;}
-  d.series.forEach((s,k)=>s.values.forEach((v,i)=>{body+=`<rect x="${Math.min(zero,X(v))}" y="${Y(i)+step*.125+k*h}" width="${Math.max(1,Math.abs(X(v)-zero))}" height="${Math.max(1,h-1)}" fill="${palette[(d.series.length>1?k:i)%palette.length]}"><title>${escape(d.labels[i]+' · '+s.name)}: ${v}</title></rect>`;}));
+  d.series.forEach((s,k)=>s.values.forEach((v,i)=>{body+=`<rect x="${Math.min(zero,X(v))}" y="${Y(i)+step*.125+k*h}" width="${Math.max(1,Math.abs(X(v)-zero))}" height="${Math.max(1,h-1)}" fill="${palette[(d.series.length>1?k:i)%palette.length]}"><title>${escape(tip(d,i,s))}: ${v}</title></rect>`;}));
   d.labels.forEach((l,i)=>{if(n<=25||i%Math.ceil(n/25)===0)body+=`<text x="162" y="${Y(i)+step/2+4}" text-anchor="end" font-size="11">${escape(l.slice(0,22))}</text>`;});
   return body+legend(d.series,90,342);
 }
