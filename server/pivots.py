@@ -27,7 +27,8 @@ def valid_pivots(pivots):
         if not isinstance(p.get('sheetId'),str) or not 1<=len(p['sheetId'])<=100:return False
         try:x1,y1,x2,y2=parse_range(p.get('range'))
         except InvalidInput:return False
-        fields=[p.get('rowField'),p.get('valueField')]+[p[k] for k in ('columnField','filterField') if p.get(k) is not None]
+        fields=[p.get('rowField'),p.get('valueField')]+[p[k] for k in ('columnField','filterField','subRowField') if p.get(k) is not None]
+        if p.get('subRowField') is not None and p.get('subRowField')==p.get('rowField'):return False
         if not all(type(f) is int and 0<=f<x2-x1+1 for f in fields):return False
         if not isinstance(p.get('aggregate'),str) or p.get('aggregate') not in AGGREGATES or p.get('sort','source') not in ('source','asc','desc'):return False
         if not isinstance(p.get('filterValue',''),str) or len(p.get('filterValue',''))>1000:return False
@@ -62,19 +63,38 @@ def calculate_pivot(source,p):
         else:value=s['sum']/s['n'] if op=='avg' else s[op]
         if not math.isfinite(value):raise InvalidInput('O resultado excede o limite numérico. Reduza os valores da fonte.')
         return value
-    rg={};cg={};cells={};rt={};ct={};grand=fresh()
+    sub=p.get('subRowField') is not None
+    rg={};cg={};cells={};rt={};ct={};grand=fresh();og={};ot={};ocells={};inner={}
     for row in source[1:]:
         if not any(v is not None and v!='' for v in row):continue
         if p.get('filterField') is not None and not matches(row[p['filterField']],p.get('filterValue','')):continue
         v=row[p['valueField']]
         if p['aggregate'] not in ('rows','count') and isinstance(v,str) and re.match(r'^#(?:DIV/0!|VALUE!|REF!|NAME\?|NUM!|N/A|SPILL!|CALC!)',v):raise InvalidInput('Corrija os erros de fórmula antes de exportar o resumo.')
-        r=key(row[p['rowField']]);c=key(row[p['columnField']]) if p.get('columnField') is not None else ('all','')
-        rg[r]=label(row[p['rowField']]);cg[c]=label(row[p['columnField']]) if p.get('columnField') is not None else AGGREGATES[p['aggregate']]
-        if (len(rg)+2)*(len(cg)+2)>10000:raise InvalidInput('O resumo excede 10 mil células. Use filtros.')
+        outer=key(row[p['rowField']]);r=(outer,key(row[p['subRowField']])) if sub else outer
+        c=key(row[p['columnField']]) if p.get('columnField') is not None else ('all','')
+        rg[r]=label(row[p['subRowField']]) if sub else label(row[p['rowField']])
+        if sub:
+            og[outer]=label(row[p['rowField']]);members=inner.setdefault(outer,[])
+            if r not in members:members.append(r)
+            add(ot.setdefault(outer,fresh()),v);add(ocells.setdefault((outer,c),fresh()),v)
+        cg[c]=label(row[p['columnField']]) if p.get('columnField') is not None else AGGREGATES[p['aggregate']]
+        if (len(rg)+len(og)+2)*(len(cg)+(3 if sub else 2))>10000:raise InvalidInput('O resumo excede 10 mil células. Use filtros.')
         for state in (cells.setdefault((r,c),fresh()),rt.setdefault(r,fresh()),ct.setdefault(c,fresh()),grand):add(state,v)
-    columns=list(cg) or [('all','')];rowkeys=list(rg)
-    if p.get('sort') in ('asc','desc'):rowkeys.sort(key=lambda r:result(rt[r]) or 0,reverse=p['sort']=='desc')
+    columns=list(cg) or [('all','')]
+    def ordered(keys,totals):
+        keys=list(keys)
+        if p.get('sort') in ('asc','desc'):keys.sort(key=lambda r:result(totals[r]) or 0,reverse=p['sort']=='desc')
+        return keys
     with_columns=p.get('columnField') is not None
+    if sub:
+        # Two row levels: each outer group lists its subgroups and then a subtotal row.
+        output=[[headers[p['rowField']],headers[p['subRowField']],*[cg.get(c,AGGREGATES[p['aggregate']]) for c in columns],*(['Total geral'] if with_columns else [])]]
+        for outer in ordered(og,ot):
+            for r in inner[outer]:output.append([og[outer],rg[r],*[result(cells.get((r,c),fresh())) for c in columns],*([result(rt[r])] if with_columns else [])])
+            output.append(['Total '+og[outer],'',*[result(ocells.get((outer,c),fresh())) for c in columns],*([result(ot[outer])] if with_columns else [])])
+        output.append(['Total geral','',*[result(ct.get(c,fresh())) for c in columns],*([result(grand)] if with_columns else [])])
+        return output
+    rowkeys=ordered(rg,rt)
     output=[[headers[p['rowField']],*[cg.get(c,AGGREGATES[p['aggregate']]) for c in columns],*(['Total geral'] if with_columns else [])]]
     for r in rowkeys:output.append([rg[r],*[result(cells.get((r,c),fresh())) for c in columns],*([result(rt[r])] if with_columns else [])])
     output.append(['Total geral',*[result(ct.get(c,fresh())) for c in columns],*([result(grand)] if with_columns else [])])

@@ -27,34 +27,50 @@ function accumulate(s,value){s.rows++;if(!blank(value))s.count++;if(typeof value
 const total=(s,op)=>{const value=op==='rows'?s.rows:op==='count'?s.count:op==='sum'?s.sum:!s.n?null:op==='avg'?s.sum/s.n:op==='min'?s.min:s.max;if(value!==null&&!Number.isFinite(value))throw Error('O resultado excede o limite numérico. Reduza os valores da fonte.');return value;};
 export function calculatePivot(rows,config){
   const headers=pivotHeaders(rows),width=headers.length;
-  for(const field of [config.rowField,config.valueField,...(config.columnField==null?[]:[config.columnField]),...(config.filterField==null?[]:[config.filterField])])if(!Number.isInteger(field)||field<0||field>=width)throw Error('Um campo da tabela dinâmica não existe na fonte.');
+  const sub=config.subRowField!=null;
+  if(sub&&config.subRowField===config.rowField)throw Error('Escolha campos diferentes para os dois níveis de linhas.');
+  for(const field of [config.rowField,config.valueField,...(config.columnField==null?[]:[config.columnField]),...(config.filterField==null?[]:[config.filterField]),...(sub?[config.subRowField]:[])])if(!Number.isInteger(field)||field<0||field>=width)throw Error('Um campo da tabela dinâmica não existe na fonte.');
   if(!Object.hasOwn(AGGREGATES,config.aggregate))throw Error('Agregação inválida.');
   const rowGroups=new Map(),columnGroups=new Map(),cells=new Map(),rowTotals=new Map(),colTotals=new Map(),grand=fresh(),records=[];
+  const outerGroups=new Map(),outerTotals=new Map(),outerCells=new Map(),innerOf=new Map();
   for(let i=1;i<rows.length;i++){
     const row=rows[i];if(!row.some(v=>!blank(v)))continue;
     if(config.filterField!=null&&!matches(row[config.filterField],config.filterValue))continue;
     const value=row[config.valueField];
     if(!['rows','count'].includes(config.aggregate)&&typeof value==='string'&&/^#(?:DIV\/0!|VALUE!|REF!|NAME\?|NUM!|N\/A|SPILL!|CALC!)/.test(value))throw Error('A fonte contém erros de fórmula no campo de valores. Corrija-os para calcular o resumo.');
-    const r=key(row[config.rowField]),c=config.columnField==null?'all':key(row[config.columnField]);
-    rowGroups.set(r,label(row[config.rowField]));columnGroups.set(c,config.columnField==null?AGGREGATES[config.aggregate]:label(row[config.columnField]));
-    if((rowGroups.size+2)*(columnGroups.size+2)>10000)throw Error('O resumo excede 10 mil células. Use um filtro ou menos categorias.');
+    const outer=key(row[config.rowField]),r=sub?JSON.stringify([outer,key(row[config.subRowField])]):outer,c=config.columnField==null?'all':key(row[config.columnField]);
+    rowGroups.set(r,sub?label(row[config.subRowField]):label(row[config.rowField]));
+    if(sub){outerGroups.set(outer,label(row[config.rowField]));if(!innerOf.has(outer))innerOf.set(outer,[]);if(!innerOf.get(outer).includes(r))innerOf.get(outer).push(r);if(!outerTotals.has(outer))outerTotals.set(outer,fresh());const oc=JSON.stringify([outer,c]);if(!outerCells.has(oc))outerCells.set(oc,fresh());accumulate(outerTotals.get(outer),value);accumulate(outerCells.get(oc),value);}columnGroups.set(c,config.columnField==null?AGGREGATES[config.aggregate]:label(row[config.columnField]));
+    if((rowGroups.size+outerGroups.size+2)*(columnGroups.size+(sub?3:2))>10000)throw Error('O resumo excede 10 mil células. Use um filtro ou menos categorias.');
     const cellKey=JSON.stringify([r,c]);
     if(!cells.has(cellKey))cells.set(cellKey,fresh());if(!rowTotals.has(r))rowTotals.set(r,fresh());if(!colTotals.has(c))colTotals.set(c,fresh());
     for(const state of [cells.get(cellKey),rowTotals.get(r),colTotals.get(c),grand])accumulate(state,value);
-    records.push({index:i,rowKey:r,columnKey:c});
+    records.push({index:i,rowKey:r,outerKey:outer,columnKey:c});
   }
   const columns=[...columnGroups.keys()];if(!columns.length)columns.push('all');
-  const rowKeys=[...rowGroups.keys()];
-  if(config.sort==='asc'||config.sort==='desc')rowKeys.sort((a,b)=>((total(rowTotals.get(a),config.aggregate)??0)-(total(rowTotals.get(b),config.aggregate)??0))*(config.sort==='asc'?1:-1));
+  const sortKeys=(keys,totals)=>{if(config.sort==='asc'||config.sort==='desc')keys.sort((a,b)=>((total(totals.get(a),config.aggregate)??0)-(total(totals.get(b),config.aggregate)??0))*(config.sort==='asc'?1:-1));return keys;};
   const withColumns=config.columnField!=null;
+  if(sub){
+    // Two row levels: each outer group lists its subgroups followed by a subtotal row.
+    const header=[headers[config.rowField],headers[config.subRowField],...columns.map(k=>columnGroups.get(k)||AGGREGATES[config.aggregate]),...(withColumns?['Total geral']:[])];
+    const values=[],rowKeys=[];
+    for(const outer of sortKeys([...outerGroups.keys()],outerTotals)){
+      for(const r of innerOf.get(outer)){values.push([outerGroups.get(outer),rowGroups.get(r),...columns.map(c=>total(cells.get(JSON.stringify([r,c]))||fresh(),config.aggregate)),...(withColumns?[total(rowTotals.get(r),config.aggregate)]:[])]);rowKeys.push(r);}
+      values.push(['Total '+outerGroups.get(outer),'',...columns.map(c=>total(outerCells.get(JSON.stringify([outer,c]))||fresh(),config.aggregate)),...(withColumns?[total(outerTotals.get(outer),config.aggregate)]:[])]);rowKeys.push({outer});
+    }
+    values.push(['Total geral','',...columns.map(c=>total(colTotals.get(c)||fresh(),config.aggregate)),...(withColumns?[total(grand,config.aggregate)]:[])]);
+    return {headers:header,rows:values,rowKeys,columnKeys:columns,records,sourceHeaders:headers,count:grand.rows,numericCount:grand.n,labelColumns:2};
+  }
+  const rowKeys=sortKeys([...rowGroups.keys()],rowTotals);
   const header=[headers[config.rowField],...columns.map(k=>columnGroups.get(k)||AGGREGATES[config.aggregate]),...(withColumns?['Total geral']:[])];
   const values=rowKeys.map(r=>[rowGroups.get(r),...columns.map(c=>total(cells.get(JSON.stringify([r,c]))||fresh(),config.aggregate)),...(withColumns?[total(rowTotals.get(r),config.aggregate)]:[])]);
   values.push(['Total geral',...columns.map(c=>total(colTotals.get(c)||fresh(),config.aggregate)),...(withColumns?[total(grand,config.aggregate)]:[])]);
-  return {headers:header,rows:values,rowKeys,columnKeys:columns,records,sourceHeaders:headers,count:grand.rows,numericCount:grand.n};
+  return {headers:header,rows:values,rowKeys,columnKeys:columns,records,sourceHeaders:headers,count:grand.rows,numericCount:grand.n,labelColumns:1};
 }
 export function pivotDetails(source,result,rowIndex,columnIndex){
   const rk=rowIndex<result.rowKeys.length?result.rowKeys[rowIndex]:null;
   const ck=columnIndex<result.columnKeys.length?result.columnKeys[columnIndex]:null;
-  return [source[0],...result.records.filter(r=>(rk==null||r.rowKey===rk)&&(ck==null||r.columnKey===ck)).map(r=>source[r.index])];
+  const rowMatch=r=>rk==null||(typeof rk==='object'?r.outerKey===rk.outer:r.rowKey===rk);
+  return [source[0],...result.records.filter(r=>rowMatch(r)&&(ck==null||r.columnKey===ck)).map(r=>source[r.index])];
 }
 export const safeCsvRows=rows=>rows.map(row=>row.map(value=>typeof value==='string'&&/^[=+@\-\t\r]/.test(value)?"'"+value:value));

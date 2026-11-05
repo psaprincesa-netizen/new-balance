@@ -1,3 +1,4 @@
+import unittest
 import base64,copy,io,unittest
 from PIL import Image
 from docx import Document
@@ -27,3 +28,27 @@ class DocumentIOTest(unittest.TestCase):
         self.assertTrue(any(r.bold and r.italic and r.text=='Destaque' for r in doc.paragraphs[0].runs))
         self.assertIn('2 * 3',doc.paragraphs[0].text);self.assertEqual(doc.tables[0].cell(1,0).text,'A\nB')
         restored,_=import_file('Texto.docx',base64.b64encode(data).decode());self.assertIn('***Destaque***',restored['content']['text'])
+
+
+class PageLayoutDocxTest(unittest.TestCase):
+    def test_page_break_header_footer_and_page_numbers(self):
+        import io as _io
+        from docx import Document as _Document
+        from server.document_io import export_document
+        from server.schema import valid_content
+        content = {'text': '# Capítulo 1\n\n## Sumário\n\n- Capítulo 1\n  - Seção\n\n---\n\n# Capítulo 2', 'images': [],
+                   'header': 'Empresa Exemplo', 'footer': 'Confidencial', 'pageNumbers': True}
+        self.assertTrue(valid_content('document', content))
+        self.assertFalse(valid_content('document', {**content, 'header': 'x' * 201}))
+        self.assertFalse(valid_content('document', {**content, 'pageNumbers': 'sim'}))
+        out = _io.BytesIO()
+        export_document(content, 'Relatório', out)
+        doc = _Document(_io.BytesIO(out.getvalue()))
+        xml = doc.element.body.xml
+        self.assertIn('w:br w:type="page"', xml)
+        self.assertEqual(doc.sections[0].header.paragraphs[0].text, 'Empresa Exemplo')
+        footer = doc.sections[0].footer.paragraphs[0]._p.xml
+        self.assertIn('Confidencial', footer)
+        self.assertIn('PAGE', footer)
+        self.assertIn('NUMPAGES', footer)
+        self.assertIn('List Bullet 2', [p.style.name for p in doc.paragraphs])

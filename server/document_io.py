@@ -66,12 +66,45 @@ def export_document(content,title,output):
             for row in rows:
                 for cell,value in zip(table.add_row().cells,row):inline(cell.paragraphs[0],value)
             continue
-        heading=re.match(r'^(#{1,3})\s+(.*)',line);bullet=re.match(r'^\s*([-*]|\d+\.)\s+(.*)',line)
+        if re.fullmatch(r'\s*(-{3,}|\*{3,}|_{3,})\s*',line):
+            document.add_page_break();continue
+        heading=re.match(r'^(#{1,3})\s+(.*)',line);bullet=re.match(r'^(\s*)([-*]|\d+\.)\s+(.*)',line)
         if heading:p=document.add_heading('',level=len(heading[1]));line=heading[2]
-        elif bullet:p=document.add_paragraph(style='List Number' if bullet[1][0].isdigit() else 'List Bullet');line=bullet[2]
+        elif bullet:
+            nested=' 2' if len(bullet[1].expandtabs(2))>=2 else ''
+            p=document.add_paragraph(style=('List Number' if bullet[2][0].isdigit() else 'List Bullet')+nested);line=bullet[3]
         else:p=document.add_paragraph()
         inline(p,line)
+    page_setup(document,content)
     document.save(output)
+
+
+def _page_field(paragraph,instruction):
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    run=paragraph.add_run()
+    for kind,text in (('begin',None),(None,instruction),('separate',None),(None,'1'),('end',None)):
+        if kind:
+            element=OxmlElement('w:fldChar');element.set(qn('w:fldCharType'),kind)
+        elif text=='1':
+            element=OxmlElement('w:t');element.text=text
+        else:
+            element=OxmlElement('w:instrText');element.set(qn('xml:space'),'preserve');element.text=text
+        run._r.append(element)
+
+
+def page_setup(document,content):
+    """Header, footer and 'Página X de Y' on every page of the DOCX."""
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    section=document.sections[0]
+    if content.get('header'):
+        paragraph=section.header.paragraphs[0];paragraph.text=content['header'];paragraph.alignment=WD_ALIGN_PARAGRAPH.CENTER
+    if content.get('footer') or content.get('pageNumbers'):
+        paragraph=section.footer.paragraphs[0]
+        if content.get('footer'):paragraph.add_run(content['footer']+('   ·   ' if content.get('pageNumbers') else ''))
+        if content.get('pageNumbers'):
+            paragraph.add_run('Página ');_page_field(paragraph,'PAGE');paragraph.add_run(' de ');_page_field(paragraph,'NUMPAGES')
+        paragraph.alignment=WD_ALIGN_PARAGRAPH.CENTER
 
 
 def import_document(stream):

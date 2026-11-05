@@ -601,5 +601,219 @@
         12
       ]
     ]
+  },
+  {
+    "name": "two levels with columns",
+    "source": [
+      [
+        "Região",
+        "Equipe",
+        "Mês",
+        "Receita"
+      ],
+      [
+        "Sul",
+        "A",
+        "Jan",
+        10
+      ],
+      [
+        "Sul",
+        "B",
+        "Jan",
+        20
+      ],
+      [
+        "Norte",
+        "C",
+        "Fev",
+        5
+      ],
+      [
+        "Sul",
+        "A",
+        "Fev",
+        30
+      ],
+      [
+        "Norte",
+        "C",
+        "Jan",
+        7
+      ],
+      [
+        "Norte",
+        "D",
+        "Jan",
+        1
+      ]
+    ],
+    "config": {
+      "rowField": 0,
+      "subRowField": 1,
+      "columnField": 2,
+      "valueField": 3,
+      "filterField": null,
+      "filterValue": "",
+      "sort": "source",
+      "aggregate": "sum"
+    },
+    "expected": [
+      [
+        "Região",
+        "Equipe",
+        "Jan",
+        "Fev",
+        "Total geral"
+      ],
+      [
+        "Sul",
+        "A",
+        10,
+        30,
+        40
+      ],
+      [
+        "Sul",
+        "B",
+        20,
+        0,
+        20
+      ],
+      [
+        "Total Sul",
+        "",
+        30,
+        30,
+        60
+      ],
+      [
+        "Norte",
+        "C",
+        7,
+        5,
+        12
+      ],
+      [
+        "Norte",
+        "D",
+        1,
+        0,
+        1
+      ],
+      [
+        "Total Norte",
+        "",
+        8,
+        5,
+        13
+      ],
+      [
+        "Total geral",
+        "",
+        38,
+        35,
+        73
+      ]
+    ]
+  },
+  {
+    "name": "two levels sorted ascending average",
+    "source": [
+      [
+        "Região",
+        "Equipe",
+        "Mês",
+        "Receita"
+      ],
+      [
+        "Sul",
+        "A",
+        "Jan",
+        10
+      ],
+      [
+        "Sul",
+        "B",
+        "Jan",
+        20
+      ],
+      [
+        "Norte",
+        "C",
+        "Fev",
+        5
+      ],
+      [
+        "Sul",
+        "A",
+        "Fev",
+        30
+      ],
+      [
+        "Norte",
+        "C",
+        "Jan",
+        7
+      ],
+      [
+        "Norte",
+        "D",
+        "Jan",
+        1
+      ]
+    ],
+    "config": {
+      "rowField": 0,
+      "subRowField": 1,
+      "columnField": null,
+      "valueField": 3,
+      "filterField": null,
+      "filterValue": "",
+      "sort": "asc",
+      "aggregate": "avg"
+    },
+    "expected": [
+      [
+        "Região",
+        "Equipe",
+        "Média"
+      ],
+      [
+        "Norte",
+        "C",
+        6
+      ],
+      [
+        "Norte",
+        "D",
+        1
+      ],
+      [
+        "Total Norte",
+        "",
+        4.333333333333333
+      ],
+      [
+        "Sul",
+        "A",
+        20
+      ],
+      [
+        "Sul",
+        "B",
+        20
+      ],
+      [
+        "Total Sul",
+        "",
+        20
+      ],
+      [
+        "Total geral",
+        "",
+        12.166666666666666
+      ]
+    ]
   }
 ]

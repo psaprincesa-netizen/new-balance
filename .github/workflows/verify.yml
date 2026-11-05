@@ -6,7 +6,8 @@ permissions:
   contents: read
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.55 cannot install Chromium on ubuntu-latest (26.04).
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -40,3 +41,4 @@ jobs:
           python -m tests.browser_quiz
           python -m tests.browser_security
           python -m tests.browser_sheet_links
+          python -m tests.browser_stage2

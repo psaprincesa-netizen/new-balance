@@ -16,3 +16,11 @@ test('bounds, bad headers, formula errors and overflow are explicit',()=>{
  for(const rows of [[['A','A'],['x',1]],[['A','B'],['x','#DIV/0!']],[['A','B'],['x',1e308],['x',1e308]]])assert.throws(()=>calculatePivot(rows,c));
  assert.deepEqual(safeCsvRows([['=1+1',-10,'+x']]),[["'=1+1",-10,"'+x"]]);
 });
+test('two-level pivots drill into subgroups, subtotals and grand total',()=>{
+ const c=fixtures.find(f=>f.name==='two levels with columns'),r=calculatePivot(c.source,c.config);
+ assert.equal(r.labelColumns,2);
+ assert.deepEqual(pivotDetails(c.source,r,0,0),[c.source[0],c.source[1]]);
+ assert.deepEqual(pivotDetails(c.source,r,2,2),[c.source[0],c.source[1],c.source[2],c.source[4]]);
+ assert.equal(pivotDetails(c.source,r,r.rowKeys.length,r.columnKeys.length).length,c.source.length);
+ assert.throws(()=>calculatePivot(c.source,{...c.config,subRowField:0}),/diferentes/);
+});

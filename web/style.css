@@ -1000,3 +1000,10 @@ body.offline::before {
 .sheet-link-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 8px 0; padding: 8px 12px; background: #eef1e6; border: 1px solid #c8cfbc; border-radius: 8px; }
 .sheet-link-list { list-style: none; padding: 0; display: grid; gap: 6px; }
 .sheet-link-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* Page breaks in documents: a labelled divider on screen, a real break when printing. */
+hr.page-break { border: 0; border-top: 2px dashed #a7b77e; margin: 28px 0; position: relative; overflow: visible; height: 0; }
+hr.page-break::after { content: attr(data-label); position: absolute; left: 50%; top: -10px; transform: translateX(-50%); background: var(--paper, #fff); padding: 0 8px; font-size: 12px; color: #5d6657; }
+@media print { hr.page-break { break-after: page; page-break-after: always; border: 0; margin: 0; visibility: hidden; } }
+
+.pivot-table tr.pivot-subtotal th, .pivot-table tr.pivot-subtotal td { font-weight: 700; background: #eef1e6; }
