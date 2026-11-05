@@ -136,7 +136,9 @@ def valid_content(kind, c):
     if not isinstance(c, dict):
         return False
     if kind in ('document', 'note'):
-        return isinstance(c.get('text'), str) and valid_images(c.get('images',[]))
+        return (isinstance(c.get('text'), str) and valid_images(c.get('images',[]))
+                and all(isinstance(c.get(k, ''), str) and len(c.get(k, '')) <= 200 for k in ('header', 'footer'))
+                and type(c.get('pageNumbers', False)) is bool)
     if kind == 'sheet':
         if not valid_pivots(c.get('pivots',[])):return False
         if not valid_sheet_links(c.get('links', [])):return False

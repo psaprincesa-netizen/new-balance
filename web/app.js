@@ -670,6 +670,7 @@ function markdown(text,images=[]) {
     const picture=/^!\[([^\]]*)\]\(drap-image:([a-zA-Z0-9_-]+)\)$/.exec(line.trim());
     if(picture){const im=images.find(im=>im.id===picture[2]);out.push(im?`<figure><img src="${esc(im.src)}" alt="${esc(im.alt||picture[1])}" style="width:${im.width||80}%;max-width:100%;height:auto;max-height:900px;object-fit:contain"></figure>`:'<p>Imagem indisponível: '+esc(picture[1])+'</p>');continue;}
 
+    if(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)){out.push('<hr class="page-break" data-label="Quebra de página">');continue;}
     if(line.startsWith('```')) {const block=[];while(++i<lines.length&&!lines[i].startsWith('```'))block.push(lines[i]);out.push('<pre><code>'+esc(block.join('\n'))+'</code></pre>');continue;}
     if(line.includes('|') && /^\s*\|?\s*:?-{3,}/.test(lines[i+1]||'')) {
       const cells=s=>s.replace(/^\s*\|/,'').replace(/\|\s*$/,'').split(/(?<!\\)\|/).map(x=>x.trim().replaceAll('\\|','|'));
@@ -710,7 +711,7 @@ function editor() {
     );
   });
   bind("export-office", exportOffice);
-  bind("print", () => current.kind==="slides"?printSlides(current.content):window.print());
+  bind("print", () => current.kind==="slides"?printSlides(current.content):printPages(current.kind==="document"||current.kind==="note"?current.content:{}));
   bind("history", historyDialog);
   bind("comments", commentsDialog);
   bind("share", shareDialog);
@@ -771,13 +772,37 @@ function editor() {
       .forEach(n=>{const allowed={slides:'[data-slide],#present',document:'#export-text,#document-mode',note:'#export-text,#document-mode',portal:'[data-link]',diagram:'#diagram-svg',table:'#table-filter,#table-csv',form:'#form-csv'}[current.kind];if(!allowed||!n.matches(allowed))n.disabled=true;});
   colors();
 }
+// Static table of contents built from the document headings (# and ##, ###).
+function tableOfContents(text) {
+  const lines=[];let fence=false;
+  for(const line of String(text).split('\n')){
+    if(/^\s*```/.test(line))fence=!fence;
+    const m=!fence&&line.match(/^(#{1,3})\s+(.+?)\s*#*\s*$/);
+    if(m&&m[2].trim().toLowerCase()!=='sumário')lines.push('  '.repeat(m[1].length-1)+'- '+m[2].replace(/[*_`]/g,''));
+  }
+  return lines.length?'## Sumário\n\n'+lines.join('\n'):'';
+}
+// Print with header, footer and page numbers using CSS page margin boxes.
+function printPages(c) {
+  const quote=s=>'"'+String(s).replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/[\n\r]/g,' ')+'"';
+  const rules=[];
+  if(c.header)rules.push(`@top-center{content:${quote(c.header)};font:11px Arial,sans-serif;color:#444}`);
+  if(c.footer)rules.push(`@bottom-left{content:${quote(c.footer)};font:11px Arial,sans-serif;color:#444}`);
+  if(c.pageNumbers)rules.push('@bottom-right{content:"Página " counter(page) " de " counter(pages);font:11px Arial,sans-serif;color:#444}');
+  const style=document.createElement('style');style.id='print-page-setup';
+  style.textContent=`@page{margin:20mm 16mm;${rules.join('')}}`;
+  document.getElementById('print-page-setup')?.remove();document.head.append(style);
+  const cleanup=()=>{style.remove();removeEventListener('afterprint',cleanup);};
+  addEventListener('afterprint',cleanup);
+  window.print();
+}
 function textEditor(root, c) {
   documentEditor?.dispose();documentEditor=null;const token={};root.documentToken=token;
   c.text ??= "";
   let visual=true,doc=null;
   try{visual=sessionStorage.getItem('drap-document-mode')!=='markdown';}catch{}
   const readOnly=current.role==='read';
-  root.innerHTML = `<div class="toolbar"><button id="document-mode">Editar Markdown</button><button id="document-paragraph">Parágrafo</button><button data-format="# ">Título</button><button data-format="## ">Subtítulo</button><button data-format="**">Negrito</button><button data-format="*">Itálico</button><button data-format="- ">Lista</button><button data-format="- [ ] ">Checklist</button><button id="insert-table">Tabela</button><button id="insert-link">Link</button><button id="document-image">Inserir imagem</button><button id="document-images">Gerenciar imagens</button><button id="find-replace">Localizar e substituir</button><button id="to-slides">Criar apresentação ↗</button><button id="export-text">Baixar texto</button><button id="document-undo">Desfazer</button><button id="document-redo">Refazer</button><span class="muted" id="word-count"></span></div><div class="toolbar" id="document-table-tools"><span id="document-table-hint">Selecione uma célula para editar a tabela.</span><button data-document-command="row">Adicionar linha</button><button data-document-command="column">Adicionar coluna</button><button data-document-command="deleteRow">Excluir linha</button><button data-document-command="deleteColumn">Excluir coluna</button><button data-document-command="deleteTable">Excluir tabela</button></div><div class="document"><textarea id="text" aria-label="Conteúdo do documento" placeholder="Escreva sua próxima ideia… Use # para títulos e **texto** para negrito.">${esc(c.text)}</textarea><article id="preview" class="preview">${markdown(c.text,c.images)}</article></div>`;
+  root.innerHTML = `<div class="toolbar"><button id="document-mode">Editar Markdown</button><button id="document-paragraph">Parágrafo</button><button data-format="# ">Título</button><button data-format="## ">Subtítulo</button><button data-format="**">Negrito</button><button data-format="*">Itálico</button><button data-format="- ">Lista</button><button data-format="- [ ] ">Checklist</button><button id="insert-table">Tabela</button><button id="insert-link">Link</button><button id="document-image">Inserir imagem</button><button id="document-images">Gerenciar imagens</button><button id="document-toc">Sumário</button><button id="document-pagebreak">Quebra de página</button><button id="document-page-setup">Cabeçalho e rodapé</button><button id="find-replace">Localizar e substituir</button><button id="to-slides">Criar apresentação ↗</button><button id="export-text">Baixar texto</button><button id="document-undo">Desfazer</button><button id="document-redo">Refazer</button><span class="muted" id="word-count"></span></div><div class="toolbar" id="document-table-tools"><span id="document-table-hint">Selecione uma célula para editar a tabela.</span><button data-document-command="row">Adicionar linha</button><button data-document-command="column">Adicionar coluna</button><button data-document-command="deleteRow">Excluir linha</button><button data-document-command="deleteColumn">Excluir coluna</button><button data-document-command="deleteTable">Excluir tabela</button></div><div class="document"><textarea id="text" aria-label="Conteúdo do documento" placeholder="Escreva sua próxima ideia… Use # para títulos e **texto** para negrito.">${esc(c.text)}</textarea><article id="preview" class="preview">${markdown(c.text,c.images)}</article></div>`;
   const update = () => {
     if(doc)doc.refresh();else document.querySelector("#preview").innerHTML = markdown(c.text,c.images);
     document.querySelector("#word-count").textContent =
@@ -789,6 +814,11 @@ function textEditor(root, c) {
   setMode();
   bind('document-mode',()=>{visual=!visual;try{sessionStorage.setItem('drap-document-mode',visual?'visual':'markdown');}catch{}setMode();});
   bind('document-paragraph',()=>{if(visual)doc?.format('paragraph');});
+  // Page layout helpers: table of contents, page breaks, header/footer for print and DOCX.
+  const insertMarkdown=text=>{if(readOnly)return;if(visual&&doc){doc.insert(text);return;}const area=root.querySelector('#text');area.setRangeText('\n'+text+'\n',area.selectionStart,area.selectionEnd,'end');c.text=area.value;update();setDirty();};
+  bind('document-toc',()=>{const toc=tableOfContents(c.text);if(!toc){notify('Use Título e Subtítulo no documento para gerar o sumário.');return;}insertMarkdown(toc);notify('Sumário inserido. Se mudar os títulos, insira um novo sumário.');});
+  bind('document-pagebreak',()=>{if(visual)doc?.format('pageBreak');else insertMarkdown('---');});
+  bind('document-page-setup',()=>showDialog(`<h2>Cabeçalho e rodapé</h2><form id="page-setup-form"><p class="muted">Aparecem em todas as páginas ao imprimir ou salvar em PDF e no arquivo DOCX.</p><label class="field">Cabeçalho<input name="header" maxlength="200" value="${esc(c.header||'')}"></label><label class="field">Rodapé<input name="footer" maxlength="200" value="${esc(c.footer||'')}"></label><label class="checklist"><input type="checkbox" name="pageNumbers" ${c.pageNumbers?'checked':''}>Numerar páginas (Página X de Y)</label><div class="row"><button type="button" id="page-setup-cancel">Cancelar</button><button class="primary" ${readOnly?'disabled':''}>Aplicar</button></div></form>`,()=>{bind('page-setup-cancel',closeDialog);bind('page-setup-form',e=>{e.preventDefault();const f=new FormData(e.target);for(const key of ['header','footer']){const v=String(f.get(key)||'').trim();if(v)c[key]=v;else delete c[key];}if(f.has('pageNumbers'))c.pageNumbers=true;else delete c.pageNumbers;closeDialog();setDirty();notify('Cabeçalho e rodapé atualizados.');},'submit');}));
   for(const command of ['undo','redo'])bind('document-'+command,()=>{if(visual)doc?.format(command);else{root.querySelector('#text').focus();document.execCommand(command);}});
   root.querySelectorAll('[data-document-command]').forEach(el=>el.onclick=()=>doc?.format(el.dataset.documentCommand));
   import('/document.js').then(({mountDocument})=>{if(!root.isConnected||root.documentToken!==token)return;root.querySelector('#preview').textContent='';doc=mountDocument(root.querySelector('#preview'),c,{readOnly,onChange:(text,words)=>{c.text=text;root.querySelector('#text').value=text;root.querySelector('#word-count').textContent=words+' palavras';setDirty();},notify,onState:state=>{root.querySelector('#document-table-hint').textContent=state.table?'Tabela selecionada:':'Selecione uma célula para editar a tabela.';root.querySelectorAll('[data-document-command]').forEach(el=>el.disabled=readOnly||!state.table);root.querySelector('#document-undo').disabled=readOnly||!state.undo;root.querySelector('#document-redo').disabled=readOnly||!state.redo;}});documentEditor=doc;root.querySelectorAll('[data-document-command]').forEach(el=>el.disabled=readOnly||!doc.state().table);root.querySelector('#document-undo').disabled=true;root.querySelector('#document-redo').disabled=true;root.querySelector('#preview').dataset.ready='true';root.querySelector('#word-count').textContent=doc.words()+' palavras';}).catch(e=>{if(!root.isConnected||root.documentToken!==token)return;visual=false;setMode();notify('O editor visual não carregou. A edição Markdown continua disponível.');});
