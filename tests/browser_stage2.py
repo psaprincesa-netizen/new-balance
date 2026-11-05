@@ -98,6 +98,38 @@ def charts(page):
     assert kinds == ['BarChart', 'AreaChart', 'BarChart'], kinds
 
 
+def pivots(page):
+    page.get_by_role('button', name='Colar tabela').click()
+    page.get_by_label('Célula inicial').fill('E1')
+    page.get_by_label('Dados copiados do Excel ou CSV').fill('Região\tEquipe\tReceita\nSul\tA\t10\nSul\tB\t20\nNorte\tC\t5\nSul\tA\t30\nNorte\tD\t1')
+    page.get_by_role('button', name='Colar dados').click()
+    page.locator('#sheet-address').fill('E1:G6')
+    page.get_by_role('button', name='Tabela dinâmica', exact=True).click()
+    page.get_by_label('Título do resumo', exact=True).fill('Receita por região e equipe')
+    page.get_by_label('Agrupar linhas por', exact=True).select_option('0')
+    page.get_by_label('Subgrupo de linhas', exact=True).select_option('1')
+    page.get_by_label('Campo de valores', exact=True).select_option('2')
+    page.get_by_label('Cálculo', exact=True).select_option('sum')
+    page.get_by_role('button', name='Salvar tabela dinâmica', exact=True).click()
+    expect(page.locator('dialog')).not_to_be_visible()
+    pivot = page.locator('#sheet-pivots')
+    expect(pivot.locator('tr.pivot-subtotal')).to_have_count(3)  # Total Sul, Total Norte, Total geral
+    expect(pivot.get_by_role('button', name='Registros de Sul · A, Soma', exact=True)).to_have_text('40')
+    total = pivot.get_by_role('button', name='Registros de Total Sul, Soma', exact=True)
+    expect(total).to_have_text('60')
+    total.click()
+    expect(page.locator('dialog')).to_contain_text('3 registros')
+    page.get_by_role('button', name='Fechar').click()
+    page.get_by_role('button', name='Salvar', exact=True).click()
+    expect(page.locator('#save-state')).to_contain_text('Versão')
+    with page.expect_download() as download:
+        page.get_by_role('button', name='Baixar XLSX').click()
+    from openpyxl import load_workbook
+    book = load_workbook(io.BytesIO(Path(download.value.path()).read_bytes()))
+    rows = [list(r) for r in book['Resumo 1'].iter_rows(values_only=True)]
+    assert rows[0] == ['Região', 'Equipe', 'Soma'] and ['Total Sul', None, 60] in rows and rows[-1] == ['Total geral', None, 66], rows
+
+
 def exercise(page, base):
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
@@ -106,6 +138,8 @@ def exercise(page, base):
     print('PASS: sumário, quebra de página, cabeçalho/rodapé com numeração, impressão e DOCX', flush=True)
     charts(page)
     print('PASS: gráficos empilhados, área, barras horizontais com várias séries e XLSX', flush=True)
+    pivots(page)
+    print('PASS: tabela dinâmica com subgrupos, subtotais, registros e XLSX', flush=True)
     assert not errors, errors
 
 
