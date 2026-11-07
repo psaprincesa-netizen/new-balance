@@ -131,3 +131,10 @@ por tentativa para deduplicação; clientes antigos permanecem compatíveis.
 
 Esta é uma automação síncrona de gatilho interno. Agendamento, conectores externos,
 aprovações e designer de fluxos ainda não foram implementados.
+
+## Continuação — BI configurável
+
+Painel pessoal com até 12 indicadores de tabelas/projetos, agregação, agrupamento,
+filtro exato, exportação CSV, edição/exclusão individual e controle de conflitos.
+Cada leitura revalida a autorização das fontes; fonte alterada, removida ou sem
+acesso gera erro localizado. Configuração persistida em tabela aditiva `dashboards`.

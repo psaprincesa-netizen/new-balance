@@ -1,3 +1,4 @@
+import {mountDashboard} from './dashboard.js';
 import {mountFormAutomation} from './automations.js';
 import {visibleQuestions,canonicalAnswers,cleanConditions,bindConditionalAnswers,mountFormConditions} from './form-conditions.js';
 import {mountTableRelations} from './table-relations.js';
@@ -1665,8 +1666,9 @@ async function analytics() {
         ([k, t]) =>
           `<div class="row between"><span>${t.name}</span><strong>${by_kind[k]||0}</strong></div>`,
       )
-      .join("")}</div></section>`,
+      .join("")}</div></section><section id="personal-dashboard" class="editor"></section>`,
   );
+  mountDashboard(document.querySelector('#personal-dashboard'),{api,esc,notify,openItem});
 }
 function assistantPage() {
   shell('<p class="eyebrow">ASSISTENTE DE IA</p><h1>Trabalhe com o Gemini.</h1><section id="ai-assistant" class="editor"></section>');
@@ -1753,7 +1755,7 @@ function coverage() {
       [
         "BI e automação",
         "Parcial",
-        "Indicadores reais de tarefas e arquivos; conversões manuais e regra de resposta pública para tarefa, com condição, histórico e reprocessamento.",
+        "Indicadores gerais e painel pessoal configurável com medidas, categorias e filtros de tabelas/projetos; conversões manuais e regra de resposta pública para tarefa, com condição, histórico e reprocessamento.",
         "Pendentes: modelagem analítica, conectores externos, agendamento, aprovações e designer genérico de fluxos.",
       ],
       [
