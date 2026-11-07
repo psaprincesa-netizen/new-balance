@@ -288,3 +288,27 @@ apenas no editor não acionam a regra. Não há envio de e-mail, chamadas extern
 execução em segundo plano, agendamento ou designer genérico de fluxos nesta etapa.
 Configurações, deduplicação e execuções pertencem ao banco; o JSON de arquivos não
 é backup dessas tabelas. Backups integrais do PostgreSQL/SQLite as preservam.
+
+## BI: painel pessoal configurável
+
+Em **Indicadores**, cada conta tem um painel privado persistente com até 12
+indicadores sobre tabelas ou projetos acessíveis. Há contagem de registros, soma,
+média, mínimo e máximo; filtro por igualdade exata de um campo e agrupamento em até
+50 categorias. Agrupamentos aparecem como barras e tabela com valores, inclusive
+negativos. Campos vazios são ignorados nas medidas; uma medida sem valores mostra
+“Sem valores”. Texto não numérico gera erro, sem descarte silencioso. Medidas usam
+números canônicos com ponto decimal, sem moeda ou separador de milhar. A interface
+arredonda a exibição a seis casas; não é cálculo contábil de precisão arbitrária.
+
+O painel permite adicionar, editar e excluir indicadores individualmente,
+renomear, atualizar e exportar os resultados atuais em CSV protegido contra
+fórmulas. Cada resultado identifica a versão da fonte consultada. Modificações nas
+fontes são refletidas ao abrir/atualizar o painel; não há atualização automática
+em segundo plano. Alterações incompatíveis/ambíguas nos campos exigem reconfiguração.
+
+O servidor revalida acesso e lixeira ao calcular os valores. Revogar acesso remove
+os valores do próximo resultado, sem cache de totais. Configurações são privadas,
+sem publicação ou compartilhamento de painel. Edições simultâneas são recusadas
+por versão. Até 500 fontes são listadas no seletor. Dados permanecem nas fontes;
+a configuração do painel reside no banco e depende do backup integral, não do JSON
+de arquivos. Não há DAX, cruzamento entre fontes, cubos, mapas ou conectores externos.

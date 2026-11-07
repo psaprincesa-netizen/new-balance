@@ -69,6 +69,7 @@ def handler_for(store):
                 assets = {
                     '/project-planning.js': ('project-planning.js', 'text/javascript; charset=utf-8'),
                     '/project-planning-ui.js': ('project-planning-ui.js', 'text/javascript; charset=utf-8'),
+                    '/dashboard.js': ('dashboard.js', 'text/javascript; charset=utf-8'),
                     '/automations.js': ('automations.js', 'text/javascript; charset=utf-8'),
                     '/form-conditions.js': ('form-conditions.js', 'text/javascript; charset=utf-8'),
                     '/table-relations.js': ('table-relations.js', 'text/javascript; charset=utf-8'),
@@ -139,6 +140,10 @@ def handler_for(store):
                     return self.respond(200, {'items': store.events(user['id'])})
                 if path == '/api/me':
                     return self.respond(200 if user else 401, user or {'error': 'Entre na sua conta.'})
+                if path in ('/api/dashboard','/api/dashboard/sources'):
+                    if not user:return self.respond(401, {'error':'Entre na sua conta.'})
+                    from server.dashboards import get, sources
+                    return self.respond(200,(sources if path.endswith('/sources') else get)(workspace(),user['id']))
                 if path in ('/api/bootstrap', '/api/library', '/api/analytics'):
                     if not user:
                         return self.respond(401, {'error': 'Entre na sua conta.'})
@@ -295,6 +300,9 @@ def handler_for(store):
                 from server.office import import_file
                 item, warnings = import_file(data.get('name'), data.get('data'))
                 return self.respond(201, {'item': workspace().create(user['id'], item), 'warnings': warnings})
+            if path == '/api/dashboard':
+                from server.dashboards import save
+                return self.respond(200,save(workspace(),user['id'],data))
             if path == '/api/items':
                 return self.respond(201, workspace().create(user['id'], data))
             parts = path.strip('/').split('/')
