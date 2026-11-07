@@ -4,7 +4,7 @@
 .data/
 .venv/
 .vercel/
-node_modules/
+node_modules
 __pycache__/
 public/
 dist/

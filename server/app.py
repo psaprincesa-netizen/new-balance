@@ -69,6 +69,7 @@ def handler_for(store):
                 assets = {
                     '/project-planning.js': ('project-planning.js', 'text/javascript; charset=utf-8'),
                     '/project-planning-ui.js': ('project-planning-ui.js', 'text/javascript; charset=utf-8'),
+                    '/automations.js': ('automations.js', 'text/javascript; charset=utf-8'),
                     '/form-conditions.js': ('form-conditions.js', 'text/javascript; charset=utf-8'),
                     '/table-relations.js': ('table-relations.js', 'text/javascript; charset=utf-8'),
                     '/diagram-tools.js': ('diagram-tools.js', 'text/javascript; charset=utf-8'),
@@ -157,6 +158,9 @@ def handler_for(store):
                     rows = workspace().list(user['id'], limit=4, offset=offset)
                     return self.page_response(rows, offset, 4)
                 parts = path.strip('/').split('/')
+                if len(parts)==4 and parts[3]=='automation':
+                    from server.automations import settings
+                    return self.respond(200,settings(workspace(),user['id'],parts[2],offset))
                 if len(parts) == 4 and parts[3] == 'related':
                     from server.table_relations import related_records
                     row=query.get('row',[''])[0];version=query.get('version',[''])[0]
@@ -197,7 +201,7 @@ def handler_for(store):
                 ip = self.headers.get('x-forwarded-for', self.client_address[0]).split(',')[0].strip() if os.environ.get('VERCEL') else self.client_address[0]
                 if not store.auth_allowed('public-form:' + ip, limit=20):
                     return self.respond(429, {'error': 'Muitas respostas. Aguarde um minuto.'})
-                return self.respond(201, workspace().submit_form(path.removeprefix('/api/forms/'), data.get('answers'), data.get('schema_id')))
+                return self.respond(201, workspace().submit_form(path.removeprefix('/api/forms/'), data.get('answers'), data.get('schema_id'), data.get('submission_id')))
             if path in ('/api/recovery/question', '/api/recovery/reset'):
                 if any(not isinstance(v, str) for v in data.values()):
                     raise InvalidInput('Campos devem ser textos.')
@@ -294,6 +298,12 @@ def handler_for(store):
             if path == '/api/items':
                 return self.respond(201, workspace().create(user['id'], data))
             parts = path.strip('/').split('/')
+            if len(parts)==5 and parts[:2]==['api','items'] and parts[3:]==['automation','retry']:
+                from server.automations import retry
+                return self.respond(200,retry(workspace(),user['id'],parts[2],data.get('run_id')))
+            if len(parts)==4 and parts[:2]==['api','items'] and parts[3]=='automation':
+                from server.automations import configure
+                return self.respond(200,configure(workspace(),user['id'],parts[2],data))
             if len(parts) == 4 and parts[:2] == ['api', 'items'] and parts[3] == 'publication':
                 if type(data.get('enabled')) is not bool:
                     raise InvalidInput('Estado de publicação inválido.')

@@ -48,6 +48,17 @@ class Workspace:
                 CREATE TABLE IF NOT EXISTS google_oauth_states (
                     digest TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
                     verifier TEXT NOT NULL, expires INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS form_automations (
+                    form_id TEXT PRIMARY KEY REFERENCES items(id), config TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS automation_runs (
+                    id TEXT PRIMARY KEY, form_id TEXT NOT NULL REFERENCES items(id), response_id TEXT NOT NULL,
+                    target_id TEXT NOT NULL, task_id TEXT NOT NULL, title TEXT NOT NULL, payload TEXT NOT NULL,
+                    status TEXT NOT NULL, detail TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL,
+                    UNIQUE(form_id,response_id));
+                CREATE INDEX IF NOT EXISTS automation_runs_form ON automation_runs(form_id,created);
+                CREATE TABLE IF NOT EXISTS form_submissions (
+                    form_id TEXT NOT NULL REFERENCES items(id), request_key TEXT NOT NULL, digest TEXT NOT NULL,
+                    result TEXT NOT NULL, PRIMARY KEY(form_id,request_key));
                 CREATE TABLE IF NOT EXISTS ai_daily (
                     key TEXT NOT NULL, day INTEGER NOT NULL, attempts INTEGER NOT NULL, PRIMARY KEY(key, day));
                 CREATE TABLE IF NOT EXISTS form_publications (
@@ -261,8 +272,10 @@ class Workspace:
                 raise LookupError('Formulário indisponível.')
             return {'title': row['title'], **form_schema(json.loads(row['content']))}
 
-    def submit_form(self, token, answers, schema_id):
+    def submit_form(self, token, answers, schema_id, submission_id=None):
         from server.forms import validate_answers,quiz_score
+        import hashlib
+        if submission_id is not None and (not isinstance(submission_id,str) or not 16<=len(submission_id)<=100):raise InvalidInput('Identificador de envio inválido.')
         if not isinstance(token, str) or len(token) != 43:
             raise LookupError('Formulário indisponível.')
         with self.store.connect() as db:
@@ -276,12 +289,19 @@ class Workspace:
                 WHERE p.token=? AND i.kind='form' AND i.deleted=0''', (token,)).fetchone()
             if not row:
                 raise LookupError('Formulário indisponível.')
+            request_key=hashlib.sha256(submission_id.encode()).hexdigest() if submission_id else None
+            digest=hashlib.sha256(json.dumps({'answers':answers,'schema':schema_id},sort_keys=True,allow_nan=False).encode()).hexdigest() if request_key else None
+            if request_key:
+                previous=db.execute('SELECT digest,result FROM form_submissions WHERE form_id=? AND request_key=?',(item_id,request_key)).fetchone()
+                if previous:
+                    if previous['digest']!=digest:raise Conflict('Este identificador já foi usado em outro envio. Reabra o formulário para enviar uma nova resposta.')
+                    return json.loads(previous['result'])
             content = json.loads(row['content'])
             if len(content['responses']) >= 1000:
                 raise InvalidInput('Este formulário atingiu o limite de respostas.')
             answers = validate_answers(content, answers, schema_id)
             now = time.time_ns() // 1000000
-            response = {'at': now, 'questions': content['questions'][:], 'answers': answers}
+            response = {'id':secrets.token_hex(16),'at': now, 'questions': content['questions'][:], 'answers': answers}
             result = {'ok': True}
             if content.get('quiz'):
                 from server.forms import score_response
@@ -294,4 +314,7 @@ class Workspace:
             version = row['version'] + 1
             db.execute('UPDATE items SET content=?, version=?, updated=? WHERE id=?', (encoded, version, now, item_id))
             db.execute('INSERT INTO versions VALUES (?, ?, ?, ?, ?)', (item_id, version, row['title'], encoded, now))
+            from server.automations import on_public_response
+            on_public_response(self,db,row,content,response)
+            if request_key:db.execute('INSERT INTO form_submissions VALUES (?,?,?,?)',(item_id,request_key,digest,json.dumps(result)))
         return result
