@@ -272,7 +272,8 @@ class Store:
                        (hashlib.sha256(token.encode()).hexdigest(),))
 
     def begin_write(self, db, item_id):
-        db.execute('BEGIN IMMEDIATE')
+        # SQLite already serializes every writer in an active transaction.
+        if not db.in_transaction:db.execute('BEGIN IMMEDIATE')
 
     # ----- Two-step verification (TOTP, RFC 6238) -----
     def _check_mfa(self, db, mfa, code):

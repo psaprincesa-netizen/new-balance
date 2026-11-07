@@ -257,3 +257,34 @@ expressões compostas com múltiplas regras.
 
 A exibição condicional orienta o preenchimento, mas não restringe o acesso ao texto
 das perguntas: a definição de todas as perguntas faz parte do formulário público.
+
+## Automação de resposta pública para tarefa
+
+Em **Formulários → Automação de tarefas**, ou **Conexões → Automações de formulários**,
+o proprietário pode ativar uma regra: cada nova resposta recebida pelo link público
+cria uma tarefa em um projeto do mesmo proprietário. O título combina um prefixo
+com uma resposta escolhida ou o nome do formulário. Há prioridade configurável e
+condição opcional por resposta exata de uma pergunta de escolha única. Perguntas
+usadas na regra precisam ter títulos únicos; alterações incompatíveis falham com
+um registro, sem usar outro campo silenciosamente.
+
+As execuções mostram conclusão, condição não atendida ou falha, com paginação de
+50 registros. Uma falha no destino não descarta a resposta do formulário. O dono
+pode corrigir/restaurar o projeto e reprocessar execuções recuperáveis. O destino,
+título e prioridade são os definidos no envio; mudar a regra vale para próximos
+envios. Tarefas e histórico do projeto usam o mesmo salvamento transacional.
+
+O navegador identifica cada tentativa de envio. Repetir o mesmo identificador e
+conteúdo retorna o resultado anterior sem criar outra resposta ou tarefa, inclusive
+com requisições concorrentes e após reinício. Reutilizar o identificador com conteúdo
+diferente é recusado. Clientes antigos sem identificador continuam compatíveis,
+mas não têm essa deduplicação. Recarregar o formulário inicia um novo envio.
+Reprocessar uma execução concluída não recria uma tarefa removida posteriormente.
+
+Somente o proprietário configura a regra e lê/reprocessa o histórico. Compartilhar
+um formulário não concede administração da automação; projetos de terceiros não
+podem ser destinos, mesmo quando compartilhados para edição. Respostas registradas
+apenas no editor não acionam a regra. Não há envio de e-mail, chamadas externas,
+execução em segundo plano, agendamento ou designer genérico de fluxos nesta etapa.
+Configurações, deduplicação e execuções pertencem ao banco; o JSON de arquivos não
+é backup dessas tabelas. Backups integrais do PostgreSQL/SQLite as preservam.

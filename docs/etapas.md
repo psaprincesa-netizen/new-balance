@@ -119,3 +119,15 @@ Formulários agora têm exibição condicional por resposta de escolha única an
 com cadeias sem ciclos, limpeza dos campos ocultos e pontuação apenas das questões
 visíveis. A validação do servidor não confia na visibilidade calculada pelo navegador.
 Os limites permanecem registrados no mapa de recursos; não é conclusão de toda a suíte.
+
+## Automação interna: formulário público → tarefa
+
+Implementada regra persistente, administrada pelo dono do formulário, com destino
+restrito a projeto do mesmo dono, título por resposta, prioridade, condição opcional,
+registro de execuções e reprocessamento de falhas. Formulário, tarefa e execução
+confirmam na mesma transação; falhas esperadas do destino são registradas enquanto
+a resposta é preservada. Novas tabelas são aditivas. O navegador envia identificador
+por tentativa para deduplicação; clientes antigos permanecem compatíveis.
+
+Esta é uma automação síncrona de gatilho interno. Agendamento, conectores externos,
+aprovações e designer de fluxos ainda não foram implementados.
