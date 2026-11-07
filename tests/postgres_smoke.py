@@ -2,7 +2,7 @@
 import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from server.database import PostgresStore
+from server.database import PostgresStore, ConfigurationError
 from server.workspace import Workspace, Conflict
 from server.store import InvalidInput
 
@@ -29,6 +29,9 @@ def main():
             pass
         item = ws.create(a, {'kind':'document','title':'Teste PostgreSQL','content':{'text':'original'}})
         item_id = item['id']
+        summary=ws.list(a,limit=100,summary=True,search='original')
+        assert len(summary)==1 and 'content' not in summary[0]
+        assert ws.analytics(a)['by_kind']=={'document':1}
         assert Workspace(other_instance).get(a,item_id)['content']['text'] == 'original'
         assert ws.list(b) == []
         ws.share(a,item_id,other_email,'read')
@@ -54,7 +57,21 @@ def main():
         assert not other_instance.auth_allowed(key)
         store.logout(token)
         assert other_instance.session_user(token) is None
+        with store.connect() as db:
+            backend_pid=db.execute('SELECT pg_backend_pid() AS pid').fetchone()['pid']
+        with store.connect() as db:
+            assert db.execute('SELECT pg_backend_pid() AS pid').fetchone()['pid']==backend_pid
+        try:
+            with store.connect() as db:db.execute('SELECT 1 / 0')
+            raise AssertionError('Failed transaction was accepted')
+        except ConfigurationError:
+            pass
+        with store.connect() as db:assert db.execute('SELECT 1 AS n').fetchone()['n']==1
+        with other_instance.connect() as db:db.execute('SELECT pg_terminate_backend(?)',(backend_pid,))
+        with store.connect() as db:
+            assert db.execute('SELECT pg_backend_pid() AS pid').fetchone()['pid']!=backend_pid
         print('PostgreSQL TLS verified: cross-instance persistence, authentication, duplicate constraints, sharing/revocation, real concurrency, history/trash, distributed rate limit, logout.')
+        print('Pool verified: connection reuse, transaction rollback, dead connection recovery, metadata search and analytics.')
     finally:
         with store.connect() as db:
             if item_id:

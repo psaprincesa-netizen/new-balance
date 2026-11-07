@@ -7,9 +7,24 @@ from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
-from docx.shared import Inches
+from docx.shared import Inches, Mm, Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.section import WD_ORIENT
 from server.slides_io import image_bytes
 from server.store import InvalidInput
+
+
+def valid_page(page):
+    if not isinstance(page,dict):return False
+    enums={'size':('A4','Letter'),'orientation':('portrait','landscape'),'font':('Arial','Georgia','Times New Roman','Courier New'),'align':('left','center','right','justify'),'mode':('page','wide')}
+    for key,values in enums.items():
+        if key in page and page[key] not in values:return False
+    for key,low,high in [('margin',5,40),('fontSize',8,36),('lineHeight',1,2)]:
+        if key in page and (type(page[key]) not in (int,float) or not low<=page[key]<=high):return False
+    for key in ('header','footer'):
+        if key in page and (not isinstance(page[key],str) or len(page[key])>500):return False
+    if 'pageNumbers' in page and type(page['pageNumbers']) is not bool:return False
+    return True
 
 
 def valid_images(images):
@@ -45,7 +60,33 @@ def inline(paragraph,text):
 
 
 def export_document(content,title,output):
+    if content.get('tabs'):
+        from server.rich_document import import_rich
+        combined=[]
+        for index,tab in enumerate(content['tabs']):
+            if index:combined.append({'type':'pageBreak'})
+            combined.append({'type':'heading','attrs':{'level':1},'content':[{'type':'text','text':tab['name']}]})
+            rich=tab.get('rich')
+            if not rich:
+                temporary=io.BytesIO();export_document({'text':tab['text'],'images':content.get('images',[])},tab['name'],temporary);temporary.seek(0);rich=import_rich(Document(temporary),content.get('images',[]))
+            combined.extend(rich['content'])
+        content={**content,'rich':{'type':'doc','content':combined}}
     document=Document();document.core_properties.title=title;document.core_properties.author='DRAP office'
+    settings=content.get('page',{})
+    if settings:
+        section=document.sections[0];width,height=(210,297) if settings.get('size','A4')=='A4' else (215.9,279.4)
+        if settings.get('orientation')=='landscape':width,height=height,width;section.orientation=WD_ORIENT.LANDSCAPE
+        section.page_width=Mm(width);section.page_height=Mm(height)
+        section.top_margin=section.bottom_margin=section.left_margin=section.right_margin=Mm(settings.get('margin',20))
+        normal=document.styles['Normal'];normal.font.name=settings.get('font','Arial');normal.font.size=Pt(settings.get('fontSize',12))
+        normal.paragraph_format.line_spacing=settings.get('lineHeight',1.5)
+        normal.paragraph_format.alignment={'left':WD_ALIGN_PARAGRAPH.LEFT,'center':WD_ALIGN_PARAGRAPH.CENTER,'right':WD_ALIGN_PARAGRAPH.RIGHT,'justify':WD_ALIGN_PARAGRAPH.JUSTIFY}[settings.get('align','left')]
+    page_setup(document,{key:settings.get(key,content.get(key)) for key in ('header','footer','pageNumbers')})
+    if content.get('rich'):
+        from server.rich_document import export_rich
+        export_rich(document,content['rich'],{im['id']:im for im in content.get('images',[])})
+        document.save(output)
+        return
     lines=content['text'].splitlines();images={im['id']:im for im in content.get('images',[])};i=0
     def cells(line):return [x.strip().replace('\\|','|') for x in re.split(r'(?<!\\)\|',line.strip().strip('|'))]
     while i<len(lines):
@@ -75,7 +116,6 @@ def export_document(content,title,output):
             p=document.add_paragraph(style=('List Number' if bullet[2][0].isdigit() else 'List Bullet')+nested);line=bullet[3]
         else:p=document.add_paragraph()
         inline(p,line)
-    page_setup(document,content)
     document.save(output)
 
 
@@ -149,6 +189,14 @@ def import_document(stream):
                 key='docx-'+str(len(images));image={'id':key,'src':'data:image/png;base64,'+base64.b64encode(out.getvalue()).decode(),'alt':alt,'width':80,'ratio':im.width/im.height}
                 images.append(image);lines.append('!['+alt.replace(']','')+'](drap-image:'+key+')')
     if not valid_images(images):raise InvalidInput('Uma imagem do documento excede os limites.')
-    result={'text':'\n'.join(lines)}
+    section=document.sections[0];normal=document.styles['Normal']
+    page_width=section.page_width or Mm(210);page_height=section.page_height or Mm(297);margin=section.left_margin or Mm(20)
+    result={'text':'\n'.join(lines),'page':{'size':'Letter' if abs(min(page_width.mm,page_height.mm)-215.9)<2 else 'A4','orientation':'landscape' if page_width>page_height else 'portrait','margin':max(5,min(40,round(margin.mm))), 'font':normal.font.name if normal.font.name in ('Arial','Georgia','Times New Roman','Courier New') else 'Arial','fontSize':max(8,min(36,normal.font.size.pt if normal.font.size else 12))}}
     if images:result['images']=images
+    from server.rich_document import import_rich
+    rich=import_rich(document,images)
+    if rich:result['rich']=rich
+    result['page']['header']='\n'.join(p.text for p in section.header.paragraphs)[:500]
+    result['page']['footer']='\n'.join(p.text for p in section.footer.paragraphs)[:500]
+    result['page']['pageNumbers']=bool(section.footer._element.xpath('.//w:fldSimple[contains(@w:instr, "PAGE")] | .//w:instrText[contains(text(), "PAGE")]'))
     return result

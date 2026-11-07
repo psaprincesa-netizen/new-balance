@@ -4,7 +4,11 @@ import secrets
 import sqlite3
 import time
 from server.store import InvalidInput
-from server.schema import validate_content
+
+def validate_content(kind, content):
+    # Office/image libraries are unnecessary for login, listing and reads.
+    from server.schema import validate_content as validate
+    return validate(kind, content)
 
 KINDS = {'document', 'sheet', 'slides', 'note', 'board', 'calendar', 'form', 'table', 'diagram', 'portal'}
 
@@ -34,10 +38,18 @@ class Workspace:
                     item_id TEXT NOT NULL REFERENCES items(id), user_id TEXT NOT NULL REFERENCES users(id),
                     role TEXT NOT NULL, PRIMARY KEY(item_id, user_id));
                 CREATE INDEX IF NOT EXISTS items_owner ON items(owner);
+                CREATE INDEX IF NOT EXISTS shares_user ON shares(user_id, item_id);
                 CREATE TABLE IF NOT EXISTS comments (
                     id TEXT PRIMARY KEY, item_id TEXT NOT NULL REFERENCES items(id),
                     author TEXT NOT NULL REFERENCES users(id), body TEXT NOT NULL, created INTEGER NOT NULL);
                 CREATE INDEX IF NOT EXISTS comments_item ON comments(item_id, created);
+                CREATE TABLE IF NOT EXISTS google_connections (
+                    user_id TEXT PRIMARY KEY REFERENCES users(id), encrypted TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS google_oauth_states (
+                    digest TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
+                    verifier TEXT NOT NULL, expires INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS ai_daily (
+                    key TEXT NOT NULL, day INTEGER NOT NULL, attempts INTEGER NOT NULL, PRIMARY KEY(key, day));
                 CREATE TABLE IF NOT EXISTS form_publications (
                     token TEXT PRIMARY KEY, item_id TEXT UNIQUE NOT NULL REFERENCES items(id));
             ''')
@@ -62,14 +74,52 @@ class Workspace:
                 raise LookupError('Arquivo não encontrado.')
             return self.public(row)
 
-    def list(self, user, limit=None, offset=0):
+    def list(self, user, limit=None, offset=0, summary=False, search=''):
+        columns = 'i.id, i.owner, i.kind, i.title, i.version, i.updated, i.deleted' if summary else 'i.*'
+        params = (user, user, user, user)
+        where = ''
+        if search:
+            if len(search) > 200:
+                raise InvalidInput('Busca limitada a 200 caracteres.')
+            pattern = '%' + search.lower().replace('!', '!!').replace('%', '!%').replace('_', '!_') + '%'
+            names = {'document':'Documentos','sheet':'Planilhas','slides':'Apresentações','note':'Anotações',
+                     'board':'Projetos','calendar':'Agenda','form':'Formulários','table':'Banco de dados',
+                     'diagram':'Diagramas','portal':'Portais'}
+            kinds = [kind for kind, name in names.items() if search.lower() in name.lower()]
+            where = " AND (LOWER(i.title) LIKE ? ESCAPE '!' OR LOWER(i.content) LIKE ? ESCAPE '!'"
+            params += (pattern, pattern)
+            if kinds:
+                where += ' OR i.kind IN (' + ','.join('?' for _ in kinds) + ')'
+                params += tuple(kinds)
+            where += ')'
         with self.store.connect() as db:
-            rows = db.execute('''SELECT i.*, CASE WHEN i.owner = ? THEN 'owner' ELSE s.role END AS role
+            rows = db.execute(f'''SELECT {columns}, CASE WHEN i.owner = ? THEN 'owner' ELSE s.role END AS role
                 FROM items i LEFT JOIN shares s ON s.item_id = i.id AND s.user_id = ?
-                WHERE i.owner = ? OR s.user_id = ? ORDER BY updated DESC, title, i.id''' +
+                WHERE (i.owner = ? OR s.user_id = ?)''' + where + ' ORDER BY updated DESC, title, i.id' +
                 (' LIMIT ? OFFSET ?' if limit is not None else ''),
-                (user, user, user, user) + ((limit, offset) if limit is not None else ())).fetchall()
+                params + ((limit, offset) if limit is not None else ())).fetchall()
+            if summary:
+                return [dict(row) | {'deleted': bool(row['deleted'])} for row in rows]
             return [self.public(row) for row in rows]
+
+    def analytics(self, user):
+        access = '''FROM items i LEFT JOIN shares s ON s.item_id=i.id AND s.user_id=?
+                    WHERE (i.owner=? OR s.user_id=?) AND i.deleted=0'''
+        with self.store.connect() as db:
+            counts = {r['kind']: r['count'] for r in db.execute(
+                'SELECT i.kind, COUNT(*) AS count ' + access + ' GROUP BY i.kind', (user, user, user))}
+            rows = db.execute('SELECT i.kind, i.content ' + access + " AND i.kind IN ('board','form')", (user, user, user))
+            tasks = done = responses = 0
+            for row in rows:
+                content = json.loads(row['content'])
+                if row['kind'] == 'board':
+                    entries = content.get('tasks', [])
+                    tasks += len(entries)
+                    done += sum(t.get('status') == 'Concluído' for t in entries)
+                else:
+                    responses += len(content.get('responses', []))
+            return {'active': sum(counts.values()), 'tasks': tasks, 'done': done,
+                    'responses': responses, 'by_kind': counts}
 
     @staticmethod
     def validate(data):
@@ -104,6 +154,9 @@ class Workspace:
             if not row:
                 raise LookupError('Arquivo não encontrado.')
             validate_content(row['kind'], data['content'])
+            if row['kind']=='sheet':
+                from server.sheet_protection import enforce_protection
+                enforce_protection(json.loads(row['content']),data['content'],row['role'])
             if row['role'] not in ('owner', 'edit'):
                 raise PermissionError('Você possui acesso somente de leitura.')
             if data['version'] != row['version']:
@@ -209,7 +262,7 @@ class Workspace:
             return {'title': row['title'], **form_schema(json.loads(row['content']))}
 
     def submit_form(self, token, answers, schema_id):
-        from server.forms import validate_answers
+        from server.forms import validate_answers,quiz_score
         if not isinstance(token, str) or len(token) != 43:
             raise LookupError('Formulário indisponível.')
         with self.store.connect() as db:
@@ -234,7 +287,7 @@ class Workspace:
                 from server.forms import score_response
                 grade = score_response(content, answers)
                 if grade['total']:
-                    response.update(grade)
+                    response.update(grade);response['maxScore']=grade['total']
                     result.update(grade)
             content['responses'].append(response)
             _, encoded = self.validate({'title': row['title'], 'content': content})

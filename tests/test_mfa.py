@@ -107,3 +107,19 @@ class MfaApiTest(ApiTest):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ConcurrentMfaTest(unittest.TestCase):
+    def test_backup_code_is_consumed_once_under_concurrent_login(self):
+        from concurrent.futures import ThreadPoolExecutor
+        import tempfile,time
+        from pathlib import Path
+        from server.store import Store,totp,MfaRequired
+        with tempfile.TemporaryDirectory() as temp:
+            store=Store(Path(temp)/'test.sqlite');user=store.register('concurrent@example.org','Teste','password-long-test')
+            setup=store.mfa_setup(user['id'],'password-long-test',user['email']);codes=store.mfa_enable(user['id'],totp(setup['secret'],int(time.time())//30))['backup_codes']
+            def login(_):
+                try:return bool(store.login(user['email'],'password-long-test',codes[0]))
+                except MfaRequired:return False
+            with ThreadPoolExecutor(max_workers=2) as pool:result=list(pool.map(login,range(2)))
+            self.assertEqual(sorted(result),[False,True])

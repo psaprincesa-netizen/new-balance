@@ -31,6 +31,31 @@ class ApiTest(unittest.TestCase):
         connection.close()
         return result
 
+    def test_editor_modules_are_served(self):
+        for path in ['/document-tools.js','/sheet-tools.js','/insert-menu.js']:
+            connection=http.client.HTTPConnection('127.0.0.1',self.server.server_port)
+            connection.request('GET',path);response=connection.getresponse()
+            self.assertEqual(response.status,200)
+            self.assertIn('javascript',response.getheader('Content-Type'))
+            self.assertIn(b'export ',response.read());connection.close()
+
+    def test_export_unsaved_content_without_creating_an_item(self):
+        import io, zipfile
+        data={'kind':'document','title':'Documento sem título','content':{'text':'Texto ainda não salvo'},'format':'docx'}
+        self.assertEqual(self.request('POST','/api/export',data)[0],401)
+        account={'email':'export@example.org','name':'Ana','password':'long-test-password','question':'pet','answer':'Rex'}
+        self.request('POST','/api/register',account)
+        cookie=self.request('POST','/api/login',account)[2].split(';')[0]
+        headers={'Cookie':cookie,'Content-Type':'application/json'}
+        connection=http.client.HTTPConnection('127.0.0.1',self.server.server_port)
+        connection.request('POST','/api/export',json.dumps(data),headers)
+        response=connection.getresponse();body=response.read();self.assertEqual(response.status,200);connection.close()
+        with zipfile.ZipFile(io.BytesIO(body)) as archive:
+            self.assertIn('Texto ainda não salvo',archive.read('word/document.xml').decode())
+        self.assertEqual(self.request('GET','/api/items',headers=headers)[1]['items'],[])
+        invalid=dict(data,content={'wrong':'schema'})
+        self.assertEqual(self.request('POST','/api/export',invalid,headers)[0],400)
+
     def test_account_journey(self):
         account = {'email': 'ana@example.org', 'name': 'Ana', 'password': 'uma-senha-segura-123', 'question': 'pet', 'answer': 'Rex'}
         self.assertEqual(self.request('GET', '/api/health')[0], 200)

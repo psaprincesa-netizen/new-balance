@@ -47,3 +47,19 @@ test('ids are assigned without collisions and dangling dependencies are dropped'
   assert.deepEqual(tasks[1].depends, []);
   assert.deepEqual(tasks[2].depends, ['t1']);
 });
+
+test('budget groups resources and rounds task costs before summing', async () => {
+  const {projectBudget} = await import('../web/project.js');
+  const b = projectBudget([
+    {assignee:'Ana',plannedHours:10,actualHours:12,hourlyRate:50,fixedCost:100},
+    {assignee:' Ana ',plannedHours:2,actualHours:1,hourlyRate:50},
+    {plannedHours:1,actualHours:0.5,hourlyRate:0.01}, {},
+  ]);
+  assert.equal(b.plannedCents,70001);
+  assert.equal(b.actualCents,75001);
+  assert.equal(b.varianceCents,5000);
+  assert.equal(b.resources[0].plannedHours,12);
+  assert.equal(b.resources[0].actualHours,13);
+  assert.equal(b.resources[1].name,'Sem responsável');
+  assert.equal(projectBudget([]).actualCents,0);
+});

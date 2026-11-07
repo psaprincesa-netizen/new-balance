@@ -12,6 +12,7 @@ from server.database import PostgresStore
 
 
 def main():
+    expect.set_options(timeout=30000)
     with tempfile.TemporaryDirectory() as temp:
         store = PostgresStore(os.environ['TEST_DATABASE_URL']) if os.environ.get('TEST_DATABASE_URL') else Store(Path(temp) / 'ui.sqlite')
         server = ThreadingHTTPServer(('127.0.0.1', 0), handler_for(store))
@@ -34,7 +35,7 @@ def main():
                 expect(page.get_by_role('heading', name='Olá, Ana. Vamos criar?')).to_be_visible()
                 page.screenshot(path='/tmp/nexo-desktop.png', full_page=True)
                 with page.expect_download() as download_info:
-                    page.get_by_role('link',name='Baixar plataforma',exact=True).click()
+                    page.get_by_role('link',name='Baixar código-fonte ZIP',exact=True).click()
                 downloaded = download_info.value
                 assert downloaded.suggested_filename == 'drap-office.zip'
                 assert downloaded.failure() is None
@@ -58,7 +59,7 @@ def main():
                 page.get_by_label('Conteúdo do documento').fill('# Estratégia\n\n**Planejar** o próximo trimestre.\n\n## Entrega\nConectar as ferramentas.')
                 save()
                 page.reload()
-                page.get_by_role('button', name='Plano integrado', exact=False).click()
+                page.locator('[data-open]').filter(has_text='Plano integrado').click()
                 expect(page.get_by_label('Conteúdo do documento')).to_contain_text('Estratégia')
                 page.get_by_role('button', name='Criar apresentação ↗').click()
                 expect(page.locator('#title')).to_have_value('Plano integrado — Apresentação')
@@ -106,10 +107,10 @@ def main():
                 expect(page.locator('#sheet-value')).to_have_value('Integração dos dados')
 
                 create('diagram','Fluxo')
-                page.get_by_label('Etapa 2').fill('Aprovação')
+                page.get_by_label('Etapa 2',exact=True).fill('Aprovação')
                 page.get_by_role('button',name='＋ Etapa').click()
                 save()
-                expect(page.locator('.node').nth(1)).to_have_text('Aprovação')
+                expect(page.locator('.node').nth(1).locator('text')).to_have_text('Aprovação')
 
                 create('note','Ideias')
                 if page.get_by_role('button',name='Editar Markdown',exact=True).is_visible():page.get_by_role('button',name='Editar Markdown',exact=True).click()

@@ -1,0 +1,16 @@
+import {slideMarkup,slideStyle} from './slides.js';
+export function openPresenter(content,title,notify){
+  const slides=content.slides.filter(slide=>!slide.hidden);if(!slides.length)return notify('Exiba um slide para apresentar.');
+  const audience=window.open('','drap-audience-'+crypto.randomUUID(),'popup,width=1200,height=800');if(!audience)return notify('Permita a janela de apresentação no navegador.');
+  audience.document.title=title+' — Apresentação';const css=audience.document.createElement('link');css.rel='stylesheet';css.href=new URL('/style.css',location.href).href;audience.document.head.append(css);
+  audience.document.body.innerHTML='<main class="audience-view"><div class="slide-stage" id="audience-stage"></div><button id="audience-full">Tela cheia</button></main>';
+  audience.document.querySelector('#audience-full').onclick=()=>audience.document.documentElement.requestFullscreen?.();
+  const panel=document.createElement('section');panel.className='present presenter-console';panel.setAttribute('role','dialog');panel.setAttribute('aria-label','Console do apresentador');panel.innerHTML='<h2>Console do apresentador</h2><p>Compartilhe somente a janela de apresentação. Suas notas ficam nesta tela.</p><div class="slide-stage" id="speaker-stage"></div><aside class="present-notes"><strong>Notas privadas do apresentador</strong><p id="speaker-notes"></p><p id="speaker-next"></p><span id="speaker-clock"></span></aside><div class="toolbar"><button id="speaker-prev">Anterior</button><button id="speaker-forward">Próximo</button><button id="speaker-black">Tela preta</button><button id="speaker-exit">Encerrar apresentação</button></div>';document.body.append(panel);
+  let index=0,black=false;const started=Date.now();
+  const render=()=>{const slide=slides[index];for(const stage of [panel.querySelector('#speaker-stage'),audience.document.querySelector('#audience-stage')]){stage.dataset.theme=content.theme||'light';stage.style.cssText=slideStyle(slide);stage.innerHTML=slideMarkup(slide);stage.classList.toggle('present-black',black);}panel.querySelector('#speaker-notes').textContent=slide.notes||'Sem notas.';panel.querySelector('#speaker-next').textContent='Próximo: '+(slides[index+1]?.title||'Fim');panel.querySelector('#speaker-prev').disabled=index===0;panel.querySelector('#speaker-forward').disabled=index===slides.length-1;};
+  const move=delta=>{index=Math.max(0,Math.min(slides.length-1,index+delta));black=false;render();};
+  const close=()=>{clearInterval(timer);panel.remove();if(!audience.closed)audience.close();document.removeEventListener('keydown',key);};
+  const key=event=>{if(event.key==='Escape')close();if(event.key==='ArrowRight')move(1);if(event.key==='ArrowLeft')move(-1);};document.addEventListener('keydown',key);
+  panel.querySelector('#speaker-prev').onclick=()=>move(-1);panel.querySelector('#speaker-forward').onclick=()=>move(1);panel.querySelector('#speaker-black').onclick=()=>{black=!black;render();};panel.querySelector('#speaker-exit').onclick=close;
+  const timer=setInterval(()=>{if(audience.closed){close();return;}const elapsed=Math.floor((Date.now()-started)/1000);panel.querySelector('#speaker-clock').textContent=(index+1)+' / '+slides.length+' · '+Math.floor(elapsed/60)+':'+String(elapsed%60).padStart(2,'0');},1000);render();
+}

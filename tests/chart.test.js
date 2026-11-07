@@ -14,7 +14,9 @@ test('every chart type renders several series where allowed',()=>{
  for(const type of Object.keys(CHART_TYPES)){
   if(type==='pie'||type==='doughnut'){assert.throws(()=>chartData(rows,type),/duas colunas/);continue;}
   if(type==='scatter'){assert.throws(()=>chartData(rows,type),/X/);continue;}
-  const svg=chartSvg(rows,{type,title:type});
+  if(type==='radar')assert.throws(()=>chartData(rows,type),/não negativos/);
+  const source=type==='radar'?rows.map((row,i)=>i?[row[0],...row.slice(1).map(Math.abs)]:row):rows;
+  const svg=chartSvg(source,{type,title:type});
   assert.ok(svg.includes('Custo'),type+' legend');
   assert.ok(svg.startsWith('<svg'),type);
  }

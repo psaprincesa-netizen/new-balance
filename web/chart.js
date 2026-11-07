@@ -1,7 +1,7 @@
 // Small SVG charts of live worksheet ranges. No remote renderer or scripts.
 const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const palette=['#4b5320','#789048','#a7b77e','#314d44','#6c8f85','#b29c68','#535d77','#ad795c'];
-export const CHART_TYPES={bar:'Colunas',stacked:'Colunas empilhadas',hbar:'Barras horizontais',line:'Linhas',area:'Área',pie:'Pizza',doughnut:'Rosca',scatter:'Dispersão (X e Y numéricos)'};
+export const CHART_TYPES={bar:'Colunas',stacked:'Colunas empilhadas',hbar:'Barras horizontais',line:'Linhas',area:'Área',pie:'Pizza',doughnut:'Rosca',scatter:'Dispersão (X e Y numéricos)',radar:'Radar'};
 const SINGLE_SERIES=new Set(['pie','doughnut']);
 const number=v=>v!==''&&v!=null&&Number.isFinite(Number(v));
 const fmt=v=>escape(Number(Number(v).toPrecision(5)));
@@ -10,6 +10,8 @@ const tip=(d,i,s)=>d.series.length>1?d.labels[i]+' · '+s.name:d.labels[i];
 
 // rows: header + data rows; first column = labels (or X for scatter), next 1..6 columns = numeric series.
 export function chartData(rows,type='bar') {
+  if(type==='horizontal')type='hbar';
+  if(!Object.hasOwn(CHART_TYPES,type))throw Error('Tipo de gráfico inválido.');
   const width=rows[0]?.length||0;
   if(rows.length<2||rows.length>201||width<2||width>7)throw Error('Selecione de 2 a 7 colunas (rótulos e até 6 séries), com cabeçalho e de 1 a 200 linhas de dados.');
   if(SINGLE_SERIES.has(type)&&width!==2)throw Error('Pizza e rosca usam duas colunas: rótulos e valores.');
@@ -18,6 +20,9 @@ export function chartData(rows,type='bar') {
   for(const r of data)for(let c=1;c<width;c++)if(!number(r[c]))throw Error('As colunas de valores devem conter números ou resultados numéricos.');
   if(type==='scatter'&&data.some(r=>!number(r[0])))throw Error('Na dispersão, a primeira coluna (X) também deve ser numérica.');
   const series=rows[0].slice(1).map((name,i)=>({name:String(name??'')||'Série '+(i+1),values:data.map(r=>Number(r[i+1]))}));
+  if(type==='radar'&&(data.length<3||series.some(s=>s.values.some(v=>v<0))))throw Error('Radar exige pelo menos três categorias e valores não negativos.');
+  const all=series.flatMap(s=>s.values);
+  if(!Number.isFinite(Math.max(0,...all)-Math.min(0,...all))||data.some((_,i)=>!Number.isFinite(series.reduce((n,s)=>n+Math.abs(s.values[i]),0)))||!Number.isFinite(series[0].values.reduce((a,b)=>a+Math.abs(b),0)))throw Error('Valores excedem o limite numérico do gráfico.');
   if(SINGLE_SERIES.has(type)){const v=series[0].values;if(v.some(x=>x<0)||!v.some(x=>x>0))throw Error('Pizza e rosca exigem valores não negativos e total maior que zero.');}
   return {labels:data.map(r=>String(r[0]??'')),x:type==='scatter'?data.map(r=>Number(r[0])):null,series};
 }
@@ -87,8 +92,18 @@ function scatter(d){
   return body+legend(d.series);
 }
 
+function radar(d){
+  const max=Math.max(1,...d.series.flatMap(s=>s.values));
+  const point=(i,value)=>[360+110*(value/max)*Math.sin(i/d.labels.length*Math.PI*2),185-110*(value/max)*Math.cos(i/d.labels.length*Math.PI*2)];
+  let body='';
+  for(let level=1;level<=4;level++)body+=`<polygon points="${d.labels.map((_,i)=>point(i,max*level/4).join(',')).join(' ')}" fill="none" stroke="#dce4da"/>`;
+  d.series.forEach((series,k)=>{body+=`<polygon points="${series.values.map((v,i)=>point(i,v).join(',')).join(' ')}" fill="${palette[k%palette.length]}" fill-opacity="0.2" stroke="${palette[k%palette.length]}"/>`;});
+  d.labels.forEach((label,i)=>{const [x,y]=point(i,max*1.2);body+=`<text x="${x}" y="${y}" text-anchor="middle" font-size="11">${escape(label.slice(0,20))}</text>`;});
+  return body+legend(d.series);
+}
 export function chartSvg(rows,{title,type}) {
+  if(type==='horizontal')type='hbar';
   const d=chartData(rows,type),W=720,H=360;
-  const body=type==='pie'||type==='doughnut'?radial(d,type==='doughnut'):type==='hbar'?horizontal(d):type==='scatter'?scatter(d):cartesian(d,type);
+  const body=type==='pie'||type==='doughnut'?radial(d,type==='doughnut'):type==='hbar'?horizontal(d):type==='scatter'?scatter(d):type==='radar'?radar(d):cartesian(d,type);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escape(title)}"><rect width="720" height="360" fill="white"/><g fill="#23332e" font-family="Arial,sans-serif"><text x="360" y="25" text-anchor="middle" font-size="18" font-weight="bold">${escape(title)}</text>${body}</g></svg>`;
 }

@@ -27,28 +27,28 @@ def documents(page):
     editor.locator('p', has_text='Texto da introdução.').click()
     page.keyboard.press('End')
     page.get_by_role('button', name='Quebra de página').click()
-    expect(editor.locator('hr.page-break')).to_have_count(1)
-    expect(editor.locator('hr.page-break + h2', has_text='Resultados')).to_have_count(1)
+    expect(editor.locator('.document-page-break')).to_have_count(1)
+    expect(editor.locator('.document-page-break + h2', has_text='Resultados')).to_have_count(1)
 
     # Table of contents after the first heading.
     editor.locator('h1', has_text='Introdução').click()
     page.keyboard.press('End')
-    page.get_by_role('button', name='Sumário').click()
+    page.locator('#document-toc').click()
     expect(editor.locator('h2', has_text='Sumário')).to_be_visible()
     expect(editor.locator('li', has_text='Resultados').last).to_be_visible()
 
     page.get_by_role('button', name='Cabeçalho e rodapé').click()
     page.get_by_label('Cabeçalho').fill('Empresa Exemplo')
     page.get_by_label('Rodapé').fill('Uso interno')
-    page.get_by_label('Numerar páginas (Página X de Y)').check()
-    page.get_by_role('button', name='Aplicar').click()
+    page.get_by_label('Numerar páginas no DOCX').check()
+    page.get_by_role('button', name='Aplicar cabeçalho',exact=True).click()
     page.get_by_role('button', name='Salvar', exact=True).click()
     expect(page.locator('#save-state')).to_contain_text('Versão')
 
     page.reload()
     page.get_by_role('button', name='Todos os arquivos').click()
     page.get_by_text('Relatório anual', exact=True).first.click()
-    expect(page.locator('.visual-document hr.page-break')).to_have_count(1)
+    expect(page.locator('.visual-document .document-page-break')).to_have_count(1)
     page.get_by_role('button', name='Editar Markdown').click()
     text = page.locator('#text').input_value()
     assert '---' in text and '## Sumário' in text and '- Resultados' in text.replace('  ', ''), text
@@ -56,7 +56,7 @@ def documents(page):
 
     # The printed page breaks before "Resultados".
     page.emulate_media(media='print')
-    assert page.evaluate("getComputedStyle(document.querySelector('.visual-document hr.page-break')).breakAfter") == 'page'
+    assert page.evaluate("getComputedStyle(document.querySelector('.visual-document .document-page-break')).breakAfter") == 'page'
     page.emulate_media(media='screen')
 
     with page.expect_download() as download:

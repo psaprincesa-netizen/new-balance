@@ -1,9 +1,21 @@
-import {responseTable,recordsWorkbook,answerError,localDateTime,safeCsv,documentSlides,scoreResponse,MULTI_SEPARATOR} from './workflows.js';
-import {mountSlides,slideMarkup,printSlides,raster} from './slides.js';
+import {visibleQuestions,canonicalAnswers,cleanConditions,bindConditionalAnswers,mountFormConditions} from './form-conditions.js';
+import {mountTableRelations} from './table-relations.js';
+import {DIAGRAM_SHAPES,DIAGRAM_TEMPLATES,diagramTemplate,nodeShape,edgeGeometry} from './diagram-tools.js';
+import {mountAssistant} from './ai-ui.js';
+import {mountProjectPlanning} from './project-planning-ui.js';
+import {dependencyError,mountTimeline,mountCalendarMonth} from './project-tools.js';
+import {mountDocumentTabs,syncDocumentTab} from './document-tabs.js';
+import {mountSheetProtection} from './sheet-protection.js';
+import {mountAdvancedDocument} from './document-advanced.js';
+import {mountInsertMenu,prepareDocumentInsertion} from './insert-menu.js';
+import {mountDocumentTools,printDocument} from './document-tools.js';
+import {mountSheetTools} from './sheet-tools.js';
+import {responseTable,recordsWorkbook,quizScore,answerError,localDateTime,safeCsv,documentSlides,scoreResponse,MULTI_SEPARATOR} from './workflows.js';
+import {mountSlides,slideMarkup,slideStyle,printSlides,raster} from './slides.js';
 import {mountPivots} from './pivot-ui.js';
 import {chartSvg,chartData,CHART_TYPES} from './chart.js';
-import {ensureTaskIds,findCycle,schedule,taskSpan,isoDay} from './project.js';
-import { cellValue, parseCSV, toCSV } from "./formula.js";
+import { parseCSV, toCSV } from "./csv.js";
+import {ensureTaskIds,findCycle,schedule,taskSpan,isoDay,projectBudget} from './project.js';
 const app = document.querySelector("#app"),
   modal = document.querySelector("#modal");
 const TYPES = {
@@ -170,6 +182,7 @@ function bind(id, fn, event = "click") {
   document.getElementById(id)?.addEventListener(event, fn);
 }
 function setDirty() {
+  if(current&&['document','note'].includes(current.kind))syncDocumentTab(current.content);
   dirty = true;
   clearTimeout(stashDraft.timer);
   stashDraft.timer=setTimeout(stashDraft,300);
@@ -208,7 +221,7 @@ function defaults(kind) {
   }
 }
 function auth(register = false) {
-  app.innerHTML = `<main class="auth"><section class="auth-aside"><div class="brand"><span class="brand-name">DRAP <span>office</span></span></div><h1>Um espaço.<br>Infinitas<br>possibilidades.</h1><p>Documentos, dados e ideias conectados.<br>Seu trabalho ganha um novo lugar.</p><small>PLATAFORMA DE PRODUTIVIDADE • VERSÃO INICIAL</small></section><section class="auth-panel"><form id="auth"><p class="eyebrow">SEU ESPAÇO DE TRABALHO</p><h2>${register ? "Crie sua conta" : "Bem-vindo de volta"}</h2><p class="muted">${register ? "Comece a organizar suas ideias." : "Entre para continuar de onde parou."}</p>${register ? '<label class="field">Nome<input name="name" autocomplete="name" maxlength="100" required></label>' : ""}<label class="field">E-mail<input name="email" type="email" autocomplete="email" maxlength="254" required></label><label class="field">Senha<input name="password" type="password" autocomplete="${register ? "new-password" : "current-password"}" minlength="${register ? 12 : 1}" maxlength="128" required></label>${register ? "<small>Use pelo menos 12 caracteres. Não reutilize senhas.</small>" + recoveryFields() : ""}<p id="auth-error" class="error" role="alert"></p><button class="primary" type="submit">${register ? "Criar conta" : "Entrar no DRAP office"} →</button>${register ? "" : '<p class="field"><button id="forgot-password" type="button">Esqueci minha senha</button></p>'}<p class="field"><button id="toggle-auth" type="button">${register ? "Já tenho conta" : "Criar minha conta"}</button></p><small>Seus arquivos são privados até você compartilhá-los.</small></form></section></main>`;
+  app.innerHTML = `<main class="auth"><section class="auth-aside"><div class="brand"><span class="brand-name">DRAP <span>office</span></span></div><h1>Um espaço.<br>Infinitas<br>possibilidades.</h1><p>Documentos, dados e ideias conectados.<br>Seu trabalho ganha um novo lugar.</p><small>PLATAFORMA DE PRODUTIVIDADE • VERSÃO INICIAL</small></section><section class="auth-panel"><form id="auth"><p class="eyebrow">SEU ESPAÇO DE TRABALHO</p><h2>${register ? "Crie sua conta" : "Bem-vindo de volta"}</h2><p class="muted">${register ? "Comece a organizar suas ideias." : "Entre para continuar de onde parou."}</p>${register ? '<label class="field">Nome<input name="name" autocomplete="name" maxlength="100" required></label>' : ""}<label class="field">E-mail<input name="email" type="email" autocomplete="email" maxlength="254" required></label><label class="field">Senha<input name="password" type="password" autocomplete="${register ? "new-password" : "current-password"}" minlength="${register ? 12 : 1}" maxlength="128" required></label>${register ? "<small>Use pelo menos 12 caracteres. Não reutilize senhas.</small>" + recoveryFields() : ""}<p id="auth-error" class="error" role="alert"></p><button class="primary" type="submit">${register ? "Criar conta" : "Entrar no DRAP office"} →</button>${register ? "" : '<p class="field"><button id="forgot-password" type="button">Esqueci minha senha</button></p>'}<p class="field"><button id="toggle-auth" type="button">${register ? "Já tenho conta" : "Criar minha conta"}</button></p><small>Seus arquivos são privados até você compartilhá-los.</small><a class="auth-install" href="/install" target="_blank" rel="noopener" data-install-action>Instalar e criar atalho no aparelho</a></form></section></main>`;
   bind("toggle-auth", () => auth(!register));
   bind("forgot-password", () => recoveryScreen());
   if (register) loadRecoveryQuestions(app);
@@ -376,18 +389,40 @@ function askRecoverySetup() {
   try { if (sessionStorage.getItem("drap:recovery-asked")) return; sessionStorage.setItem("drap:recovery-asked", "1"); } catch {}
   recoveryDialog(true);
 }
-async function allPages(path) {
-  const result = [];
-  let offset = 0;
+async function allPages(path, firstPage=null) {
+  const result = firstPage ? [...firstPage.items] : [];
+  let offset = firstPage ? firstPage.next_offset : 0;
+  if (offset === null) return result;
   do {
-    const page = await api(path + "?offset=" + offset);
+    const page = await api(path + (path.includes("?") ? "&" : "?") + "offset=" + offset);
     result.push(...page.items);
     offset = page.next_offset;
   } while (offset !== null);
   return result;
 }
-async function refresh() {
-  items = await allPages("/api/items");
+async function refresh(sequence=navigationSequence) {
+  const account=user?.id;
+  const latest = await allPages("/api/library");
+  if(account===user?.id&&sequence===navigationSequence)items=latest;
+}
+let searchMatches=null,searchSequence=0,navigationSequence=0;
+function rememberItem(item) {
+  const {content,...summary}=item;
+  items=[summary,...items.filter(entry=>entry.id!==item.id)].sort((a,b)=>b.updated-a.updated||a.title.localeCompare(b.title)||a.id.localeCompare(b.id));
+}
+function updateSearch() {
+  const sequence=++searchSequence,text=query;
+  searchMatches=null;clearTimeout(updateSearch.timer);
+  const paint=()=>{const target=document.querySelector('#file-list');if(target){target.innerHTML=fileList(filtered());wireFiles();}};
+  paint();
+  if(!text.trim())return;
+  updateSearch.timer=setTimeout(async()=>{
+    try {
+      const matches=await allPages('/api/library?q='+encodeURIComponent(text));
+      if(sequence!==searchSequence||query!==text||current)return;
+      searchMatches=new Set(matches.map(item=>item.id));paint();
+    } catch(error) {if(sequence===searchSequence)notify(error.message);}
+  },250);
 }
 let spreadsheet = null,documentEditor=null;
 function shell(body) {
@@ -398,6 +433,7 @@ function shell(body) {
     ["shared", "♧", "Compartilhados"],
     ["analytics", "▥", "Indicadores"],
     ["automation", "⌘", "Conexões"],
+    ["assistant", "✦", "Gemini"],
     ["coverage", "⊞", "Recursos"],
     ["trash", "♲", "Lixeira"],
   ]
@@ -407,7 +443,7 @@ function shell(body) {
     )
     .join(
       "",
-    )}</nav><footer>FEITO PARA CONECTAR<br>Uma conta. Todas as suas ideias.<br><button id="backup">Exportar meu espaço</button><button id="import">Importar JSON</button><button id="import-office">Importar Office / Agenda</button><button id="recovery-settings">Pergunta secreta</button><button id="security-settings">Segurança da conta</button><a class="download-platform" href="/downloads/drap-office.zip" download="drap-office.zip">Baixar plataforma ↓</a></footer></aside><main class="main"><header class="topbar"><input class="search" id="search" type="search" placeholder="Buscar em todos os arquivos…" aria-label="Buscar arquivos" value="${esc(query)}"><div class="row"><span class="user-name muted">${esc(user.name)}</span><span class="avatar">${esc(user.name.slice(0, 2).toUpperCase())}</span><a class="download-top" href="/downloads/drap-office.zip" download="drap-office.zip" aria-label="Baixar plataforma" title="Baixar código da plataforma">↓</a><button id="logout" title="Sair da conta">Sair</button></div></header><div class="content">${body}</div></main></div>`;
+    )}</nav><footer>FEITO PARA CONECTAR<br>Uma conta. Todas as suas ideias.<br><button id="backup">Exportar meu espaço</button><button id="import">Importar JSON</button><button id="recovery-settings">Pergunta secreta</button><button id="security-settings">Segurança da conta</button><button id="import-office">Importar Office / Agenda</button><a class="download-platform" href="/install" target="_blank" rel="noopener" data-install-action>Instalar e criar atalho ↓</a><a class="download-source" href="/downloads/drap-office.zip" download="drap-office.zip">Baixar código-fonte ZIP</a></footer></aside><main class="main"><header class="topbar"><input class="search" id="search" type="search" placeholder="Buscar em todos os arquivos…" aria-label="Buscar arquivos" value="${esc(query)}"><div class="row"><span class="user-name muted">${esc(user.name)}</span><span class="avatar">${esc(user.name.slice(0, 2).toUpperCase())}</span><a class="download-top" href="/install" target="_blank" rel="noopener" data-install-action aria-label="Instalar plataforma" title="Instalar e criar atalho no computador ou celular">↓</a><button id="logout" title="Sair da conta">Sair</button></div></header><div class="content">${body}</div></main></div>`;
   document
     .querySelectorAll("[data-nav]")
     .forEach((n) => (n.onclick = () => navigate(n.dataset.nav)));
@@ -417,6 +453,7 @@ function shell(body) {
   bind("logout", async () => {
     if (!(await leave())) return;
     await api("/api/logout", {});
+    ++navigationSequence;++searchSequence;clearTimeout(updateSearch.timer);searchMatches=null;
     user = null;
     items = [];
     current = null;
@@ -438,24 +475,21 @@ function shell(body) {
         const search = document.querySelector("#search");
         search.focus();
         search.setSelectionRange(query.length, query.length);
+        updateSearch();
         return;
       }
-      const target = document.querySelector("#file-list");
-      if (target) target.innerHTML = fileList(filtered());
-      wireFiles();
+      updateSearch();
     },
     "input",
   );
-  bind("backup", () =>
-    download(
-      "drap-office-espaco.json",
-      JSON.stringify(
-        { format: "drap-office/1", items: items.filter((i) => i.owner === user.id) },
-        null,
-        2,
-      ),
-    ),
-  );
+  bind("backup", async () => {
+    const button=document.querySelector('#backup');button.disabled=true;
+    try {
+      const full=await allPages('/api/items');
+      download('drap-office-espaco.json',JSON.stringify({format:'drap-office/1',items:full.filter(item=>item.owner===user.id)},null,2));
+    } catch(error) {notify(error.message);}
+    finally {button.disabled=false;}
+  });
   bind("import", importBackup);
   colors();
 }
@@ -471,46 +505,75 @@ async function leave() {
 }
 async function navigate(next) {
   if (!(await leave())) return;
-  dirty = false;
-  current = null;
-  view = next;
-  query = "";
-  await refresh();
+  const sequence=++navigationSequence;
+  ++searchSequence;clearTimeout(updateSearch.timer);searchMatches=null;
+  dirty = false;current = null;view = next;query = "";
+  // Leave the editor immediately so its controls cannot mutate a file while
+  // navigation is awaiting the network. Show known metadata, then revalidate.
   render();
+  if(['analytics','automation','coverage','google'].includes(next))return;
+  const list=document.querySelector('#file-list');list?.setAttribute('aria-busy','true');
+  try {
+    await refresh(sequence);
+    if(sequence===navigationSequence&&!current){
+      const matches=filtered();
+      list.innerHTML=fileList(view==='home'?matches.slice(0,8):matches);
+      const count=document.querySelector('#file-count');if(count)count.textContent=matches.length+' arquivos';
+      wireFiles();
+    }
+  } catch(error) {if(sequence===navigationSequence)notify(error.message);}
+  finally {list?.removeAttribute('aria-busy');}
 }
 function filtered() {
   return items.filter(
     (i) =>
       (view === "trash" ? i.deleted : !i.deleted) &&
       (view !== "shared" || i.owner !== user.id) &&
-      `${i.title} ${TYPES[i.kind]?.name} ${JSON.stringify(i.content)}`
-        .toLowerCase()
-        .includes(query.toLowerCase()),
+      (`${i.title} ${TYPES[i.kind]?.name}`.toLowerCase().includes(query.toLowerCase()) || searchMatches?.has(i.id)),
   );
 }
 function fileList(list) {
   if (!list.length)
     return '<div class="empty">Seu próximo projeto começa aqui.<br><br>Crie um arquivo ou importe seu trabalho.</div>';
   return (
-    `<div class="file header"><span>Nome</span><span class="kind">Ferramenta</span><span class="date">Última edição</span><span>Acesso</span></div>` +
+    `<div class="file header"><span>Nome</span><span class="kind">Ferramenta</span><span class="date">Última edição</span><span>Acesso / ações</span></div>` +
     list
       .map(
         (i) =>
-          `<div class="file"><button class="open" data-open="${i.id}">${icon(i.kind)}<span class="name">${esc(i.title)}</span></button><span class="kind muted">${esc(TYPES[i.kind]?.single)}</span><span class="date muted">${date(i.updated)}</span><span class="badge">${i.role === "owner" ? "Privado" : i.role === "edit" ? "Edição" : "Leitura"}</span></div>`,
+          `<div class="file"><button class="open" data-open="${i.id}">${icon(i.kind)}<span class="name">${esc(i.title)}</span></button><span class="kind muted">${esc(TYPES[i.kind]?.single)}</span><span class="date muted">${date(i.updated)}</span><div class="file-actions"><span class="badge">${i.role === "owner" ? "Privado" : i.role === "edit" ? "Edição" : "Leitura"}</span>${["owner","edit"].includes(i.role)?`<button data-file-trash="${i.id}" data-deleted="${i.deleted?'false':'true'}" class="${i.deleted?'':'danger'}" aria-label="${i.deleted?'Restaurar':'Excluir'} ${esc(i.title)}">${i.deleted?'Restaurar':'Excluir'}</button>`:''}</div></div>`,
       )
       .join("")
   );
+}
+async function trashListedItem(button) {
+  const id=button.dataset.fileTrash, deleted=button.dataset.deleted==='true';
+  const summary=items.find(item=>item.id===id), account=user.id, sequence=navigationSequence;
+  if(!summary)return;
+  button.disabled=true;
+  try {
+    if(!await askConfirm(deleted?'Excluir este arquivo?':'Restaurar este arquivo?',
+      deleted?`“${summary.title}” será movido para a lixeira e poderá ser restaurado. Apenas este arquivo será excluído.`:`“${summary.title}” voltará à biblioteca.`))return;
+    const item=await api('/api/items/'+id);
+    const updated=item.deleted===deleted?item:await api('/api/items/'+id,{title:item.title,content:item.content,version:item.version,deleted});
+    if(user?.id!==account)return;
+    rememberItem(updated);
+    if(sequence===navigationSequence&&!current)render();
+    notify(deleted?'Arquivo movido para a lixeira.':'Arquivo restaurado.');
+  } catch(error){notify(error.message);}
+  finally {if(button.isConnected)button.disabled=false;}
 }
 function wireFiles() {
   document
     .querySelectorAll("[data-open]")
     .forEach((n) => (n.onclick = () => openItem(n.dataset.open)));
+  document.querySelectorAll('[data-file-trash]').forEach(button=>button.onclick=()=>trashListedItem(button));
   colors();
 }
 function render() {
   if (current) return editor();
   if (view === "analytics") return analytics();
   if (view === "automation") return automation();
+  if (view === "assistant") return assistantPage();
   if (view === "coverage") return coverage();
   const home = view === "home";
   shell(
@@ -525,13 +588,13 @@ function render() {
             )
             .join("")}</div>`
         : ""
-    }<div class="row between section-head"><h2>${home ? "Arquivos recentes" : "Biblioteca"}</h2><span class="muted">${filtered().length} arquivos</span></div><section class="files" id="file-list">${fileList(home ? filtered().slice(0, 8) : filtered())}</section>`,
+    }<div class="row between section-head"><h2>${home ? "Arquivos recentes" : "Biblioteca"}</h2><span class="muted" id="file-count">${filtered().length} arquivos</span></div><section class="files" id="file-list">${fileList(home ? filtered().slice(0, 8) : filtered())}</section>`,
   );
   bind("new", () => createDialog());
   bind("hero-new", () => createDialog());
   document
     .querySelectorAll("[data-create]")
-    .forEach((n) => (n.onclick = () => createDialog(n.dataset.create)));
+    .forEach((n) => (n.onclick = () => startModule(n.dataset.create)));
   wireFiles();
 }
 function showDialog(html, setup) {
@@ -562,6 +625,35 @@ function askConfirm(title, text) {
     );
   });
 }
+async function startModule(kind) {
+  if (!TYPES[kind] || !(await leave())) return;
+  ++navigationSequence;clearTimeout(stashDraft.timer);
+  current={id:'local-'+kind,kind,title:'',content:defaults(kind),version:0,updated:Date.now(),deleted:false,owner:user.id,role:'owner',unsaved:true};
+  dirty=false;
+  try {
+    const draft=JSON.parse(localStorage.getItem(draftKey())||'null');
+    if(draft?.unsaved&&draft.kind===kind&&draft.content){
+      current.title=draft.title||'';current.content=draft.content;dirty=true;
+    }
+  } catch {}
+  selectedSlide=0;editor();
+  if(dirty)notify('Seu rascunho local foi recuperado. Dê um nome quando salvar.');
+}
+function nameAndSave(options) {
+  return new Promise(resolve=>{
+    let finished=false;
+    const finish=value=>{if(finished)return;finished=true;modal.removeEventListener('cancel',cancel);resolve(value);};
+    const cancel=()=>{closeDialog();finish(false);};
+    showDialog(`<h2>Salvar ${esc(TYPES[current.kind].single.toLocaleLowerCase('pt-BR'))}</h2><form id="first-save-form"><label class="field">Nome do projeto<input name="title" maxlength="200" required autofocus></label><p id="first-save-error" class="error" role="alert"></p><div class="row"><button class="primary">Salvar projeto</button><button id="first-save-cancel" type="button">Continuar editando</button></div></form>`,()=>{
+      bind('first-save-cancel',cancel);modal.addEventListener('cancel',cancel,{once:true});
+      bind('first-save-form',async event=>{
+        event.preventDefault();const title=new FormData(event.target).get('title').trim();
+        if(!title){document.querySelector('#first-save-error').textContent='Informe um nome para salvar.';return;}
+        current.title=title;document.querySelector('#title').value=title;setDirty();closeDialog();finish(await save(options));
+      },'submit');
+    });
+  });
+}
 function createDialog(kind = "document") {
   showDialog(
     `<h2>Um novo começo</h2><form id="create-form"><label class="field">Ferramenta<select name="kind">${Object.entries(
@@ -587,8 +679,7 @@ function createDialog(kind = "document") {
               content: defaults(data.kind),
             });
             closeDialog();
-            await refresh();
-            await openItem(item.id);
+            await openItem(item.id,item);
           } catch (err) {
             document.querySelector("#create-error").textContent = err.message;
           }
@@ -598,10 +689,18 @@ function createDialog(kind = "document") {
     },
   );
 }
-async function openItem(id) {
+async function openItem(id,loaded=null) {
   if (!(await leave())) return;
+  const sequence=++navigationSequence;
+  const kind=loaded?.kind||items.find(item=>item.id===id)?.kind;
+  // Fetch the editor while the authorized file request is in flight.
+  if(['document','note'].includes(kind))void import('/document.js').catch(()=>{});
+  if(kind==='sheet')void import('/spreadsheet.js').catch(()=>{});
+  notify('Abrindo arquivo…');
   try {
-    current = await api("/api/items/" + id);
+    const result = loaded || await api("/api/items/" + id);
+    if(sequence!==navigationSequence)return;
+    current = result;rememberItem(result);
     dirty = false;
     if (current.role !== 'read') {
       let draft;
@@ -614,27 +713,30 @@ async function openItem(id) {
       }
     }
     selectedSlide = 0;
-    editor();
+    editor();notify('');
   } catch (e) {
-    notify(e.message);
+    if(sequence===navigationSequence)notify(e.message);
   }
 }
-async function save() {
-  if (busy) return;
+async function save({remount = false} = {}) {
+  if (busy) return false;
+  if(current.unsaved&&!current.title.trim())return nameAndSave({remount});
   busy = true;
   app.inert = true;
   try {
     await spreadsheet?.flush();
-    const saved = await api("/api/items/" + current.id, {
+    const wasUnsaved=!!current.unsaved, previousDraftKey=draftKey();
+    const saved = await api(wasUnsaved?"/api/items":"/api/items/" + current.id, {
+      ...(wasUnsaved?{kind:current.kind}:{}),
       title: current.title,
       content: current.content,
       version: current.version,
       deleted: current.deleted,
     });
-    // Saving must not remount Univer: that clears selection, the active ribbon
-    // tab and undo history. Keep the content object held by the mounted editor.
-    const keepSheet = spreadsheet && !saved.deleted && saved.role !== 'read';
-    if (keepSheet) {
+    // Preserve selection and undo history after ordinary saves. Structural
+    // transitions such as restoring from trash must rebuild the toolbar.
+    const keepEditor = !wasUnsaved && !remount && (spreadsheet || documentEditor) && !saved.deleted && saved.role !== 'read';
+    if (keepEditor) {
       const content = current.content;
       for (const key of Object.keys(content)) delete content[key];
       Object.assign(content, saved.content);
@@ -642,11 +744,12 @@ async function save() {
     } else current = saved;
     dirty = false;
     clearTimeout(stashDraft.timer);
-    try { localStorage.removeItem(draftKey()); } catch {}
+    try { localStorage.removeItem(previousDraftKey); } catch {}
     notify("Arquivo salvo. Seu trabalho está em dia.");
-    await refresh();
-    if (keepSheet) document.querySelector('#save-state').textContent = `Versão ${current.version} · ${date(current.updated)}`;
+    rememberItem(saved);
+    if (keepEditor) document.querySelector('#save-state').textContent = `Versão ${current.version} · ${date(current.updated)}`;
     else editor();
+    return true;
   } catch (e) {
     if (e.offline) {
       // Keep the edit in this browser so it survives a reload while offline.
@@ -657,6 +760,7 @@ async function save() {
     notify(e.message);
     const status = document.querySelector("#save-state");
     if (status) status.textContent = e.message;
+    return false;
   } finally {
     busy = false;
     app.inert = false;
@@ -691,7 +795,7 @@ function editor() {
   const t = TYPES[current.kind],
     read = current.role === "read";
   shell(
-    `<div class="editor-head"><button id="back">←</button>${icon(current.kind)}<input id="title" class="title-input" aria-label="Nome do arquivo" maxlength="200" value="${esc(current.title)}" ${read ? "disabled" : ""}><span class="badge">${t.single}</span><button id="save" class="primary" ${read ? "disabled" : ""}>Salvar</button></div><div class="toolbar"><span id="save-state" class="muted">${dirty ? "Alterações não salvas" : `Versão ${current.version} · ${date(current.updated)}`}</span><button id="export">Exportar JSON</button>${["document","note","sheet","table","slides","calendar"].includes(current.kind) ? '<button id="export-office">Baixar ' + ({document:"DOCX",note:"DOCX",sheet:"XLSX",table:"XLSX",slides:"PPTX",calendar:"ICS"}[current.kind]) + '</button>' : ""}<button id="print">Imprimir / PDF</button><button id="history">Histórico</button><button id="comments">Comentários</button>${current.role === "owner" ? '<button id="share">Compartilhar</button>' : ""}<button id="trash" class="danger" ${read ? "disabled" : ""}>${current.deleted ? "Restaurar" : "Mover para lixeira"}</button></div><div id="editor-body" class="editor"></div>`,
+    `<div class="editor-head"><button id="back">←</button>${icon(current.kind)}<input id="title" class="title-input" aria-label="Nome do arquivo" maxlength="200" value="${esc(current.title)}" placeholder="${t.single} sem título" ${read ? "disabled" : ""}><span class="badge">${t.single}</span><button id="save" class="primary" ${read ? "disabled" : ""}>Salvar</button></div><div class="toolbar"><span id="save-state" class="muted">${current.unsaved?"Ainda não salvo · use a ferramenta e salve quando quiser":dirty ? "Alterações não salvas" : `Versão ${current.version} · ${date(current.updated)}`}</span><button id="export">Exportar JSON</button>${["document","note","sheet","table","slides","calendar"].includes(current.kind) ? '<button id="export-office">Baixar ' + ({document:"DOCX",note:"DOCX",sheet:"XLSX",table:"XLSX",slides:"PPTX",calendar:"ICS"}[current.kind]) + '</button>' : ""}<button id="aux-insert" aria-haspopup="dialog" ${read ? "disabled" : ""}>＋ Inserir</button><button id="print">Imprimir / PDF</button><button id="history" ${current.unsaved?'disabled title="Disponível após salvar"':''}>Histórico</button><button id="comments" ${current.unsaved?'disabled title="Disponível após salvar"':''}>Comentários</button>${current.role === "owner" && !current.unsaved ? '<button id="share">Compartilhar</button>' : ""}<button id="trash" class="danger" ${read ? "disabled" : ""}>${current.unsaved?"Descartar":current.deleted ? "Restaurar" : "Mover para lixeira"}</button></div><div id="editor-body" class="editor"></div>`,
   );
   bind("back", () => navigate("files"));
   bind(
@@ -706,16 +810,17 @@ function editor() {
   bind("export", async () => {
     await spreadsheet?.flush();
     download(
-      current.title + ".json",
+      (current.title || TYPES[current.kind].single+" sem título") + ".json",
       JSON.stringify({ format: "drap-office/1", items: [current] }, null, 2),
     );
   });
   bind("export-office", exportOffice);
-  bind("print", () => current.kind==="slides"?printSlides(current.content):printPages(current.kind==="document"||current.kind==="note"?current.content:{}));
+  bind("print",()=>current.kind==='slides'?printSlides(current.content):['document','note'].includes(current.kind)?printDocument({...current.content,...current.content.page}):window.print());
   bind("history", historyDialog);
   bind("comments", commentsDialog);
   bind("share", shareDialog);
   bind("trash", async () => {
+    if(current.unsaved){if(await leave()){dirty=false;clearTimeout(stashDraft.timer);try{localStorage.removeItem(draftKey());}catch{}current=null;view="home";render();}return;}
     if (
       !(await askConfirm(
         current.deleted ? "Restaurar arquivo?" : "Mover para lixeira?",
@@ -727,7 +832,7 @@ function editor() {
       return;
     current.deleted = !current.deleted;
     setDirty();
-    await save();
+    await save({remount:true});
   });
   const c = current.content;
   const root = document.querySelector("#editor-body");
@@ -766,11 +871,16 @@ function editor() {
     root.textContent =
       "Formato de conteúdo incompatível com este editor. Exporte o JSON para preservar seus dados.";
   }
-  if (read)
+  applyEditorPermissions(root);
+  const insertPanel=document.createElement('section');insertPanel.id='inserted-content';insertPanel.className='inserted-content';root.after(insertPanel);
+  mountInsertMenu(insertPanel,current,{dialog:showDialog,close:closeDialog,bind,escape:esc,notify,dirty:setDirty,api,download,items:()=>items,openItem,flush:async()=>{await spreadsheet?.flush();},insertDocument:['document','note'].includes(current.kind)?source=>root.insertDocument(source):null});
+  colors();
+}
+function applyEditorPermissions(root){
+  if (current.role==='read')
     root
       .querySelectorAll("input,textarea,select,button")
-      .forEach(n=>{const allowed={slides:'[data-slide],#present',document:'#export-text,#document-mode',note:'#export-text,#document-mode',portal:'[data-link]',diagram:'#diagram-svg',table:'#table-filter,#table-csv',form:'#form-csv'}[current.kind];if(!allowed||!n.matches(allowed))n.disabled=true;});
-  colors();
+      .forEach(n=>{const allowed={slides:'[data-slide],#present,#present-separate',document:'[data-doc-tab],#rich-html,#document-zoom,#export-text,#document-mode,#document-outline,#document-statistics,[data-outline]',note:'[data-doc-tab],#rich-html,#document-zoom,#export-text,#document-mode,#document-outline,#document-statistics,[data-outline]',board:'[data-board-view]',calendar:'#month-prev,#month-next,#month-today',portal:'[data-link]',diagram:'#diagram-svg',table:'#table-filter,#table-csv,[data-relation-query],[data-relation-row]',form:'#form-csv'}[current.kind];if(!allowed||!n.matches(allowed))n.disabled=true;});
 }
 // Static table of contents built from the document headings (# and ##, ###).
 function tableOfContents(text) {
@@ -797,37 +907,43 @@ function printPages(c) {
   window.print();
 }
 function textEditor(root, c) {
+  for(const key of ['header','footer','pageNumbers'])if(key in c){c.page??={};if(!(key in c.page))c.page[key]=c[key];delete c[key];}
   documentEditor?.dispose();documentEditor=null;const token={};root.documentToken=token;
   c.text ??= "";
-  let visual=true,doc=null;
+  let visual=true,doc=null,documentTools=null,advancedTools=null;
   try{visual=sessionStorage.getItem('drap-document-mode')!=='markdown';}catch{}
   const readOnly=current.role==='read';
-  root.innerHTML = `<div class="toolbar"><button id="document-mode">Editar Markdown</button><button id="document-paragraph">Parágrafo</button><button data-format="# ">Título</button><button data-format="## ">Subtítulo</button><button data-format="**">Negrito</button><button data-format="*">Itálico</button><button data-format="- ">Lista</button><button data-format="- [ ] ">Checklist</button><button id="insert-table">Tabela</button><button id="insert-link">Link</button><button id="document-image">Inserir imagem</button><button id="document-images">Gerenciar imagens</button><button id="document-toc">Sumário</button><button id="document-pagebreak">Quebra de página</button><button id="document-page-setup">Cabeçalho e rodapé</button><button id="find-replace">Localizar e substituir</button><button id="to-slides">Criar apresentação ↗</button><button id="export-text">Baixar texto</button><button id="document-undo">Desfazer</button><button id="document-redo">Refazer</button><span class="muted" id="word-count"></span></div><div class="toolbar" id="document-table-tools"><span id="document-table-hint">Selecione uma célula para editar a tabela.</span><button data-document-command="row">Adicionar linha</button><button data-document-command="column">Adicionar coluna</button><button data-document-command="deleteRow">Excluir linha</button><button data-document-command="deleteColumn">Excluir coluna</button><button data-document-command="deleteTable">Excluir tabela</button></div><div class="document"><textarea id="text" aria-label="Conteúdo do documento" placeholder="Escreva sua próxima ideia… Use # para títulos e **texto** para negrito.">${esc(c.text)}</textarea><article id="preview" class="preview">${markdown(c.text,c.images)}</article></div>`;
-  const update = () => {
+  root.innerHTML = `<div class="toolbar"><button id="document-mode">Editar Markdown</button><button id="document-paragraph">Parágrafo</button><button data-format="# ">Título</button><button data-format="## ">Subtítulo</button><button data-format="**">Negrito</button><button data-format="*">Itálico</button><button data-format="- ">Lista</button><button data-format="- [ ] ">Checklist</button><button id="insert-table">Tabela</button><button id="insert-link">Link</button><button id="document-image">Inserir imagem</button><button id="document-images">Gerenciar imagens</button><button id="document-toc">Inserir lista de títulos</button><button id="find-replace">Localizar e substituir</button><button id="to-slides">Criar apresentação ↗</button><button id="export-text">Baixar texto</button><button id="document-undo">Desfazer</button><button id="document-redo">Refazer</button><span class="muted" id="word-count"></span></div><div class="toolbar" id="document-table-tools"><span id="document-table-hint">Selecione uma célula para editar a tabela.</span><button data-document-command="row">Adicionar linha</button><button data-document-command="column">Adicionar coluna</button><button data-document-command="deleteRow">Excluir linha</button><button data-document-command="deleteColumn">Excluir coluna</button><button data-document-command="deleteTable">Excluir tabela</button></div><div class="document"><p id="markdown-format-notice" class="muted" hidden>Ao alterar o Markdown, esta aba será convertida para formatação básica. Cores, fontes por trecho, notas de rodapé e mesclagens não são preservadas nessa conversão.</p><textarea id="text" aria-label="Conteúdo do documento" placeholder="Escreva sua próxima ideia… Use # para títulos e **texto** para negrito.">${esc(c.text)}</textarea><article id="preview" class="preview">${markdown(c.text,c.images)}</article></div>`;
+  const update = (fromMarkdown=false) => {
+    if(fromMarkdown)delete c.rich;
     if(doc)doc.refresh();else document.querySelector("#preview").innerHTML = markdown(c.text,c.images);
     document.querySelector("#word-count").textContent =
       `${doc?doc.words():(c.text.trim()?c.text.trim().split(/\s+/).length:0)} palavras`;
+    documentTools?.refresh();advancedTools?.refresh();
   };
+  documentTools=mountDocumentTools(root,c,{editor:()=>doc,changed:setDirty,dialog:showDialog,bind,close:closeDialog,escape:esc,readOnly});
+  mountDocumentTabs(root,c,{readOnly,dirty:setDirty,reopen:()=>textEditor(root,c),dialog:showDialog,bind,close:closeDialog,escape:esc});
+  advancedTools=mountAdvancedDocument(root,c,{editor:()=>doc,readOnly,dirty:setDirty,dialog:showDialog,bind,close:closeDialog,notify,escape:esc});
   update();
   if(c.images?.length)root.querySelector('#export-text').textContent='Baixar HTML com imagens';
-  const setMode=()=>{root.querySelector('.document').classList.toggle('visual-mode',visual);root.querySelector('#text').hidden=visual;root.querySelector('#document-mode').textContent=visual?'Editar Markdown':'Editar visualmente';root.querySelector('#document-table-tools').hidden=!visual;for(const id of ['document-paragraph','document-undo','document-redo'])root.querySelector('#'+id).hidden=!visual;};
+  const setMode=()=>{advancedTools?.setVisual(visual);root.querySelector('#markdown-format-notice').hidden=visual;root.querySelector('.document').classList.toggle('visual-mode',visual);root.querySelector('#text').hidden=visual;root.querySelector('#document-mode').textContent=visual?'Editar Markdown':'Editar visualmente';root.querySelector('#document-table-tools').hidden=!visual;for(const id of ['numbered','quote','code','divider'])root.querySelector('#document-'+id).hidden=!visual;for(const id of ['document-paragraph','document-undo','document-redo'])root.querySelector('#'+id).hidden=!visual;};
   setMode();
   bind('document-mode',()=>{visual=!visual;try{sessionStorage.setItem('drap-document-mode',visual?'visual':'markdown');}catch{}setMode();});
   bind('document-paragraph',()=>{if(visual)doc?.format('paragraph');});
   // Page layout helpers: table of contents, page breaks, header/footer for print and DOCX.
   const insertMarkdown=text=>{if(readOnly)return;if(visual&&doc){doc.insert(text);return;}const area=root.querySelector('#text');area.setRangeText('\n'+text+'\n',area.selectionStart,area.selectionEnd,'end');c.text=area.value;update();setDirty();};
   bind('document-toc',()=>{const toc=tableOfContents(c.text);if(!toc){notify('Use Título e Subtítulo no documento para gerar o sumário.');return;}insertMarkdown(toc);notify('Sumário inserido. Se mudar os títulos, insira um novo sumário.');});
-  bind('document-pagebreak',()=>{if(visual)doc?.format('pageBreak');else insertMarkdown('---');});
-  bind('document-page-setup',()=>showDialog(`<h2>Cabeçalho e rodapé</h2><form id="page-setup-form"><p class="muted">Aparecem em todas as páginas ao imprimir ou salvar em PDF e no arquivo DOCX.</p><label class="field">Cabeçalho<input name="header" maxlength="200" value="${esc(c.header||'')}"></label><label class="field">Rodapé<input name="footer" maxlength="200" value="${esc(c.footer||'')}"></label><label class="checklist"><input type="checkbox" name="pageNumbers" ${c.pageNumbers?'checked':''}>Numerar páginas (Página X de Y)</label><div class="row"><button type="button" id="page-setup-cancel">Cancelar</button><button class="primary" ${readOnly?'disabled':''}>Aplicar</button></div></form>`,()=>{bind('page-setup-cancel',closeDialog);bind('page-setup-form',e=>{e.preventDefault();const f=new FormData(e.target);for(const key of ['header','footer']){const v=String(f.get(key)||'').trim();if(v)c[key]=v;else delete c[key];}if(f.has('pageNumbers'))c.pageNumbers=true;else delete c.pageNumbers;closeDialog();setDirty();notify('Cabeçalho e rodapé atualizados.');},'submit');}));
+
+
   for(const command of ['undo','redo'])bind('document-'+command,()=>{if(visual)doc?.format(command);else{root.querySelector('#text').focus();document.execCommand(command);}});
   root.querySelectorAll('[data-document-command]').forEach(el=>el.onclick=()=>doc?.format(el.dataset.documentCommand));
-  import('/document.js').then(({mountDocument})=>{if(!root.isConnected||root.documentToken!==token)return;root.querySelector('#preview').textContent='';doc=mountDocument(root.querySelector('#preview'),c,{readOnly,onChange:(text,words)=>{c.text=text;root.querySelector('#text').value=text;root.querySelector('#word-count').textContent=words+' palavras';setDirty();},notify,onState:state=>{root.querySelector('#document-table-hint').textContent=state.table?'Tabela selecionada:':'Selecione uma célula para editar a tabela.';root.querySelectorAll('[data-document-command]').forEach(el=>el.disabled=readOnly||!state.table);root.querySelector('#document-undo').disabled=readOnly||!state.undo;root.querySelector('#document-redo').disabled=readOnly||!state.redo;}});documentEditor=doc;root.querySelectorAll('[data-document-command]').forEach(el=>el.disabled=readOnly||!doc.state().table);root.querySelector('#document-undo').disabled=true;root.querySelector('#document-redo').disabled=true;root.querySelector('#preview').dataset.ready='true';root.querySelector('#word-count').textContent=doc.words()+' palavras';}).catch(e=>{if(!root.isConnected||root.documentToken!==token)return;visual=false;setMode();notify('O editor visual não carregou. A edição Markdown continua disponível.');});
+  import('/document.js').then(({mountDocument})=>{if(!root.isConnected||root.documentToken!==token)return;root.querySelector('#preview').textContent='';doc=mountDocument(root.querySelector('#preview'),c,{readOnly,onChange:(text,words)=>{c.text=text;root.querySelector('#text').value=text;root.querySelector('#word-count').textContent=words+' palavras';documentTools?.refresh();advancedTools?.refresh();setDirty();},notify,onState:state=>{root.querySelector('#document-table-hint').textContent=state.table?'Tabela selecionada:':'Selecione uma célula para editar a tabela.';root.querySelectorAll('[data-document-command]').forEach(el=>el.disabled=readOnly||!state.table);root.querySelector('#document-undo').disabled=readOnly||!state.undo;root.querySelector('#document-redo').disabled=readOnly||!state.redo;}});documentEditor=doc;root.querySelectorAll('[data-document-command]').forEach(el=>el.disabled=readOnly||!doc.state().table);root.querySelector('#document-undo').disabled=true;root.querySelector('#document-redo').disabled=true;root.querySelector('#preview').dataset.ready='true';root.querySelector('#word-count').textContent=doc.words()+' palavras';documentTools?.refresh();}).catch(e=>{if(!root.isConnected||root.documentToken!==token)return;visual=false;setMode();notify('O editor visual não carregou. A edição Markdown continua disponível.');});
 
   bind(
     "text",
     (e) => {
       c.text = e.target.value;
-      update();
+      update(true);
       setDirty();
     },
     "input",
@@ -847,15 +963,24 @@ function textEditor(root, c) {
           "end",
         );
         c.text = input.value;
-        update();
+        update(true);
         setDirty();
         input.focus();
       }),
   );
   function insertSnippet(text) {
     if(visual&&doc){doc.insert(text);return;}
-    const input=document.querySelector('#text');input.setRangeText(text,input.selectionStart,input.selectionEnd,'end');c.text=input.value;update();setDirty();input.focus();
+    const input=document.querySelector('#text');input.setRangeText(text,input.selectionStart,input.selectionEnd,'end');c.text=input.value;update(true);setDirty();input.focus();
   }
+  root.insertDocument=source=>{
+    if(readOnly)return;
+    if(visual&&!doc)throw Error('Aguarde o editor carregar antes de inserir o documento.');
+    if(visual&&doc.state().table)throw Error('Coloque o cursor fora da tabela antes de inserir outro documento.');
+    const prepared=prepareDocumentInsertion(source,c),previous=c.images;
+    c.images=[...(c.images||[]),...prepared.images];
+    try{if(visual&&prepared.rich)doc.insertNode(prepared.rich.content);else insertSnippet('\n'+prepared.text+'\n');}catch(error){if(previous===undefined)delete c.images;else c.images=previous;throw error;}
+    if(c.images.length)root.querySelector('#export-text').textContent='Baixar HTML com imagens';
+  };
   bind('document-image',()=>{
     const input=document.createElement('input');input.type='file';input.accept='image/png,image/jpeg,image/webp';
     input.onchange=async()=>{if(!input.files[0])return;try{const {src,ratio}=await raster(input.files[0]);if(!root.isConnected)return;if((c.images||[]).length>=20||JSON.stringify(c).length+src.length>1800000)throw Error('Limite de imagens do documento atingido. Remova imagens não usadas ou crie outro documento.');const im={id:crypto.randomUUID(),src,ratio,alt:input.files[0].name.slice(0,200),width:80};(c.images??=[]).push(im);insertSnippet('\n!['+im.alt.replaceAll(']','')+'](drap-image:'+im.id+')\n');document.querySelector('#export-text').textContent='Baixar HTML com imagens';}catch(e){notify(e.message);}};input.click();
@@ -863,11 +988,11 @@ function textEditor(root, c) {
   bind('document-images',()=>showDialog(`<h2>Imagens do documento</h2>${(c.images||[]).map((im,i)=>`<article class="card"><img src="${esc(im.src)}" alt="${esc(im.alt)}" style="max-width:120px;max-height:100px"><label class="field">Descrição<input data-image-alt="${i}" aria-label="Descrição da imagem ${i+1}" maxlength="200" value="${esc(im.alt)}"></label><label class="field">Largura (%)<input type="number" min="10" max="100" data-image-width="${i}" aria-label="Largura da imagem ${i+1}" value="${im.width||80}"></label><button data-image-remove="${i}">Remover imagem ${i+1}</button></article>`).join('')||'<p>Nenhuma imagem inserida.</p>'}<button id="images-close">Concluir</button>`,()=>{
     modal.querySelectorAll('[data-image-alt]').forEach(el=>el.oninput=()=>{c.images[+el.dataset.imageAlt].alt=el.value;update();setDirty();});
     modal.querySelectorAll('[data-image-width]').forEach(el=>el.onchange=()=>{const value=Number(el.value);if(!Number.isFinite(value))return;c.images[+el.dataset.imageWidth].width=Math.max(10,Math.min(100,value));el.value=c.images[+el.dataset.imageWidth].width;update();setDirty();});
-    modal.querySelectorAll('[data-image-remove]').forEach(el=>el.onclick=()=>{const im=c.images[+el.dataset.imageRemove];c.text=c.text.split('\n').filter(line=>!line.includes('](drap-image:'+im.id+')')).join('\n');c.images.splice(+el.dataset.imageRemove,1);closeDialog();setDirty();textEditor(root,c);});bind('images-close',closeDialog);
+    modal.querySelectorAll('[data-image-remove]').forEach(el=>el.onclick=()=>{const im=c.images[+el.dataset.imageRemove];doc?.removeImage(im.id);c.text=c.text.split('\n').filter(line=>!line.includes('](drap-image:'+im.id+')')).join('\n');c.images.splice(+el.dataset.imageRemove,1);closeDialog();setDirty();textEditor(root,c);});bind('images-close',closeDialog);
   }));
   bind('insert-table',()=>insertSnippet('\n| Coluna 1 | Coluna 2 |\n| --- | --- |\n| Valor | Valor |\n'));
   bind('insert-link',()=>showDialog('<h2>Inserir link</h2><form id="link-form"><label class="field">Texto do link<input name="label" required></label><label class="field">URL HTTPS<input name="url" type="url" required></label><button class="primary">Inserir</button></form>',()=>bind('link-form',e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));if(!/^https?:\/\//i.test(d.url))return notify('Use um endereço HTTP ou HTTPS.');closeDialog();insertSnippet('['+d.label.replaceAll(']','')+']('+d.url.replaceAll(')','%29')+')');},'submit')));
-  bind('find-replace',()=>showDialog('<h2>Localizar e substituir</h2><form id="replace-form"><label class="field">Localizar<input name="search" required></label><label class="field">Substituir por<input name="replacement"></label><button class="primary">Substituir todas</button></form>',()=>bind('replace-form',e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));if(visual&&doc){const count=doc.replace(d.search,d.replacement);closeDialog();notify(count+' ocorrências substituídas.');return;}const count=c.text.split(d.search).length-1;c.text=c.text.replaceAll(d.search,d.replacement);closeDialog();setDirty();textEditor(root,c);notify(count+' ocorrências substituídas.');},'submit')));
+  bind('find-replace',()=>showDialog('<h2>Localizar e substituir</h2><form id="replace-form"><label class="field">Localizar<input name="search" required></label><label class="field">Substituir por<input name="replacement"></label><button class="primary">Substituir todas</button></form>',()=>bind('replace-form',e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));if(visual&&doc){const count=doc.replace(d.search,d.replacement);closeDialog();notify(count+' ocorrências substituídas.');return;}const count=c.text.split(d.search).length-1;c.text=c.text.replaceAll(d.search,d.replacement);delete c.rich;closeDialog();setDirty();textEditor(root,c);notify(count+' ocorrências substituídas.');},'submit')));
   bind("export-text", () =>
     c.images?.length?download(current.title+".html",'<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>'+esc(current.title)+'</title><body>'+(doc?doc.html():markdown(c.text,c.images))+'</body></html>',"text/html"):download(current.title + ".md", c.text, "text/markdown"),
   );
@@ -880,10 +1005,11 @@ function textEditor(root, c) {
       " — Apresentação",
     ),
   );
+  applyEditorPermissions(root);
 }
 async function sheetEditor(root, c) {
   root.classList.add('spreadsheet-editor');
-  root.innerHTML = `<div class="toolbar sheet-tools"><label>Intervalo <input id="sheet-address" aria-label="Intervalo da planilha" value="A1" size="10"></label><button id="sheet-select">Selecionar</button><label>Valor ou fórmula <input id="sheet-value" aria-label="Valor ou fórmula" placeholder="=SUM(A1:A5)"></label><button id="sheet-apply">Aplicar à célula</button><button id="sheet-insert" class="primary">＋ Inserir</button><button id="csv-import">Importar CSV</button><button id="csv-export">Exportar CSV</button><button id="sheet-report">Criar relatório ↗</button><button id="sheet-chart-add">Criar gráfico</button><button id="sheet-pivot-add">Tabela dinâmica</button></div><div class="toolbar sheet-tools"><button id="sheet-calculate">∑ Inserir cálculo</button><button id="sheet-row">Inserir linha</button><button id="sheet-column">Inserir coluna</button><button id="sheet-clear">Limpar valores</button><button id="sheet-paste">Colar tabela</button><span class="muted">Clique numa célula e digite. Enter confirma; Tab avança. Selecione um intervalo para formatar.</span></div><div id="sheet-link-bar" class="sheet-link-bar" hidden></div><div id="spreadsheet" aria-label="Editor de planilhas"><p>Carregando editor…</p></div><p class="muted sheet-help">Use a barra de ferramentas para formatar, mesclar, filtrar e ordenar. Clique com o botão direito para inserir/excluir linhas e colunas. As células, a barra de fórmulas e o campo acima aceitam SUM/IF/VLOOKUP e os equivalentes SOMA/SE/PROCV; os nomes são armazenados em inglês. Ao digitar números na grade, use vírgula decimal (1234,50). Salve para registrar no banco. XLSX preserva valores, fórmulas, estilos, mesclagens, filtros e validações comuns; regras avançadas ficam no arquivo DRAP e no JSON. Gráficos de colunas, linhas e pizza ficam abaixo da grade e no XLSX. Tabelas dinâmicas agrupam e resumem os dados abaixo da grade. Macros VBA ainda não estão disponíveis.</p><section id="sheet-links" aria-label="Arquivos e links vinculados"></section><section id="sheet-charts" aria-label="Gráficos da planilha"></section><section id="sheet-pivots" aria-label="Tabelas dinâmicas"></section>`;
+  root.innerHTML = `<div class="toolbar sheet-tools"><label>Intervalo <input id="sheet-address" aria-label="Intervalo da planilha" value="A1" size="10"></label><button id="sheet-select">Selecionar</button><label>Valor ou fórmula <input id="sheet-value" aria-label="Valor ou fórmula" placeholder="=SUM(A1:A5)"></label><button id="sheet-apply">Aplicar à célula</button><button id="sheet-insert">Vincular célula</button><button id="csv-import">Importar CSV</button><button id="csv-export">Exportar CSV</button><button id="sheet-report">Criar relatório ↗</button><button id="sheet-chart-add">Criar gráfico</button><button id="sheet-pivot-add">Tabela dinâmica</button></div><div class="toolbar sheet-tools"><button id="sheet-calculate">∑ Inserir cálculo</button><button id="sheet-row">Inserir linha</button><button id="sheet-column">Inserir coluna</button><button id="sheet-clear">Limpar valores</button><button id="sheet-paste">Colar tabela</button><span class="muted">Clique numa célula e digite. Enter confirma; Tab avança. Selecione um intervalo para formatar.</span></div><div id="sheet-link-bar" class="sheet-link-bar" hidden></div><div id="spreadsheet" aria-label="Editor de planilhas"><p>Carregando editor…</p></div><p class="muted sheet-help">Use a barra de ferramentas para formatar, mesclar, filtrar e ordenar. Clique com o botão direito para inserir/excluir linhas e colunas. As células, a barra de fórmulas e o campo acima aceitam SUM/IF/VLOOKUP e os equivalentes SOMA/SE/PROCV; os nomes são armazenados em inglês. Ao digitar números na grade, use vírgula decimal (1234,50). Salve para registrar no banco. XLSX preserva valores, fórmulas, estilos, mesclagens, filtros e validações comuns; regras avançadas ficam no arquivo DRAP e no JSON. Gráficos de colunas, linhas e pizza ficam abaixo da grade e no XLSX. Tabelas dinâmicas agrupam e resumem os dados abaixo da grade. Macros VBA ainda não estão disponíveis.</p><section id="sheet-links" aria-label="Arquivos e links vinculados"></section><section id="sheet-charts" aria-label="Gráficos da planilha"></section><section id="sheet-pivots" aria-label="Tabelas dinâmicas"></section>`;
   const item=current;let pivotUI=null;
   try {
     if (!document.querySelector('#spreadsheet-css')) {
@@ -902,6 +1028,8 @@ async function sheetEditor(root, c) {
     renderLinks();
     const address=()=>document.querySelector('#sheet-address').value.trim().toUpperCase();
     const action=fn=>async()=>{try{await fn();}catch(e){notify(e.message);}};
+    mountSheetProtection(root,c,spreadsheet,{owner:item.role==='owner',readOnly:item.role==='read',address,dialog:showDialog,bind,close:closeDialog,dirty:setDirty,escape:esc,notify});
+    mountSheetTools(root,spreadsheet,{address,dialog:showDialog,bind,close:closeDialog,escape:esc,notify,readOnly:item.role==='read'});
     bind('sheet-select',action(()=>{spreadsheet.select(address());showCellLink(address());const value=spreadsheet.read(address());document.querySelector('#sheet-value').value=value.formulas[0]?.[0]||(value.values[0]?.[0]??'');}));
     bind('sheet-apply',action(()=>spreadsheet.set(address(),document.querySelector('#sheet-value').value)));
     for(const kind of ['row','column','clear'])bind('sheet-'+kind,action(()=>spreadsheet.quick(kind,address())));
@@ -913,7 +1041,7 @@ async function sheetEditor(root, c) {
     bind('csv-export',action(async()=>{await spreadsheet.flush();download(current.title+'.csv',spreadsheet.csv(),'text/csv');}));
     bind('sheet-insert',()=>insertLinkDialog(address().split(':')[0]));
     bind('sheet-report',action(async()=>{await spreadsheet.flush();await convert('document',{text:'# '+current.title+'\n\n'+spreadsheet.rows().map(r=>r.join(' | ')).join('\n')},' — Relatório');}));
-    if(item.role==='read')root.querySelectorAll('.sheet-tools input,.sheet-tools button:not(#csv-export)').forEach(el=>el.disabled=true);
+    if(item.role==='read')root.querySelectorAll('.sheet-tools input,.sheet-tools button:not(#csv-export):not(#sheet-stats)').forEach(el=>el.disabled=true);
   // Cell links: a cell can point to another DRAP office file or to an external https address.
   function cellLink(cell,sheetId=spreadsheet.activeSheetId()){return (c.links||[]).find(l=>l.sheetId===sheetId&&l.cell===cell);}
   function linkLabel(l){return l.type==='item'?(items.find(i=>i.id===l.item)?.title||l.title):l.url;}
@@ -972,68 +1100,49 @@ async function sheetEditor(root, c) {
 }
 function slideEditor(root,c){mountSlides(root,c,{dirty:setDirty,notify,present,readOnly:current.role==='read',initialIndex:selectedSlide,onSelect:i=>{selectedSlide=i;}});}
 function present(slides, theme="light") {
-  let i = 0;
-  const div = document.createElement("section");
-  div.className = "present";
-  div.dataset.theme=theme;
-  div.setAttribute("role", "dialog");
-  div.setAttribute("aria-label", "Apresentação");
-  document.body.append(div);
-  function close() {
-    div.remove();
-    document.removeEventListener("keydown", key);
+  const visible=slides.map((slide,index)=>({...slide,original:index+1})).filter(s=>!s.hidden);
+  if(!visible.length)return notify('Todos os slides estão ocultos. Exiba pelo menos um para apresentar.');
+  let i=0,notes=false,black=false,auto=null;const started=Date.now(),previousFocus=document.activeElement;
+  const div=document.createElement('section');div.className='present';div.dataset.theme=theme;div.setAttribute('role','dialog');div.setAttribute('aria-modal','true');div.setAttribute('aria-label','Apresentação');document.body.append(div);
+  function close(){clearInterval(auto);clearInterval(clock);if(document.fullscreenElement===div)document.exitFullscreen().catch(()=>{});div.remove();document.removeEventListener('keydown',key);previousFocus?.focus();}
+  function move(delta){i=Math.max(0,Math.min(visible.length-1,i+delta));black=false;render();}
+  function render(){
+    const slide=visible[i];div.innerHTML=`<small>${esc(current.title)} · ${i+1} / ${visible.length} · Slide ${slide.original} · <span id="present-clock"></span></small><div class="slide-stage present-transition-${esc(slide.transition||'none')} ${black?'present-black':''}" data-theme="${esc(theme)}" style="${slideStyle(slide)}">${slideMarkup(slide,{heading:'h1'})}</div>${notes?`<aside class="present-notes"><strong>Notas do apresentador (visíveis nesta tela)</strong><p>${esc(slide.notes||'Sem notas.')}</p><small>Próximo: ${esc(visible[i+1]?.title||'Fim da apresentação')}</small></aside>`:''}<div class="row controls"><button id="previous" ${i===0?'disabled':''}>← Anterior</button><button id="next-slide" ${i===visible.length-1?'disabled':''}>Próximo →</button><button id="present-notes" aria-pressed="${notes}">Notas</button><button id="present-black" aria-pressed="${black}">Tela preta (B)</button><button id="present-auto">${auto?'Pausar':'Avançar a cada 5 s'}</button><button id="present-fullscreen">Tela cheia</button><button id="close-present">Sair (Esc)</button></div>`;
+    div.querySelector('#previous').onclick=()=>move(-1);div.querySelector('#next-slide').onclick=()=>move(1);div.querySelector('#close-present').onclick=close;
+    div.querySelector('#present-notes').onclick=()=>{notes=!notes;render();};div.querySelector('#present-black').onclick=()=>{black=!black;render();};
+    div.querySelector('#present-fullscreen').onclick=()=>div.requestFullscreen?.().catch(()=>notify('Tela cheia indisponível neste navegador.'));
+    div.querySelector('#present-auto').onclick=()=>{if(auto){clearInterval(auto);auto=null;}else auto=setInterval(()=>{if(i===visible.length-1){clearInterval(auto);auto=null;render();}else move(1);},5000);render();};
+    tick();div.querySelector('#close-present').focus({preventScroll:true});
   }
-  function render() {
-    div.innerHTML = `<small>${esc(current.title)} · ${i + 1} / ${slides.length}</small><div class="slide-stage" data-theme="${esc(theme)}">${slideMarkup(slides[i],{heading:'h1'})}</div><div class="row controls"><button id="previous">← Anterior</button><button id="next-slide">Próximo →</button><button id="close-present">Sair (Esc)</button></div>`;
-    div.querySelector("#previous").onclick = () => {
-      i = Math.max(0, i - 1);
-      render();
-    };
-    div.querySelector("#next-slide").onclick = () => {
-      i = Math.min(slides.length - 1, i + 1);
-      render();
-    };
-    div.querySelector("#close-present").onclick = close;
-  }
-  function key(e) {
-    if (e.key === "Escape") close();
-    if (e.key === "ArrowRight") {
-      i = Math.min(slides.length - 1, i + 1);
-      render();
-    }
-    if (e.key === "ArrowLeft") {
-      i = Math.max(0, i - 1);
-      render();
-    }
-  }
-  document.addEventListener("keydown", key);
-  render();
-  div.querySelector("button").focus();
+  function tick(){const elapsed=Math.floor((Date.now()-started)/1000),el=div.querySelector('#present-clock');if(el)el.textContent=Math.floor(elapsed/60)+':'+String(elapsed%60).padStart(2,'0');}
+  function key(e){if(e.key==='Escape'){e.preventDefault();close();}else if(['ArrowRight','PageDown',' '].includes(e.key)&&!(e.key===' '&&e.target.tagName==='BUTTON')){e.preventDefault();move(1);}else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();move(-1);}else if(e.key==='Home'){e.preventDefault();i=0;render();}else if(e.key==='End'){e.preventDefault();i=visible.length-1;render();}else if(e.key.toLowerCase()==='b'){e.preventDefault();black=!black;render();}else if(e.key==='Tab'){const buttons=[...div.querySelectorAll('button:not(:disabled)')],first=buttons[0],last=buttons.at(-1);if(e.shiftKey&&e.target===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&e.target===last){e.preventDefault();first.focus();}}}
+  const clock=setInterval(tick,1000);document.addEventListener('keydown',key);render();
 }
 let boardView = "kanban";
 function boardEditor(root, c) {
   c.tasks ??= [];
-  ensureTaskIds(c.tasks);
+  ensureTaskIds(c.tasks,c.baseline?.tasks.map(t=>t.id));
   const statuses=['A fazer','Em andamento','Concluído'];
   const priorities=['Baixa','Normal','Alta','Urgente'];
   const byId=new Map(c.tasks.map(t=>[t.id,t]));
   const deps=t=>(t.depends||[]).map(id=>byId.get(id)?.title).filter(Boolean);
   const card=(t,i,status)=>`<article class="card"><h3>${t.milestone?'◆ ':''}${esc(t.title)}</h3><span class="badge">${esc(t.priority || 'Normal')}</span><p class="muted">${t.start?'Início: '+esc(t.start)+'<br>':''}${t.due?(t.milestone?'Marco: ':'Prazo: ')+esc(t.due):'Sem prazo'}${t.assignee?'<br>Responsável: '+esc(t.assignee):''}${deps(t).length?'<br>Depende de: '+deps(t).map(esc).join(', '):''}</p>${(t.subtasks||[]).map((s,j)=>`<label class="checklist"><input type="checkbox" data-subtask="${i}:${j}" ${s.done?'checked':''}>${esc(s.title)}</label>`).join('')}<select data-task="${i}" aria-label="Estado de ${esc(t.title)}">${statuses.map(s=>`<option ${s===status?'selected':''}>${s}</option>`).join('')}</select><div class="row"><button data-edit-task="${i}">Detalhes</button><button data-remove-task="${i}" class="danger">Excluir</button></div></article>`;
   const toolbar=`<form id="add-task" class="toolbar"><input name="title" placeholder="O que precisa ser feito?" aria-label="Nome da tarefa" maxlength="200" required><input name="start" type="date" aria-label="Início"><input name="due" type="date" aria-label="Prazo"><select name="priority" aria-label="Prioridade da tarefa">${priorities.map(p=>`<option ${p==='Normal'?'selected':''}>${p}</option>`).join('')}</select><button class="primary">＋ Adicionar tarefa</button></form><div class="row" role="group" aria-label="Visualização"><button type="button" data-board-view="kanban" aria-pressed="${boardView==='kanban'}" class="${boardView==='kanban'?'primary':''}">Kanban</button><button type="button" data-board-view="timeline" aria-pressed="${boardView==='timeline'}" class="${boardView==='timeline'?'primary':''}">Cronograma</button></div>`;
-  root.innerHTML=toolbar+(boardView==='timeline'?timelineMarkup(c.tasks):`<div class="board">${statuses.map(status=>`<section class="column"><h3>${status} <span class="badge">${c.tasks.filter(t=>t.status===status).length}</span></h3>${c.tasks.map((t,i)=>t.status===status?card(t,i,status):'').join('')}</section>`).join('')}</div>`);
+  root.innerHTML=toolbar+budgetMarkup(c.tasks)+(boardView==='timeline'?timelineMarkup(c.tasks):`<div class="board">${statuses.map(status=>`<section class="column"><h3>${status} <span class="badge">${c.tasks.filter(t=>t.status===status).length}</span></h3>${c.tasks.map((t,i)=>t.status===status?card(t,i,status):'').join('')}</section>`).join('')}</div>`);
   root.querySelectorAll('[data-board-view]').forEach(n=>n.onclick=()=>{boardView=n.dataset.boardView;boardEditor(root,c);});
-  bind('add-task',e=>{e.preventDefault();if(c.tasks.length>=1000)return notify('Limite de 1000 tarefas.');const data=Object.fromEntries(new FormData(e.target));if(data.start&&data.due&&data.start>data.due)return notify('O início deve ser antes do prazo.');c.tasks.push({...data,status:'A fazer',assignee:'',subtasks:[],depends:[],milestone:false});ensureTaskIds(c.tasks);setDirty();boardEditor(root,c);},'submit');
-  root.querySelectorAll('[data-task]').forEach(n=>n.onchange=()=>{c.tasks[+n.dataset.task].status=n.value;setDirty();boardEditor(root,c);});
+  bind('add-task',e=>{e.preventDefault();if(c.tasks.length>=1000)return notify('Limite de 1000 tarefas.');const data=Object.fromEntries(new FormData(e.target));if(data.start&&data.due&&data.start>data.due)return notify('O início deve ser antes do prazo.');c.tasks.push({...data,status:'A fazer',assignee:'',subtasks:[],depends:[],milestone:false});ensureTaskIds(c.tasks,c.baseline?.tasks.map(t=>t.id));setDirty();boardEditor(root,c);},'submit');
+  root.querySelectorAll('[data-task]').forEach(n=>n.onchange=()=>{const task=c.tasks[+n.dataset.task],old=task.status;task.status=n.value;const error=dependencyError(c.tasks.map(t=>({...t,dependsOn:t.depends})));if(error){task.status=old;n.value=old;return notify(error);}setDirty();boardEditor(root,c);});
   root.querySelectorAll('[data-remove-task]').forEach(n=>n.onclick=()=>{const [removed]=c.tasks.splice(+n.dataset.removeTask,1);for(const t of c.tasks)t.depends=(t.depends||[]).filter(id=>id!==removed.id);setDirty();boardEditor(root,c);});
   root.querySelectorAll('[data-subtask]').forEach(n=>n.onchange=()=>{const [i,j]=n.dataset.subtask.split(':').map(Number);c.tasks[i].subtasks[j].done=n.checked;setDirty();});
   root.querySelectorAll('[data-edit-task]').forEach(n=>n.onclick=()=>{
     const task=c.tasks[+n.dataset.editTask];
     const others=c.tasks.filter(t=>t!==task);
-    showDialog(`<h2>Detalhes da tarefa</h2><form id="task-details"><label class="field">Título da tarefa<input name="title" value="${esc(task.title)}" maxlength="200" required></label><label class="field">Responsável<input name="assignee" value="${esc(task.assignee||'')}" maxlength="100"></label><label class="field">Início<input name="start" type="date" value="${esc(task.start||'')}"></label><label class="field">Data limite<input name="due" type="date" value="${esc(task.due)}"></label><label class="checklist"><input type="checkbox" name="milestone" ${task.milestone?'checked':''}>Marco (entrega de um dia, sem duração)</label><label class="field">Prioridade<select name="priority">${priorities.map(p=>`<option ${p===(task.priority||'Normal')?'selected':''}>${p}</option>`).join('')}</select></label><fieldset class="task-deps"><legend>Depende de</legend>${others.length?others.map(o=>`<label class="checklist"><input type="checkbox" name="depends" value="${esc(o.id)}" ${(task.depends||[]).includes(o.id)?'checked':''}>${esc(o.title)}</label>`).join(''):'<p class="muted">Nenhuma outra tarefa.</p>'}</fieldset><label class="field">Subtarefas, uma por linha<textarea name="subtasks" rows="5">${esc((task.subtasks||[]).map(s=>s.title).join('\n'))}</textarea></label><p id="task-error" class="error" role="alert"></p><button class="primary">Aplicar detalhes</button></form>`,()=>bind('task-details',e=>{
+    showDialog(`<h2>Detalhes da tarefa</h2><form id="task-details"><label class="field">Título da tarefa<input name="title" value="${esc(task.title)}" maxlength="200" required></label><label class="field">Responsável<input name="assignee" value="${esc(task.assignee||'')}" maxlength="100"></label><label class="field">Início<input name="start" type="date" value="${esc(task.start||'')}"></label><label class="field">Data limite<input name="due" type="date" value="${esc(task.due)}"></label><label class="checklist"><input type="checkbox" name="milestone" ${task.milestone?'checked':''}>Marco (entrega de um dia, sem duração)</label><label class="field">Prioridade<select name="priority">${priorities.map(p=>`<option ${p===(task.priority||'Normal')?'selected':''}>${p}</option>`).join('')}</select></label><fieldset><legend>Horas e custos (R$)</legend>${[['plannedHours','Horas planejadas'],['actualHours','Horas realizadas'],['hourlyRate','Custo por hora'],['fixedCost','Custos adicionais']].map(([key,label])=>`<label class="field">${label}<input name="${key}" type="number" min="0" max="100000" step="0.01" value="${esc(task[key]??0)}" required></label>`).join('')}</fieldset><fieldset class="task-deps"><legend>Depende de</legend>${others.length?others.map(o=>`<label class="checklist"><input type="checkbox" name="depends" value="${esc(o.id)}" ${(task.depends||[]).includes(o.id)?'checked':''}>${esc(o.title)}</label>`).join(''):'<p class="muted">Nenhuma outra tarefa.</p>'}</fieldset><label class="field">Subtarefas, uma por linha<textarea name="subtasks" rows="5">${esc((task.subtasks||[]).map(s=>s.title).join('\n'))}</textarea></label><p id="task-error" class="error" role="alert"></p><button class="primary">Aplicar detalhes</button></form>`,()=>bind('task-details',e=>{
       e.preventDefault();const form=new FormData(e.target);const data=Object.fromEntries(form);
       const error=document.querySelector('#task-error');
       const titles=data.subtasks.split('\n').map(t=>t.trim()).filter(Boolean);
       if(titles.length>50 || titles.some(t=>t.length>200)){error.textContent='Até 50 subtarefas, com 200 caracteres cada.';return;}
+      for(const key of ['plannedHours','actualHours','hourlyRate','fixedCost']){data[key]=Number(data[key]);if(!Number.isFinite(data[key])||data[key]<0||data[key]>100000){error.textContent='Horas e custos devem estar entre 0 e 100.000.';return;}}
       data.milestone=form.has('milestone');data.depends=form.getAll('depends');
       if(data.start&&data.due&&data.start>data.due&&!data.milestone){error.textContent='O início deve ser antes da data limite.';return;}
       if(data.milestone&&!data.due){error.textContent='Informe a data do marco.';return;}
@@ -1043,6 +1152,13 @@ function boardEditor(root, c) {
       Object.assign(task,data);closeDialog();setDirty();boardEditor(root,c);
     },'submit'));
   });
+  mountProjectPlanning(root,c,{esc,dirty:setDirty,rerender:()=>boardEditor(root,c),confirm:askConfirm,notify,readOnly:current.role==='read'});
+  applyEditorPermissions(root);
+}
+function budgetMarkup(tasks) {
+  const b=projectBudget(tasks), money=cents=>(cents/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+  const hours=n=>n.toLocaleString('pt-BR',{maximumFractionDigits:2});
+  return `<details id="project-budget"><summary>Recursos e custos · Planejado: ${money(b.plannedCents)} · Realizado: ${money(b.actualCents)}</summary><p>Diferença de custo: ${money(b.varianceCents)}. Horas: ${hours(b.plannedHours)} planejadas / ${hours(b.actualHours)} realizadas.</p><p class="muted">Custo = horas × custo por hora + custos adicionais. Os custos adicionais são incluídos nos dois totais. Valores em reais. Compare o planejamento na linha de base e confira a capacidade dos responsáveis abaixo.</p><div class="table-wrap"><table><thead><tr><th>Responsável</th><th>Horas planejadas</th><th>Horas realizadas</th><th>Custo planejado</th><th>Custo realizado</th></tr></thead><tbody>${b.resources.map(r=>`<tr><td>${esc(r.name)}</td><td>${hours(r.plannedHours)}</td><td>${hours(r.actualHours)}</td><td>${money(r.plannedCents)}</td><td>${money(r.actualCents)}</td></tr>`).join('')}</tbody></table></div></details>`;
 }
 function timelineMarkup(tasks) {
   const plan=schedule(tasks);
@@ -1090,6 +1206,7 @@ function calendarEditor(root, c) {
     },
     "submit",
   );
+  mountCalendarMonth(root,c,{escape:esc,readOnly:current.role==='read',edit:index=>root.querySelector(`[data-edit-event="${index}"]`).click()});
   root.querySelectorAll('[data-edit-event]').forEach(button=>button.onclick=()=>{
     const event=c.events[+button.dataset.editEvent];
     showDialog(`<h2>Editar compromisso</h2><form id="edit-event"><label class="field">Título do compromisso<input name="title" value="${esc(event.title)}" maxlength="200" required></label><label class="field">Início<input name="start" type="datetime-local" value="${localDateTime(event.start)}" required></label><label class="field">Fim<input name="end" type="datetime-local" value="${localDateTime(event.end)}" required></label><label class="field">Local<input name="location" value="${esc(event.location||'')}" maxlength="500"></label><label class="field">Descrição<textarea name="description" aria-label="Descrição do compromisso" maxlength="4000">${esc(event.description||'')}</textarea></label><p>Esta alteração afeta somente este compromisso.</p><p id="event-error" role="alert"></p><button class="primary">Aplicar compromisso</button></form>`,()=>bind('edit-event',e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));if(new Date(d.end)<=new Date(d.start)){document.querySelector('#event-error').textContent='O fim deve ser posterior ao início.';return;}Object.assign(event,{title:d.title,location:d.location,description:d.description,start:new Date(d.start).toISOString(),end:new Date(d.end).toISOString()});closeDialog();setDirty();calendarEditor(root,c);},'submit'));
@@ -1108,7 +1225,7 @@ function answerField(question, field, index) {
   const label=`${esc(question)}${field.required?' *':''}`;
   if(field.type==='multiple') return `<fieldset class="field answer-group" data-answer="${index}"><legend>${label}</legend>${(field.options||[]).map(o=>`<label class="checklist"><input type="checkbox" name="q${index}" value="${esc(o)}">${esc(o)}</label>`).join('')}</fieldset>`;
   if(field.type==='scale') return `<fieldset class="field answer-group scale" data-answer="${index}"><legend>${label}</legend>${Array.from({length:field.max||5},(_,n)=>`<label><input type="radio" ${attrs} value="${n+1}">${n+1}</label>`).join('')}</fieldset>`;
-  return `<label class="field">${label}${field.type==='choice'?`<select ${attrs}><option value="">Selecione…</option>${(field.options||[]).map(o=>`<option>${esc(o)}</option>`).join('')}</select>`:`<input ${attrs} type="${field.type}" ${field.type==='number'?'step="any"':''} maxlength="4000">`}</label>`;
+  return `<label class="field" data-answer="${index}">${esc(question)}${field.required?' *':''}${['choice','rating'].includes(field.type)?`<select ${attrs}><option value="">Selecione…</option>${(field.type==='rating'?['1','2','3','4','5']:(field.options||[])).map(o=>`<option>${esc(o)}</option>`).join('')}</select>`:(field.type==='longtext'?`<textarea ${attrs} rows="5" maxlength="4000"></textarea>`:`<input ${attrs} type="${field.type}" ${field.type==='number'?'step="any"':''} maxlength="4000">`)}</label>`;
 }
 function collectAnswers(form, fields) {
   const values=new FormData(form);
@@ -1125,7 +1242,10 @@ function correctAnswerField(field, i) {
 function formEditor(root,c) {
   c.questions ??=[];c.responses ??=[];
   c.fields ??=c.questions.map(()=>({type:'text',required:true,options:[]}));
-  const fieldTypes={text:'Texto',email:'E-mail',number:'Número',date:'Data',choice:'Escolha única',multiple:'Múltipla seleção',scale:'Escala'};
+  cleanConditions(c.fields);
+  for(const field of c.fields){if(field.correct===undefined&&field.correctAnswer!==undefined)field.correct=field.correctAnswer;delete field.correctAnswer;}
+  for(const response of c.responses)if(response.total===undefined&&response.maxScore!==undefined)response.total=response.maxScore;
+  const fieldTypes={text:'Texto',email:'E-mail',number:'Número',date:'Data',choice:'Escolha única',multiple:'Múltipla seleção',scale:'Escala',longtext:'Texto longo',rating:'Avaliação de 1 a 5'};
   const grade=r=>typeof r.total==='number'&&r.total>0?`<p><strong>Nota: ${r.score} de ${r.total}</strong></p>`:'';
   root.innerHTML=`<div class="toolbar"><button id="add-question">＋ Pergunta de texto</button><button id="form-table">Respostas → Tabela</button><button id="form-sheet">Respostas → Planilha</button><button id="form-csv">Baixar respostas CSV</button>${current.role==='owner'?'<button id="form-publish">Link de coleta</button>':''}<label class="checklist"><input type="checkbox" id="form-quiz" ${c.quiz?'checked':''}>Modo quiz (nota automática)</label><span>${c.responses.length} respostas</span></div><h3>Perguntas</h3>${c.questions.map((q,i)=>`<article class="card"><div class="row"><input data-question="${i}" value="${esc(q)}" aria-label="Pergunta ${i+1}" maxlength="300"><select data-field-type="${i}" aria-label="Tipo da pergunta ${i+1}">${Object.entries(fieldTypes).map(([type,label])=>`<option value="${type}" ${c.fields[i].type===type?'selected':''}>${label}</option>`).join('')}</select><button data-remove-question="${i}">Excluir</button></div><label class="checklist"><input type="checkbox" data-field-required="${i}" ${c.fields[i].required?'checked':''}>Obrigatória</label>${['choice','multiple'].includes(c.fields[i].type)?`<label class="field">Opções, uma por linha<textarea data-field-options="${i}" aria-label="Opções da pergunta ${i+1}">${esc(c.fields[i].options.join('\n'))}</textarea></label>`:''}${c.fields[i].type==='scale'?`<label class="field">Escala de 1 até<select data-field-max="${i}" aria-label="Máximo da escala da pergunta ${i+1}">${[2,3,4,5,6,7,8,9,10].map(n=>`<option ${n===(c.fields[i].max||5)?'selected':''}>${n}</option>`).join('')}</select></label>`:''}${c.quiz?correctAnswerField(c.fields[i],i):''}</article>`).join('')}<hr><h3>Responder neste espaço</h3><form id="respond-form">${c.questions.map((q,i)=>answerField(q,c.fields[i],i)).join('')}<button class="primary" ${c.questions.length?'':'disabled'}>Registrar resposta</button></form><h3 class="section-head">Respostas registradas</h3>${c.responses.map(r=>`<div class="card"><small>${date(r.at)}</small>${grade(r)}${r.answers.map((a,i)=>`<p>${esc(r.questions?.[i]||'Pergunta '+(i+1))}: ${esc(a)}</p>`).join('')}</div>`).join('')}`;
   root.querySelectorAll('[data-question]').forEach(n=>n.oninput=()=>{const i=+n.dataset.question;c.questions[i]=n.value;const group=root.querySelector(`[data-answer="${i}"] legend`);if(group)group.textContent=n.value+(c.fields[i].required?' *':'');else{const label=root.querySelector(`[name="q${i}"]`).closest('label');label.firstChild.textContent=n.value+(c.fields[i].required?' *':'');}setDirty();});
@@ -1139,15 +1259,18 @@ function formEditor(root,c) {
   root.querySelectorAll('[data-points]').forEach(n=>n.onchange=()=>{const v=Math.round(Number(n.value));if(!(v>=0&&v<=100)){n.value=c.fields[+n.dataset.points].points??1;return notify('Use de 0 a 100 pontos.');}c.fields[+n.dataset.points].points=v;setDirty();});
   bind('form-quiz',e=>{c.quiz=e.target.checked;setDirty();formEditor(root,c);},'change');
   bind('add-question',()=>{if(c.questions.length>=100)return notify('Limite de 100 perguntas.');c.questions.push('Nova pergunta');c.fields.push({type:'text',required:true,options:[]});setDirty();formEditor(root,c);});
-  bind('respond-form',e=>{e.preventDefault();if(c.responses.length>=1000)return notify('Limite de 1000 respostas.');const answers=collectAnswers(e.target,c.fields);for(let i=0;i<answers.length;i++){const error=answerError(answers[i],c.fields[i]);if(error){notify('Pergunta '+(i+1)+': '+error);return;}}const response={at:Date.now(),questions:[...c.questions],answers};if(c.quiz){const g=scoreResponse(c.fields,answers);if(g.total){Object.assign(response,g);notify(`Nota: ${g.score} de ${g.total}.`);}}c.responses.push(response);setDirty();formEditor(root,c);},'submit');
+  bind('respond-form',e=>{e.preventDefault();if(c.responses.length>=1000)return notify('Limite de 1000 respostas.');const answers=canonicalAnswers(c.fields,collectAnswers(e.target,c.fields)),visible=visibleQuestions(c.fields,answers);for(let i=0;i<answers.length;i++){if(!visible[i])continue;const error=answerError(answers[i],c.fields[i]);if(error){notify('Pergunta '+(i+1)+': '+error);return;}}const response={at:Date.now(),questions:[...c.questions],answers};if(c.quiz){const g=scoreResponse(c.fields,answers);if(g.total){Object.assign(response,g);notify(`Nota: ${g.score} de ${g.total}.`);}}c.responses.push(response);setDirty();formEditor(root,c);},'submit');
   const responseRows=()=>responseTable(c,date);
   bind('form-csv',()=>{const data=responseRows();download(current.title+'-respostas.csv',toCSV(safeCsv([data.columns,...data.rows])),'text/csv');});
   bind('form-table',()=>{if(!c.responses.length)return notify('Registre uma resposta primeiro.');const data=responseRows();if(data.columns.length>26||data.rows.length>200)return notify('A tabela aceita 26 campos e 200 registros. Use Respostas → Planilha ou Baixar respostas CSV para levar todos os dados.');convert('table',data,' — Respostas');});
   bind('form-sheet',()=>{try{if(!c.responses.length)return notify('Registre uma resposta primeiro.');const data=responseRows();convert('sheet',{workbook:recordsWorkbook(data.columns,data.rows)},' — Respostas');}catch(e){notify(e.message);}});
   bind('form-publish',publicationDialog);
+  mountFormConditions(root,c,{dialog:showDialog,close:closeDialog,esc,dirty:setDirty,render:()=>formEditor(root,c)});
+  bindConditionalAnswers(root.querySelector('#respond-form'),c.fields);
+  applyEditorPermissions(root);
 }
 async function publicationDialog() {
-  if(dirty){await save();if(dirty)return;}
+  if(dirty||current.unsaved){await save();if(dirty||current.unsaved)return;}
   try {
     const state=await api('/api/items/'+current.id+'/publication');
     const url=state.token?location.origin+'/?form='+state.token:'';
@@ -1161,7 +1284,8 @@ async function publicationDialog() {
 async function publicForm(token) {
   const data=await api('/api/forms/'+encodeURIComponent(token));
   app.innerHTML=`<main class="public-form"><div class="brand"><span class="brand-name">DRAP <span>office</span></span></div><h1>${esc(data.title)}</h1><form id="public-response">${data.questions.map((q,i)=>answerField(q,data.fields[i],i)).join('')}<p id="public-response-error" class="error" role="alert"></p><button class="primary">Enviar resposta</button></form></main>`;
-  bind('public-response',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;const answers=collectAnswers(e.target,data.fields);const invalid=answers.map((a,i)=>answerError(a,data.fields[i])).findIndex(Boolean);if(invalid>=0){document.querySelector('#public-response-error').textContent='Pergunta '+(invalid+1)+': '+answerError(answers[invalid],data.fields[invalid]);button.disabled=false;return;}try{const result=await api('/api/forms/'+encodeURIComponent(token),{answers,schema_id:data.schema_id});e.target.innerHTML='<h2>Resposta enviada</h2><p>Sua resposta foi registrada. Obrigado!</p>'+(result.total?`<p id="quiz-score"><strong>Sua nota: ${result.score} de ${result.total}</strong></p>`:'');}catch(err){document.querySelector('#public-response-error').textContent=err.message;button.disabled=false;}},'submit');
+  bindConditionalAnswers(document.querySelector('#public-response'),data.fields);
+  bind('public-response',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;const answers=canonicalAnswers(data.fields,collectAnswers(e.target,data.fields)),visible=visibleQuestions(data.fields,answers);const invalid=answers.map((a,i)=>visible[i]?answerError(a,data.fields[i]):'').findIndex(Boolean);if(invalid>=0){document.querySelector('#public-response-error').textContent='Pergunta '+(invalid+1)+': '+answerError(answers[invalid],data.fields[invalid]);button.disabled=false;return;}try{const result=await api('/api/forms/'+encodeURIComponent(token),{answers,schema_id:data.schema_id});e.target.innerHTML='<h2>Resposta enviada</h2><p>Sua resposta foi registrada. Obrigado!</p>'+(result.total?`<p id="quiz-score"><strong>Sua nota: ${result.score} de ${result.total}</strong></p>`:'');}catch(err){document.querySelector('#public-response-error').textContent=err.message;button.disabled=false;}},'submit');
 }
 const tableStates=new Map();
 function tableEditor(root, c) {
@@ -1174,12 +1298,13 @@ function tableEditor(root, c) {
   const validValue=(value,type)=>!value || type==='text' || (type==='number' && Number.isFinite(Number(value))) || (type==='date' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))) || (type==='email' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value));
   root.querySelectorAll('[data-column-type]').forEach(n=>n.onchange=()=>{const index=+n.dataset.columnType;if(c.rows.some(r=>!validValue(r[index],n.value))){n.value=c.types[index];return notify('Existem valores incompatíveis com esse tipo. Corrija os registros primeiro.');}c.types[index]=n.value;setDirty();tableEditor(root,c);});
   root.querySelectorAll('[data-sort-column]').forEach(n=>n.onclick=()=>{const index=+n.dataset.sortColumn;state.direction=state.sort===index?-state.direction:1;state.sort=index;c.rows.sort((a,b)=>(c.types[index]==='number'?Number(a[index])-Number(b[index]):a[index].localeCompare(b[index],'pt-BR',{numeric:true}))*state.direction);setDirty();tableEditor(root,c);});
-  root.querySelectorAll('[data-drop-column]').forEach(n=>n.onclick=async()=>{if(c.columns.length<2||!(await askConfirm('Excluir campo?', 'O campo e seus valores serão removidos.')))return;const index=+n.dataset.dropColumn;c.columns.splice(index,1);c.types.splice(index,1);c.rows.forEach(r=>r.splice(index,1));setDirty();tableEditor(root,c);});
+  root.querySelectorAll('[data-drop-column]').forEach(n=>n.onclick=async()=>{if(c.columns.length<2||!(await askConfirm('Excluir campo?', 'O campo, seus valores e os vínculos que usam este campo serão removidos.')))return;const index=+n.dataset.dropColumn;c.relations=(c.relations||[]).filter(r=>r.sourceColumn!==index).map(r=>({...r,sourceColumn:r.sourceColumn>index?r.sourceColumn-1:r.sourceColumn}));c.columns.splice(index,1);c.types.splice(index,1);c.rows.forEach(r=>r.splice(index,1));setDirty();tableEditor(root,c);});
   bind('table-deduplicate',()=>{const seen=new Set();c.rows=c.rows.filter(r=>{const key=JSON.stringify(r);if(seen.has(key))return false;seen.add(key);return true;});setDirty();tableEditor(root,c);});
   root.querySelectorAll("[data-column]").forEach(
     (n) =>
       (n.oninput = () => {
         c.columns[+n.dataset.column] = n.value;
+        for(const r of c.relations||[])if(r.sourceColumn===+n.dataset.column)r.sourceName=n.value;
         setDirty();
       }),
   );
@@ -1218,28 +1343,34 @@ function tableEditor(root, c) {
   );
   const filter=()=>root.querySelectorAll('[data-table-row]').forEach(n=>n.hidden=!c.rows[+n.dataset.tableRow].join(' ').toLowerCase().includes(state.filter.toLowerCase()));
   bind('table-filter',e=>{state.filter=e.target.value;filter();},'input');filter();
-  bind('table-import',()=>pickFile('.csv',text=>{try{const parsed=parseCSV(text,{maxRows:201,maxCols:26,minCols:1});const columns=parsed[0],rows=parsed.slice(1);if(!columns?.length||!rows.length)throw Error('Use uma linha de cabeçalhos e pelo menos um registro.');if(c.rows.length+rows.length>200)throw Error('A tabela aceita até 200 registros.');if(c.rows.length&&JSON.stringify(columns)!==JSON.stringify(c.columns))throw Error('Os cabeçalhos do CSV precisam corresponder aos campos da tabela.');const types=c.rows.length?c.types:columns.map(()=> 'text');if(rows.some(r=>r.length!==columns.length||r.some((value,i)=>!validValue(value,types[i]))))throw Error('O CSV contém linhas ou tipos incompatíveis.');c.columns=columns;c.types=types;c.rows.push(...rows);setDirty();tableEditor(root,c);notify(rows.length+' registros importados.');}catch(e){notify(e.message);}}));
+  bind('table-import',()=>pickFile('.csv',text=>{try{const parsed=parseCSV(text,{maxRows:201,maxCols:26,minCols:1});const columns=parsed[0],rows=parsed.slice(1);if(!columns?.length||!rows.length)throw Error('Use uma linha de cabeçalhos e pelo menos um registro.');if(c.rows.length+rows.length>200)throw Error('A tabela aceita até 200 registros.');if((c.rows.length||c.relations?.length)&&JSON.stringify(columns)!==JSON.stringify(c.columns))throw Error('Os cabeçalhos do CSV precisam corresponder aos campos da tabela.');const types=c.rows.length?c.types:columns.map(()=> 'text');if(rows.some(r=>r.length!==columns.length||r.some((value,i)=>!validValue(value,types[i]))))throw Error('O CSV contém linhas ou tipos incompatíveis.');c.columns=columns;c.types=types;c.rows.push(...rows);setDirty();tableEditor(root,c);notify(rows.length+' registros importados.');}catch(e){notify(e.message);}}));
   bind("table-sheet", () =>
     convert("sheet", { workbook: recordsWorkbook(c.columns,c.rows,c.types) }, " — Planilha"),
   );
+  mountTableRelations(root,current,{api,esc,dirty:setDirty,isDirty:()=>dirty,dialog:showDialog,close:closeDialog,notify,items,render:()=>tableEditor(root,c)});
+  applyEditorPermissions(root);
 }
 function diagramEditor(root,c) {
+  root.classList.add('diagram-editor');
   c.nodes ??=[];
   c.positions ??=c.nodes.map((_,i)=>({x:35+(i%5)*190,y:35+Math.floor(i/5)*90}));
+  c.shapes ??=c.nodes.map(()=> 'process');
   c.edges ??=c.nodes.slice(1).map((_,i)=>({from:i,to:i+1}));
-  const svgContent=()=>`<defs><marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5320"/></marker></defs>${c.edges.map((e,i)=>{const a=c.positions[e.from],b=c.positions[e.to];return `<line data-edge-line="${i}" x1="${a.x+80}" y1="${a.y+30}" x2="${b.x+80}" y2="${b.y+30}" stroke="#4b5320" stroke-width="2" marker-end="url(#flow-arrow)"/>`;}).join('')}${c.nodes.map((n,i)=>`<g class="node" data-drag-node="${i}" transform="translate(${c.positions[i].x},${c.positions[i].y})" tabindex="0" role="button" aria-label="Mover etapa ${esc(n)}"><rect width="160" height="60" rx="10" fill="#f2f4e9" stroke="#4b5320" stroke-width="2"/><text x="80" y="35" text-anchor="middle" fill="#283215" font-size="14">${esc(n.slice(0,20))}</text></g>`).join('')}`;
-  root.innerHTML=`<div class="toolbar"><button id="diagram-svg">Baixar SVG</button><button id="diagram-layout">Organizar etapas</button></div><p class="muted">Arraste as etapas ou use as setas do teclado para posicioná-las. Crie conexões entre quaisquer etapas.</p><div class="diagram-canvas"><svg id="flow-canvas" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 ${Math.max(600,...c.positions.map(p=>p.y+100))}" role="img" aria-label="Diagrama de processos">${svgContent()}</svg></div><form id="connect-nodes" class="toolbar"><label>Origem<select name="from">${c.nodes.map((n,i)=>`<option value="${i}">${esc(n)}</option>`).join('')}</select></label><label>Destino<select name="to">${c.nodes.map((n,i)=>`<option value="${i}" ${i===1?'selected':''}>${esc(n)}</option>`).join('')}</select></label><button ${c.nodes.length<2?'disabled':''}>Conectar etapas</button></form><details><summary>Conexões (${c.edges.length})</summary>${c.edges.map((e,i)=>`<div class="row"><span>${esc(c.nodes[e.from])} → ${esc(c.nodes[e.to])}</span><button data-remove-edge="${i}">Remover conexão</button></div>`).join('')}</details><div class="stack">${c.nodes.map((n,i)=>`<div class="row"><input data-node="${i}" value="${esc(n)}" aria-label="Etapa ${i+1}"><button data-delete-node="${i}">Excluir</button></div>`).join('')}<button id="add-node">＋ Etapa</button></div>`;
+  const svgContent=()=>`<defs><marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5320"/></marker></defs>${c.edges.map((e,i)=>{const g=edgeGeometry(c.positions[e.from],c.positions[e.to],c.shapes[e.from],c.shapes[e.to]);return `<line data-edge-line="${i}" x1="${g.x1}" y1="${g.y1}" x2="${g.x2}" y2="${g.y2}" stroke="#4b5320" stroke-width="2" marker-end="url(#flow-arrow)"/><text data-edge-label="${i}" x="${g.labelX}" y="${g.labelY}" text-anchor="middle" fill="#283215" font-size="13">${esc(e.label||'')}</text>`;}).join('')}${c.nodes.map((n,i)=>`<g class="node" data-drag-node="${i}" transform="translate(${c.positions[i].x},${c.positions[i].y})" tabindex="0" role="button" aria-label="Mover etapa ${esc(n)}">${nodeShape(c.shapes[i])}<title>${esc(n)}</title><text x="80" y="35" text-anchor="middle" fill="#283215" font-size="14">${esc(n.slice(0,20))}</text></g>`).join('')}`;
+  root.innerHTML=`<div class="toolbar"><button id="diagram-svg">Baixar SVG</button><button id="diagram-layout">Organizar etapas</button><select id="diagram-template" aria-label="Modelo de diagrama">${Object.entries(DIAGRAM_TEMPLATES).map(([key,name])=>`<option value="${key}">${esc(name)}</option>`).join('')}</select><button id="diagram-create-template">Criar novo a partir do modelo</button></div><p class="muted">Arraste as etapas ou use as setas do teclado para posicioná-las. Crie conexões entre quaisquer etapas.</p><div class="diagram-canvas"><svg id="flow-canvas" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 ${Math.max(600,...c.positions.map(p=>p.y+100))}" role="img" aria-label="Diagrama de processos">${svgContent()}</svg></div><form id="connect-nodes" class="toolbar"><label>Origem<select name="from">${c.nodes.map((n,i)=>`<option value="${i}">${esc(n)}</option>`).join('')}</select></label><label>Destino<select name="to">${c.nodes.map((n,i)=>`<option value="${i}" ${i===1?'selected':''}>${esc(n)}</option>`).join('')}</select></label><label>Rótulo da conexão<input name="label" maxlength="100"></label><button ${c.nodes.length<2?'disabled':''}>Conectar etapas</button></form><details><summary>Conexões (${c.edges.length})</summary>${c.edges.map((e,i)=>`<div class="row"><span>${esc(c.nodes[e.from])} → ${esc(c.nodes[e.to])}${e.label?' · '+esc(e.label):''}</span><button data-remove-edge="${i}">Remover conexão</button></div>`).join('')}</details><div class="stack">${c.nodes.map((n,i)=>`<div class="row"><input data-node="${i}" value="${esc(n)}" aria-label="Etapa ${i+1}"><select data-node-shape="${i}" aria-label="Forma da etapa ${i+1}">${Object.entries(DIAGRAM_SHAPES).map(([key,name])=>`<option value="${key}" ${c.shapes[i]===key?'selected':''}>${name}</option>`).join('')}</select><button data-delete-node="${i}">Excluir</button></div>`).join('')}<button id="add-node">＋ Etapa</button></div>`;
   root.querySelectorAll('[data-node]').forEach(n=>n.onchange=()=>{c.nodes[+n.dataset.node]=n.value;setDirty();diagramEditor(root,c);});
-  root.querySelectorAll('[data-delete-node]').forEach(n=>n.onclick=()=>{const i=+n.dataset.deleteNode;c.nodes.splice(i,1);c.positions.splice(i,1);c.edges=c.edges.filter(e=>e.from!==i&&e.to!==i).map(e=>({from:e.from>i?e.from-1:e.from,to:e.to>i?e.to-1:e.to}));setDirty();diagramEditor(root,c);});
+  root.querySelectorAll('[data-delete-node]').forEach(n=>n.onclick=()=>{const i=+n.dataset.deleteNode;c.nodes.splice(i,1);c.positions.splice(i,1);c.shapes.splice(i,1);c.edges=c.edges.filter(e=>e.from!==i&&e.to!==i).map(e=>({...e,from:e.from>i?e.from-1:e.from,to:e.to>i?e.to-1:e.to}));setDirty();diagramEditor(root,c);});
   root.querySelectorAll('[data-remove-edge]').forEach(n=>n.onclick=()=>{c.edges.splice(+n.dataset.removeEdge,1);setDirty();diagramEditor(root,c);});
-  bind('add-node',()=>{if(c.nodes.length>=100)return notify('Limite de 100 etapas.');const i=c.nodes.length;c.nodes.push('Nova etapa');c.positions.push({x:35+(i%5)*190,y:Math.min(1900,35+Math.floor(i/5)*90)});setDirty();diagramEditor(root,c);});
-  bind('connect-nodes',e=>{e.preventDefault();const data=new FormData(e.target),from=Number(data.get('from')),to=Number(data.get('to'));if(from===to||c.edges.some(e=>e.from===from&&e.to===to))return notify('Escolha etapas diferentes e uma conexão nova.');if(c.edges.length>=300)return notify('Limite de 300 conexões.');c.edges.push({from,to});setDirty();diagramEditor(root,c);},'submit');
+  bind('add-node',()=>{if(c.nodes.length>=100)return notify('Limite de 100 etapas.');const i=c.nodes.length;c.nodes.push('Nova etapa');c.shapes.push('process');c.positions.push({x:35+(i%5)*190,y:Math.min(1900,35+Math.floor(i/5)*90)});setDirty();diagramEditor(root,c);});
+  bind('connect-nodes',e=>{e.preventDefault();const data=new FormData(e.target),from=Number(data.get('from')),to=Number(data.get('to'));if(from===to||c.edges.some(e=>e.from===from&&e.to===to))return notify('Escolha etapas diferentes e uma conexão nova.');if(c.edges.length>=300)return notify('Limite de 300 conexões.');c.edges.push({from,to,label:data.get('label').trim()});setDirty();diagramEditor(root,c);},'submit');
+  root.querySelectorAll('[data-node-shape]').forEach(n=>n.onchange=()=>{c.shapes[+n.dataset.nodeShape]=n.value;setDirty();diagramEditor(root,c);});
+  bind('diagram-create-template',async()=>{try{const item=await api('/api/items',diagramTemplate(root.querySelector('#diagram-template').value));await refresh();await openItem(item.id);}catch(error){notify(error.message);}});
   bind('diagram-layout',()=>{c.positions=c.nodes.map((_,i)=>({x:35+(i%5)*190,y:Math.min(1900,35+Math.floor(i/5)*90)}));setDirty();diagramEditor(root,c);});
   bind('diagram-svg',()=>download(current.title+'.svg','<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 '+Math.max(600,...c.positions.map(p=>p.y+100))+'">'+svgContent()+'</svg>','image/svg+xml'));
   const canvas=root.querySelector('#flow-canvas');
   const redrawPositions=()=>{
     root.querySelectorAll('[data-drag-node]').forEach(n=>{const p=c.positions[+n.dataset.dragNode];n.setAttribute('transform',`translate(${p.x},${p.y})`);});
-    root.querySelectorAll('[data-edge-line]').forEach(n=>{const e=c.edges[+n.dataset.edgeLine],a=c.positions[e.from],b=c.positions[e.to];for(const[k,v]of Object.entries({x1:a.x+80,y1:a.y+30,x2:b.x+80,y2:b.y+30}))n.setAttribute(k,v);});
+    root.querySelectorAll('[data-edge-line]').forEach(n=>{const i=+n.dataset.edgeLine,e=c.edges[i],g=edgeGeometry(c.positions[e.from],c.positions[e.to],c.shapes[e.from],c.shapes[e.to]);for(const k of ['x1','y1','x2','y2'])n.setAttribute(k,g[k]);const label=root.querySelector(`[data-edge-label="${i}"]`);label.setAttribute('x',g.labelX);label.setAttribute('y',g.labelY);});
   };
   root.querySelectorAll('[data-drag-node]').forEach(n=>{
     n.onkeydown=e=>{if(current.role==='read'||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();const p=c.positions[+n.dataset.dragNode],step=e.shiftKey?50:10;p.x=Math.max(0,Math.min(840,p.x+(e.key==='ArrowLeft'?-step:e.key==='ArrowRight'?step:0)));p.y=Math.max(0,Math.min(1900,p.y+(e.key==='ArrowUp'?-step:e.key==='ArrowDown'?step:0)));setDirty();redrawPositions();canvas.setAttribute("viewBox","0 0 1000 "+Math.max(600,...c.positions.map(p=>p.y+100)));};
@@ -1290,9 +1421,9 @@ function portalEditor(root, c) {
   );
 }
 async function convert(kind, content, suffix) {
-  if (dirty) {
+  if (dirty||current.unsaved) {
     await save();
-    if (dirty) return;
+    if (dirty||current.unsaved) return;
   }
   try {
     if (kind === "slides" && !content.slides.length)
@@ -1303,8 +1434,7 @@ async function convert(kind, content, suffix) {
       content,
     });
     dirty = false;
-    await refresh();
-    await openItem(i.id);
+    await openItem(i.id,i);
     notify("Novo arquivo criado. O original foi preservado.");
   } catch (e) {
     notify(e.message);
@@ -1501,22 +1631,21 @@ function importBackup() {
     }
   },64_000_000);
 }
-function analytics() {
-  const active = items.filter((i) => !i.deleted),
-    tasks = active
-      .filter((i) => i.kind === "board")
-      .flatMap((i) => i.content.tasks || []),
-    done = tasks.filter((t) => t.status === "Concluído").length,
-    responses = active
-      .filter((i) => i.kind === "form")
-      .reduce((s, i) => s + (i.content.responses || []).length, 0);
+async function analytics() {
+  const sequence=navigationSequence;
+  shell('<p class="loading-files" role="status">Carregando indicadores…</p>');
+  let metrics;
+  try {metrics=await api('/api/analytics');}
+  catch(error) {if(sequence===navigationSequence)notify(error.message);return;}
+  if(sequence!==navigationSequence||current||view!=='analytics')return;
+  const {active,tasks,done,responses,by_kind}=metrics;
   shell(
     `<p class="eyebrow">DADOS DO SEU ESPAÇO</p><h1>Uma visão do que acontece.</h1><p class="muted">Indicadores calculados a partir dos arquivos aos quais você tem acesso.</p><div class="metrics">${[
-      ["Arquivos ativos", active.length],
-      ["Tarefas concluídas", `${done}/${tasks.length}`],
+      ["Arquivos ativos", active],
+      ["Tarefas concluídas", `${done}/${tasks}`],
       [
         "Conclusão de tarefas",
-        `${tasks.length ? Math.round((done / tasks.length) * 100) : 0}%`,
+        `${tasks ? Math.round((done / tasks) * 100) : 0}%`,
       ],
       ["Respostas coletadas", responses],
     ]
@@ -1531,10 +1660,17 @@ function analytics() {
     )
       .map(
         ([k, t]) =>
-          `<div class="row between"><span>${t.name}</span><strong>${active.filter((i) => i.kind === k).length}</strong></div>`,
+          `<div class="row between"><span>${t.name}</span><strong>${by_kind[k]||0}</strong></div>`,
       )
       .join("")}</div></section>`,
   );
+}
+function assistantPage() {
+  shell('<p class="eyebrow">ASSISTENTE DE IA</p><h1>Trabalhe com o Gemini.</h1><section id="ai-assistant" class="editor"></section>');
+  mountAssistant(document.querySelector('#ai-assistant'),{api,esc,notify,items,saveDocument:async text=>{
+    const item=await api('/api/items',{kind:'document',title:'Resultado do Gemini',content:{text}});
+    await refresh();await openItem(item.id);
+  }});
 }
 function automation() {
   shell(
@@ -1562,53 +1698,53 @@ function automation() {
       )
       .join(
         "",
-      )}</div><h2 class="section-head">Serviços externos</h2><div class="card"><h3>E-mail, reuniões, armazenamento remoto e IA</h3><p class="muted">Não conectados. Nenhuma mensagem ou arquivo é enviado para terceiros. As próximas etapas exigem seleção dos provedores, OAuth, contratos de integração e testes. Não são simulados como serviços ativos.</p></div>`,
+      )}</div><h2 class="section-head">Serviços externos</h2><div class="card"><h3>Serviços externos e Gemini</h3><p class="muted">Use Gemini no menu lateral para gerar, resumir ou analisar. A disponibilidade depende da autenticação e dos créditos configurados no servidor. Correio, reuniões e armazenamento externo continuam sem conexão.</p></div>`,
   );
 }
 function coverage() {
   shell(
-    `<p class="eyebrow">ESCOPO TRANSPARENTE</p><h1>Uma plataforma em evolução.</h1><p class="muted">A lista enviada define a direção da suíte. Esta versão implementa um núcleo próprio, sem equivalência completa com Microsoft 365.</p><div class="coverage">${[
+    `<p class="eyebrow">ESCOPO TRANSPARENTE</p><h1>Uma plataforma em evolução.</h1><p class="muted">A lista enviada define a direção da suíte. Esta versão implementa um núcleo próprio, sem equivalência completa com Microsoft 365 ou Google Workspace.</p><div class="coverage">${[
       [
         "Documentos e notas",
         "Disponível",
-        "Edição visual, títulos, negrito/itálico, listas, tabelas editáveis, links, imagens, checklist, desfazer/refazer, busca/substituição, Markdown, DOCX e impressão.",
-        "Também: sumário automático, quebra de página, cabeçalho, rodapé e numeração de páginas na impressão/PDF e no DOCX. Pendentes: bibliografia, mala direta e revisão com alterações rastreadas.",
+        "Edição visual, títulos, negrito/itálico, listas, tabelas editáveis, links, imagens, checklist, desfazer/refazer, busca/substituição, Markdown, DOCX e impressão. Estrutura, contagem, página, fonte/tamanho/cor por trecho, sublinhado, tachado, sobrescrito/subscrito, recuos, abas, sumário atualizável, notas de rodapé, cabeçalho/rodapé, numeração no DOCX, mesclagem, modelos e HTML formatado.",
+        "Pendentes: paginação profissional, bibliografia, mala direta e revisão com alterações rastreadas.",
       ],
       [
         "Planilhas",
         "Disponível",
-        "Editor Univer: múltiplas abas, intervalos, fórmulas, desfazer/refazer, formatação, mesclagem, ordenação, filtros, validação, formatação condicional, gráficos de colunas, colunas empilhadas, barras, linhas, área, pizza, rosca e dispersão com até 6 séries, tabelas dinâmicas com subgrupos e subtotais, vínculos de células para arquivos e sites, CSV e XLSX.",
-        "Pendentes: pivôs nativos no XLSX, Solver, DAX, Power Query, macros e equivalência de todas as funções Excel.",
+        "Editor Univer: múltiplas abas, intervalos, fórmulas, desfazer/refazer, formatação, mesclagem, ordenação, filtros, validação, formatação condicional, gráficos de colunas, linhas, pizza, área, rosca, barras, dispersão e radar, proteção de intervalos validada no servidor, tabelas dinâmicas, CSV e XLSX. Limpeza de espaços, duplicatas e linhas vazias, divisão em colunas, transposição, substituição e estatísticas.",
+        "Gráficos com até seis séries e pivôs com subgrupos/subtotais disponíveis. Pendentes: pivôs nativos no XLSX, Solver, DAX, Power Query, macros e equivalência de todas as funções Excel.",
       ],
       [
         "Apresentações",
         "Disponível",
-        "Slides, imagens, caixas de texto, formas, arrastar/redimensionar, camadas, desfazer/refazer, temas, reordenação, notas, apresentação por teclado e PPTX com imagens e objetos editáveis.",
-        "Pendentes: áudio/vídeo, mestre, animações, transições, recorte avançado e exportação de vídeo.",
+        "Slides, imagens, caixas de texto, formas, arrastar/redimensionar, camadas, desfazer/refazer, temas, reordenação, notas, apresentação por teclado e PPTX com imagens e objetos editáveis. Fundos, alinhamento, distribuição, slides ocultos, transições, notas durante apresentação, cronômetro e avanço automático. Console separado da janela do público, rotação, agrupamento, seleção múltipla, layout em duas colunas e estilo para novos slides.",
+        "Pendentes: áudio/vídeo, mestre completo com layouts herdados, animações de objetos, transições avançadas, recorte avançado e exportação de vídeo.",
       ],
       [
         "Projetos e agenda",
         "Disponível",
-        "Kanban, cronograma (Gantt), dependências, marcos, caminho crítico e folga, responsáveis, prioridades, subtarefas, agenda, geração de repetições e arquivos ICS.",
-        "Pendentes: recursos e custos, linhas de base, notificações e convites externos.",
+        "Kanban, Gantt, dependências, marcos, caminho crítico, horas e custos, linha de base com desvios, capacidade diária e sobrecarga por responsável; agenda, repetições e ICS.",
+        "Pendentes: nivelamento automático de recursos, calendários de trabalho/feriados, notificações e convites externos.",
       ],
       [
         "Formulários e tabelas",
         "Disponível",
-        "Formulários tipados com múltipla seleção, escala e quizzes com nota automática (gabarito privado), coleta pública revogável, respostas persistentes; tabelas com tipos, ordenação, filtro e deduplicação.",
-        "Pendentes: anexos, ramificação condicional, relacionamentos e consultas entre tabelas.",
+        "Formulários tipados com texto longo, avaliação, múltipla seleção e escala, quizzes com gabarito privado e correção no servidor, coleta pública revogável, respostas e notas exportáveis; tabelas com tipos, ordenação, filtro e deduplicação.",
+        "Pendentes: anexos nas respostas, ramificação condicional e consultas analíticas avançadas. Relacionamentos por igualdade entre tabelas já permitem consultar registros vinculados com controle de acesso.",
       ],
       [
         "Diagramas e portais",
         "Disponível",
-        "Canvas de etapas com arraste, teclado, conexões e SVG; portais com texto estruturado e links autorizados.",
-        "Pendentes: bibliotecas BPMN, formas especializadas e publicação de intranet.",
+        "Canvas, arraste, teclado, cinco formas, conexões rotuladas, modelos de fluxograma/organograma/arquitetura e SVG; portais com texto estruturado e links autorizados.",
+        "Pendentes: semântica BPMN, bibliotecas de engenharia, plantas e publicação de intranet.",
       ],
       [
         "Arquivos e colaboração",
         "Disponível",
         "Histórico, lixeira, rascunhos locais recuperáveis, comentários, acessos listáveis e conflitos de versões.",
-        "Pendentes: armazenamento binário geral, leitura e sincronização de arquivos sem internet, coautoria em tempo real e criptografia de arquivos.",
+        "Anexos de até 1 MB, vínculos e inserção de documentos pelo botão ＋ Inserir estão disponíveis. Pendentes: armazenamento de arquivos grandes, sincronização offline completa, coautoria em tempo real e criptografia de arquivos.",
       ],
       [
         "BI e automação",
@@ -1617,10 +1753,10 @@ function coverage() {
         "Pendentes: modelagem analítica, conectores, agendamento e designer de fluxos.",
       ],
       [
-        "Correio, reuniões e IA",
-        "Planejado",
-        "Requisitos identificados; nenhum provedor conectado.",
-        "SMTP/IMAP ou APIs, OAuth, WebRTC, telefonia, OCR e IA exigem implementações dedicadas.",
+        "Gemini e serviços externos",
+        "Parcial",
+        "Gemini disponível sob demanda quando autenticado e com créditos no servidor.",
+        "Gemini: geração, resumo e análise sob demanda, com resultado revisável. Correio externo e reuniões externas permanecem desconectados.",
       ],
       [
         "Segurança e operação",
@@ -1652,7 +1788,7 @@ document.addEventListener("keydown", (e) => {
 try {
   const formToken=new URLSearchParams(location.search).get('form');
   if (formToken) await publicForm(formToken);
-  else { user = await api("/api/me"); await refresh(); render(); askRecoverySetup(); }
+  else { const initial=await api("/api/bootstrap"); user=initial.user; items=await allPages("/api/library",initial); render(); askRecoverySetup(); }
 } catch (e) {
   if (e.status === 401) auth();
   else if (e.offline) {
@@ -1673,9 +1809,7 @@ addEventListener("online", connectionNotice);
 addEventListener("offline", connectionNotice);
 if (!navigator.onLine) document.body.classList.add("offline");
 // isSecureContext covers HTTPS and localhost; the worker only caches the app shell.
-if ("serviceWorker" in navigator && window.isSecureContext) {
-  navigator.serviceWorker.register("/sw.js").catch(() => {});
-}
+
 
 async function importOffice() {
   if (!(await leave())) return;
@@ -1694,8 +1828,7 @@ async function importOffice() {
         reader.readAsDataURL(file);
       });
       const result = await api('/api/import', {name: file.name, data});
-      await refresh();
-      await openItem(result.item.id);
+      await openItem(result.item.id,result.item);
       showDialog('<h2>Arquivo importado</h2>' + result.warnings.map(w => '<p>' + esc(w) + '</p>').join('') + '<button id="import-done" class="primary">Continuar edição</button>', () => bind('import-done', closeDialog));
     } catch (e) { notify(e.message); }
   };
@@ -1703,25 +1836,28 @@ async function importOffice() {
 }
 async function exportOffice() {
   await spreadsheet?.flush();
-  if (dirty) {
+  if (!current.unsaved && dirty) {
     await save();
     if (dirty) return;
   }
   const extension = {document:'docx',note:'docx',sheet:'xlsx',table:'xlsx',slides:'pptx',calendar:'ics'}[current.kind];
   try {
-    const response = await fetch('/api/items/' + current.id + '/export?format=' + extension);
+    const response = current.unsaved
+      ? await fetch('/api/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:current.kind,title:current.title||TYPES[current.kind].single+' sem título',content:current.content,format:extension})})
+      : await fetch('/api/items/' + current.id + '/export?format=' + extension);
     if (!response.ok) {
       const error = await response.json();
       throw Error(error.error || 'Falha na exportação.');
     }
-    download(current.title + '.' + extension, await response.blob(), response.headers.get('Content-Type'));
+    download((current.title||TYPES[current.kind].single+' sem título') + '.' + extension, await response.blob(), response.headers.get('Content-Type'));
+    if(current.content.attachments?.length)notify('Arquivo Office exportado. Anexos e vínculos permanecem no DRAP e na exportação JSON.');
   } catch (e) { notify(e.message); }
 }
 
 function draftKey() { return 'drap:draft:'+user.id+':'+current.id; }
 function stashDraft() {
   if (!user || !current || !dirty || current.role==='read') return;
-  try { localStorage.setItem(draftKey(),JSON.stringify({title:current.title,content:current.content,version:current.version,deleted:current.deleted})); }
+  try { localStorage.setItem(draftKey(),JSON.stringify({title:current.title,content:current.content,version:current.version,deleted:current.deleted,kind:current.kind,unsaved:!!current.unsaved})); }
   catch { if(!stashDraft.warned) { notify('Não foi possível guardar o rascunho neste navegador. Salve ou exporte seu arquivo.'); stashDraft.warned=true; } }
 }
 async function commentsDialog() {
