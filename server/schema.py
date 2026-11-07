@@ -3,9 +3,11 @@ from datetime import datetime, timezone
 import math
 import re
 from server.store import InvalidInput
+from server.rich_document import valid_rich,valid_tabs
 from server.pivots import valid_pivots
-from server.document_io import valid_images
-from server.slides_io import valid_objects
+from server.attachments import valid_attachments
+from server.document_io import valid_images, valid_page
+from server.slides_io import valid_objects, valid_slide_options
 
 
 DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
@@ -23,10 +25,14 @@ def valid_task_schedule(t):
         return False
     if start and DATE.match(t.get('due', '')) and not t.get('milestone') and start > t['due']:
         return False
+    for field in ('plannedHours', 'actualHours', 'hourlyRate', 'fixedCost'):
+        value = t.get(field, 0)
+        if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 100_000:
+            return False
     task_id = t.get('id', '')
-    depends = t.get('depends', [])
-    return (isinstance(task_id, str) and len(task_id) <= 20 and isinstance(depends, list) and len(depends) <= 50
-            and all(isinstance(d, str) and len(d) <= 20 for d in depends))
+    depends = t.get('depends', t.get('dependsOn', []))
+    return (isinstance(task_id, str) and len(task_id) <= 100 and isinstance(depends, list) and len(depends) <= 50
+            and all(isinstance(d, str) and len(d) <= 100 for d in depends))
 
 
 def valid_task_graph(tasks):
@@ -34,7 +40,7 @@ def valid_task_graph(tasks):
     ids = [t.get('id') for t in tasks if t.get('id')]
     if len(ids) != len(set(ids)):
         return False
-    graph = {t['id']: t.get('depends', []) for t in tasks if t.get('id')}
+    graph = {t['id']: t.get('depends', t.get('dependsOn', [])) for t in tasks if t.get('id')}
     if any(t.get('depends') and not t.get('id') for t in tasks):
         return False
     if any(d not in graph or d == node for node, deps in graph.items() for d in deps):
@@ -61,7 +67,7 @@ def valid_task_graph(tasks):
 
 def valid_form_field(f):
     kind = f.get('type')
-    if kind not in ('text', 'email', 'number', 'date', 'choice', 'multiple', 'scale') or type(f.get('required')) is not bool:
+    if kind not in ('text', 'longtext', 'rating', 'email', 'number', 'date', 'choice', 'multiple', 'scale') or type(f.get('required')) is not bool:
         return False
     options = f.get('options', [])
     if not isinstance(options, list) or len(options) > 50 or not all(isinstance(o, str) and len(o) <= 200 for o in options):
@@ -133,13 +139,13 @@ def valid_content(kind, c):
         except ValueError:
             return False
 
-    if not isinstance(c, dict):
+    if not isinstance(c, dict) or not valid_attachments(c.get("attachments", [])):
         return False
     if kind in ('document', 'note'):
-        return (isinstance(c.get('text'), str) and valid_images(c.get('images',[]))
-                and all(isinstance(c.get(k, ''), str) and len(c.get(k, '')) <= 200 for k in ('header', 'footer'))
-                and type(c.get('pageNumbers', False)) is bool)
+        return isinstance(c.get('text'), str) and valid_images(c.get('images',[])) and valid_page(c.get('page',{})) and ('rich' not in c or valid_rich(c['rich'])) and valid_tabs(c) and all(isinstance(c.get(k, ''), str) and len(c.get(k, '')) <= 200 for k in ('header', 'footer')) and type(c.get('pageNumbers', False)) is bool
     if kind == 'sheet':
+        from server.sheet_protection import valid_protection
+        if not valid_protection(c):return False
         if not valid_pivots(c.get('pivots',[])):return False
         if not valid_sheet_links(c.get('links', [])):return False
         if 'workbook' in c:
@@ -157,8 +163,14 @@ def valid_content(kind, c):
                 and len({s['name'].casefold() for s in sheets}) == len(sheets)
                 and rows == sheets[active]['cells'])
     if kind == 'slides':
-        return c.get('theme', 'light') in ('light', 'army', 'navy') and bool(c.get('slides')) and objects(c.get('slides'), lambda s: all(isinstance(s.get(k), str) for k in ('title', 'body', 'notes')) and valid_objects(s.get('objects',[])), 100)
+        return valid_slide_options(c.get('master',{})) and c.get('theme', 'light') in ('light', 'army', 'navy') and bool(c.get('slides')) and objects(c.get('slides'), lambda s: all(isinstance(s.get(k), str) for k in ('title', 'body', 'notes')) and valid_objects(s.get('objects',[])) and valid_slide_options(s), 100)
     if kind == 'board':
+        from server.project_tools import validate_dependencies, valid_planning
+        if not valid_planning(c):return False
+        if not isinstance(c.get('tasks'),list) or any(not isinstance(task,dict) for task in c['tasks']):return False
+        try:
+            if not validate_dependencies(c['tasks']):return False
+        except InvalidInput:return False
         return objects(c.get('tasks'), lambda t: isinstance(t.get('title'), str) and isinstance(t.get('due'), str)
                        and t.get('status') in ('A fazer', 'Em andamento', 'Concluído')
                        and t.get('priority', 'Normal') in ('Baixa', 'Normal', 'Alta', 'Urgente')
@@ -170,14 +182,18 @@ def valid_content(kind, c):
                        and isinstance(e.get('location', ''), str) and len(e.get('location', '')) <= 500
                        and isinstance(e.get('description', ''), str) and len(e.get('description', '')) <= 4000)
     if kind == 'form':
+        from server.forms import valid_quiz
+        if not valid_quiz(c):return False
         return (strings(c.get('questions'), 100)
                 and type(c.get('quiz', False)) is bool
                 and ('fields' not in c or (isinstance(c['fields'], list) and len(c['fields']) == len(c['questions']) and objects(c['fields'], valid_form_field, 100)))
                 and objects(c.get('responses'), lambda r: type(r.get('at')) in (int, float) and strings(r.get('answers'), 100) and strings(r.get('questions'), 100) and len(r['answers']) == len(r['questions'])
                             and all(k not in r or (type(r[k]) in (int, float) and math.isfinite(r[k]) and 0 <= r[k] <= 10000) for k in ('score', 'total'))))
     if kind == 'table':
+        from server.table_relations import valid_relations
         if not (strings(c.get('columns'), 26) and bool(c['columns']) and matrix(c.get('rows')) and all(len(r) == len(c['columns']) for r in c['rows'])):
             return False
+        if not valid_relations(c):return False
         types = c.get('types', ['text'] * len(c['columns']))
         if not strings(types, 26) or len(types) != len(c['columns']) or any(t not in ('text', 'number', 'date', 'email') for t in types):
             return False
@@ -197,8 +213,9 @@ def valid_content(kind, c):
         return True
     if kind == 'diagram':
         return (strings(c.get('nodes'), 100)
+                and ('shapes' not in c or (isinstance(c['shapes'],list) and len(c['shapes'])==len(c['nodes']) and all(isinstance(s,str) and s in ('process','decision','terminator','database','document') for s in c['shapes'])))
                 and ('positions' not in c or (objects(c['positions'], lambda p: all(type(p.get(k)) in (int, float) and 0 <= p[k] <= 2000 for k in ('x', 'y')), 100) and len(c['positions']) == len(c['nodes'])))
-                and ('edges' not in c or objects(c['edges'], lambda e: all(type(e.get(k)) is int and 0 <= e[k] < len(c['nodes']) for k in ('from', 'to')), 300)))
+                and ('edges' not in c or objects(c['edges'], lambda e: all(type(e.get(k)) is int and 0 <= e[k] < len(c['nodes']) for k in ('from', 'to')) and isinstance(e.get('label',''),str) and len(e.get('label','')) <= 100, 300)))
     if kind == 'portal':
         return isinstance(c.get('text'), str) and strings(c.get('links'), 100)
     return False
@@ -249,7 +266,7 @@ def valid_workbook(book):
     resources=book.get('resources',[])
     return isinstance(resources,list) and len(resources)<=50 and all(isinstance(r,dict) and isinstance(r.get('name'),str) and isinstance(r.get('data'),str) for r in resources)
 
-CHART_TYPES=('bar','stacked','hbar','line','area','pie','doughnut','scatter')
+CHART_TYPES=('bar','stacked','hbar','line','area','pie','doughnut','scatter','horizontal','radar')
 
 
 def valid_charts(charts,book):

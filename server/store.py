@@ -163,6 +163,7 @@ class Store:
         """Create or replace the secret question; the current password is required."""
         normalized = valid_recovery(question, answer)
         with self.connect() as db:
+            self.begin_write(db, "account:" + user_id)
             user = db.execute('SELECT salt, password FROM users WHERE id = ?', (user_id,)).fetchone()
             if not user or not isinstance(password, str) or not hmac.compare_digest(
                     self.password_hash(password, user['salt']), user['password']):
@@ -193,6 +194,8 @@ class Store:
                 # Same work and message as a wrong answer.
                 self.password_hash(normalized, '00' * 16)
                 raise PermissionError(RECOVERY_FAILED)
+            self.begin_write(db, 'account:' + row['id'])
+            row = db.execute('SELECT u.id, r.salt, r.answer, r.failures, r.locked_until FROM account_recovery r JOIN users u ON u.id=r.user_id WHERE u.id=?', (row['id'],)).fetchone()
             if row['locked_until'] > now:
                 minutes = max(1, (row['locked_until'] - now + 59) // 60)
                 raise PermissionError(f'Muitas respostas incorretas. Tente novamente em {minutes} min.')
@@ -221,6 +224,9 @@ class Store:
         with self.connect() as db:
             user = db.execute('SELECT * FROM users WHERE email = ?',
                               (email.strip().lower(),)).fetchone()
+            if user:
+                self.begin_write(db, 'account:' + user['id'])
+                user = db.execute('SELECT * FROM users WHERE id = ?', (user['id'],)).fetchone()
             salt = user['salt'] if user else '00' * 16
             hashed = self.password_hash(password, salt)
             if not user or not hmac.compare_digest(hashed, user['password']):
@@ -244,6 +250,8 @@ class Store:
             return token
 
     def session_user(self, token):
+        if not token:
+            return None
         with self.connect() as db:
             row = db.execute('''SELECT u.id, u.email, u.name, r.question, m.enabled AS mfa FROM users u
                 JOIN sessions s ON s.user_id = u.id
@@ -293,6 +301,7 @@ class Store:
 
     def mfa_setup(self, user_id, password, email):
         with self.connect() as db:
+            self.begin_write(db, "account:" + user_id)
             self._verify_password(db, user_id, password)
             if db.execute('SELECT 1 FROM account_mfa WHERE user_id = ? AND enabled = 1', (user_id,)).fetchone():
                 raise InvalidInput('A verificação em duas etapas já está ativa.')
@@ -306,6 +315,7 @@ class Store:
 
     def mfa_enable(self, user_id, code):
         with self.connect() as db:
+            self.begin_write(db, "account:" + user_id)
             mfa = db.execute('SELECT * FROM account_mfa WHERE user_id = ? AND enabled = 0', (user_id,)).fetchone()
             if not mfa:
                 raise InvalidInput('Comece a configuração novamente.')
@@ -319,6 +329,7 @@ class Store:
 
     def mfa_disable(self, user_id, password, code):
         with self.connect() as db:
+            self.begin_write(db, "account:" + user_id)
             self._verify_password(db, user_id, password)
             mfa = db.execute('SELECT * FROM account_mfa WHERE user_id = ? AND enabled = 1', (user_id,)).fetchone()
             if not mfa:

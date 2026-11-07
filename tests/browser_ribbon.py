@@ -75,7 +75,7 @@ def exercise(page,base,title='Barra de ferramentas'):
     assert sheet['cellData']['3']['5']['v']==3706.5 and '%' in style(stored(),3,4)['n']['pattern'],(sheet['cellData']['3'],style(stored(),3,4))
     # Switching cells updates the ribbon, and a second save keeps undo available.
     select('A1');expect(size).to_have_value('11');select('B4');expect(size).to_have_value('16')
-    page.reload();page.get_by_role('button',name=title,exact=False).click();expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true',timeout=30000);select('B4');expect(font).to_have_value('Courier New');expect(size).to_have_value('16')
+    page.reload();page.locator('[data-open]').filter(has_text=title).click();expect(page.locator('#spreadsheet')).to_have_attribute('data-ready','true',timeout=30000);select('B4');expect(font).to_have_value('Courier New');expect(size).to_have_value('16')
     with page.expect_download() as dl:page.get_by_role('button',name='Baixar XLSX',exact=True).click()
     ws=load_workbook(io.BytesIO(Path(dl.value.path()).read_bytes())).worksheets[0]
     assert ws['B4'].font.name=='Courier New' and ws['B4'].font.sz==16 and ws['B4'].font.bold and ws['B4'].font.italic and ws['B4'].font.strike

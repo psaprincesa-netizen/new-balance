@@ -47,7 +47,7 @@ def main():
                     if page.evaluate("Object.keys(localStorage).some(k=>k.startsWith('drap:draft:'))"):break
                     page.wait_for_timeout(100)
                 else:raise AssertionError('Rascunho não foi persistido')
-                page.reload();page.get_by_role('button',name='Documento avançado',exact=False).click()
+                page.reload();page.locator('[data-open]').filter(has_text='Documento avançado').click()
                 expect(page.get_by_role('heading',name='Recuperar rascunho?')).to_be_visible();page.get_by_role('button',name='Confirmar',exact=True).click()
                 expect(page.get_by_label('Conteúdo do documento')).to_have_value('Rascunho recuperável');save()
                 with page.expect_download() as output:page.get_by_role('button',name='Baixar DOCX').click()
@@ -78,7 +78,7 @@ def main():
                 page.get_by_role('button',name='Desativar link').click();expect(page.locator('dialog')).to_contain_text('fechado')
                 token=url.split('?form=')[1];assert public.request.get(base+'/api/forms/'+token).status==404
                 public_context.close();page.get_by_role('button',name='Fechar',exact=True).click()
-                page.reload();page.get_by_role('button',name='Coleta pública',exact=False).click()
+                page.reload();page.locator('[data-open]').filter(has_text='Coleta pública').click()
                 expect(page.locator('#editor-body')).to_contain_text('contato@example.org')
                 print('PASS: formulário tipado, resposta sem login, persistência e revogação',flush=True)
                 create('diagram','Fluxo livre')

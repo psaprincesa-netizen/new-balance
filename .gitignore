@@ -1,19 +1,19 @@
-__pycache__/
-*.pyc
-.data/
-.venv/
 .env
-public/
-dist/
-.vercel/
 .env.*
 !.env.example
+.data/
+.venv/
+.vercel/
 node_modules/
-# Generated from pinned npm packages by npm run build.
+__pycache__/
+public/
+dist/
+
+# Browser bundles are built from scripts/ during npm run build.
+web/app.bundle.js
+web/document.js
 web/formula-engine.js
 web/spreadsheet.js
 web/spreadsheet.css
-docs/licencas-formulas.txt
-docs/licencas-planilha.txt
-web/document.js
 web/qr.js
+web/service-worker.js

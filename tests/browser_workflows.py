@@ -21,7 +21,7 @@ def exercise(page,base,title='Fluxos integrados'):
     out=io.BytesIO();Image.new('RGB',(160,90),'green').save(out,format='PNG')
     with page.expect_file_chooser() as chooser:page.get_by_role('button',name='Inserir imagem',exact=True).click()
     chooser.value.set_files({'name':'foto.png','mimeType':'image/png','buffer':out.getvalue()});expect(page.locator('#preview img')).to_be_visible()
-    page.get_by_role('button',name='Gerenciar imagens',exact=True).click();page.get_by_label('Descrição da imagem 1',exact=True).fill('Foto do plano');page.get_by_label('Largura da imagem 1',exact=True).fill('60');page.get_by_label('Largura da imagem 1',exact=True).press('Tab');page.get_by_role('button',name='Concluir',exact=True).click();save();page.reload();page.get_by_role('button',name=title,exact=False).click();expect(page.locator('#preview img')).to_have_attribute('alt','Foto do plano')
+    page.get_by_role('button',name='Gerenciar imagens',exact=True).click();page.get_by_label('Descrição da imagem 1',exact=True).fill('Foto do plano');page.get_by_label('Largura da imagem 1',exact=True).fill('60');page.get_by_label('Largura da imagem 1',exact=True).press('Tab');page.get_by_role('button',name='Concluir',exact=True).click();save();page.reload();page.locator('[data-open]').filter(has_text=title).click();expect(page.locator('#preview img')).to_have_attribute('alt','Foto do plano')
     with page.expect_download() as dl:page.get_by_role('button',name='Baixar DOCX',exact=True).click()
     data=Path(dl.value.path()).read_bytes();doc=Document(io.BytesIO(data));assert len(doc.tables)==1 and len(doc.inline_shapes)==1
     with page.expect_download() as html:page.get_by_role('button',name='Baixar HTML com imagens',exact=True).click()
@@ -48,8 +48,8 @@ def exercise(page,base,title='Fluxos integrados'):
     create('portal','Portal revisado');page.get_by_label('Arquivo para vincular',exact=True).select_option(document['id']);page.get_by_role('button',name='Vincular arquivo',exact=True).click();save();portal=get('Portal revisado')
     ctx=page.context.browser.new_context();reader=ctx.new_page();creds={'email':uuid.uuid4().hex+'@example.org','password':uuid.uuid4().hex+'-Leitor12'};headers={'Origin':base};assert reader.request.post(base+'/api/register',headers=headers,data={**creds,'question':'pet','answer':'resposta de teste','name':'Leitor'}).ok;assert reader.request.post(base+'/api/login',headers=headers,data=creds).ok
     for item in [document,portal,diagram]:assert page.request.post(base+'/api/items/'+item['id']+'/share',headers=headers,data={'email':creds['email'],'role':'read'}).ok
-    reader.goto(base);reader.get_by_role('button',name='Portal revisado',exact=False).click();expect(reader.locator('[data-link]')).to_be_enabled();reader.locator('[data-link]').click();expect(reader.locator('#export-text')).to_be_enabled();expect(reader.locator('#document-image')).to_be_disabled();expect(reader.locator('#preview img')).to_be_visible()
-    reader.get_by_role('button',name='Todos os arquivos',exact=False).click();reader.get_by_role('button',name='Diagrama revisado',exact=False).click()
+    reader.goto(base);reader.locator('[data-open]').filter(has_text='Portal revisado').click();expect(reader.locator('[data-link]')).to_be_enabled();reader.locator('[data-link]').click();expect(reader.locator('#export-text')).to_be_enabled();expect(reader.locator('#document-image')).to_be_disabled();expect(reader.locator('#preview img')).to_be_visible()
+    reader.get_by_role('button',name='Todos os arquivos',exact=False).click();reader.locator('[data-open]').filter(has_text='Diagrama revisado').click()
     with reader.expect_download() as svg:reader.get_by_role('button',name='Baixar SVG',exact=True).click()
     assert '<svg' in Path(svg.value.path()).read_text()
     for item in [document,portal,diagram]:assert page.request.post(base+'/api/items/'+item['id']+'/share',headers=headers,data={'email':creds['email'],'role':'remove'}).ok

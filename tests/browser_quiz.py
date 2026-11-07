@@ -73,7 +73,7 @@ def exercise(browser, page, base):
     expect(public.locator('#quiz-score')).to_have_text('Sua nota: 1 de 4')
 
     page.reload()
-    page.get_by_role('button', name='Quiz de geografia', exact=False).first.click()
+    page.locator('[data-open]').filter(has_text='Quiz de geografia').first.click()
     expect(page.get_by_text('Nota: 1 de 4')).to_be_visible()
     assert not errors, errors
     print('PASS: múltipla seleção, escala, quiz com nota no editor e no link público sem expor o gabarito', flush=True)

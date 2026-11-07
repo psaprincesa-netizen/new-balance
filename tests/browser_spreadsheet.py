@@ -60,7 +60,7 @@ def exercise(page,base,title='Planilha de aceitação'):
     assert sheet['mergeData'],sheet['mergeData']
     resources={r['name']:json.loads(r['data'] or '{}') for r in b['resources']}
     for plugin in ['SHEET_FILTER_PLUGIN','SHEET_DATA_VALIDATION_PLUGIN','SHEET_CONDITIONAL_FORMATTING_PLUGIN']:assert resources[plugin],resources
-    page.reload();page.get_by_role('button',name=title,exact=False).click();ready()
+    page.reload();page.locator('[data-open]').filter(has_text=title).click();ready()
     with page.expect_download() as dl:page.get_by_role('button',name='Baixar XLSX').click()
     from openpyxl import load_workbook
     book=load_workbook(io.BytesIO(Path(dl.value.path()).read_bytes()));ws=book.worksheets[0]
@@ -75,7 +75,7 @@ def exercise(page,base,title='Planilha de aceitação'):
     with page.expect_file_chooser() as chooser:page.get_by_role('button',name='Importar JSON',exact=True).click()
     chooser.value.set_files({'name':'backup.json','mimeType':'application/json','buffer':json.dumps(backup).encode()})
     expect(page.get_by_role('status')).to_contain_text('1 arquivos importados')
-    page.get_by_role('button',name='Todos os arquivos',exact=False).click();page.get_by_role('button',name='Cópia JSON '+title,exact=False).click();ready()
+    page.get_by_role('button',name='Todos os arquivos',exact=False).click();page.locator('[data-open]').filter(has_text='Cópia JSON '+title).click();ready()
     expect(page.locator('#sheet-charts svg')).to_be_visible();expect(page.locator('button[aria-label="Negrito"]:visible')).to_be_enabled()
     copied=next(x for x in page.request.get(base+'/api/items').json()['items'] if x['title']=='Cópia JSON '+title)
     assert copied['content']==backup['items'][0]['content']
@@ -85,7 +85,7 @@ def exercise(page,base,title='Planilha de aceitação'):
     assert reader.request.post(base+'/api/register',headers=headers,data={**credentials,'question':'pet','answer':'resposta de teste','name':'Leitor de teste'}).ok
     assert reader.request.post(base+'/api/login',headers=headers,data=credentials).ok
     assert page.request.post(base+'/api/items/'+item['id']+'/share',headers=headers,data={'email':credentials['email'],'role':'read'}).ok
-    reader.goto(base);reader.get_by_role('button',name=title,exact=False).click()
+    reader.goto(base);reader.locator('[data-open]').filter(has_text=title).click()
     expect(reader.locator('#spreadsheet')).to_have_attribute('data-ready','true',timeout=30000)
     expect(reader.locator('#save')).to_be_disabled();expect(reader.locator('#sheet-apply')).to_be_disabled()
     expect(reader.locator('button[aria-label="Negrito"]:visible')).to_be_disabled()
@@ -94,7 +94,7 @@ def exercise(page,base,title='Planilha de aceitação'):
     denied=reader.request.post(base+'/api/items/'+item['id'],headers=headers,data={'title':title,'content':item['content'],'version':item['version'],'deleted':False});assert denied.status==403
     assert page.request.post(base+'/api/items/'+item['id']+'/share',headers=headers,data={'email':credentials['email'],'role':'remove'}).ok
     reader.request.post(base+'/api/logout',headers=headers,data={});reader_context.close()
-    page.get_by_role('button',name='Todos os arquivos',exact=False).click();page.get_by_role('button',name=title,exact=False).click();ready()
+    page.get_by_role('button',name='Todos os arquivos',exact=False).click();page.locator('[data-open]').filter(has_text=title).click();ready()
     select('F1');page.get_by_role('button',name='Colar tabela',exact=True).click();page.get_by_label('Dados copiados do Excel ou CSV',exact=True).fill('Produto\tQuantidade\nX\t5\nY\t7');page.get_by_role('button',name='Colar dados',exact=True).click();expect(page.locator('dialog')).not_to_be_visible()
     select('G2:G3');page.get_by_role('button',name='∑ Inserir cálculo',exact=True).click();page.get_by_label('Operação',exact=True).select_option('AVERAGE');page.get_by_label('Célula do resultado',exact=True).fill('G2');page.get_by_role('button',name='Inserir fórmula',exact=True).click();expect(page.locator('#calc-error')).to_contain_text('fora da origem');page.get_by_label('Célula do resultado',exact=True).fill('H1');page.get_by_role('button',name='Inserir fórmula',exact=True).click();expect(page.locator('dialog')).not_to_be_visible()
     setcell('G3','9');select('F1');page.get_by_role('button',name='Inserir linha',exact=True).click();select('F1');page.get_by_role('button',name='Inserir coluna',exact=True).click();save()

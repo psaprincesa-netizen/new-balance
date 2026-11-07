@@ -4,16 +4,16 @@ const DAY = 86400000;
 
 export function dayNumber(iso) {
   if (typeof iso !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
-  const t = Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10));
-  return Number.isFinite(t) ? Math.round(t / DAY) : null;
+  const t = Date.parse(iso + 'T00:00:00Z');
+  return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === iso ? Math.round(t / DAY) : null;
 }
 
 export function isoDay(n) {
   return new Date(n * DAY).toISOString().slice(0, 10);
 }
 
-export function ensureTaskIds(tasks) {
-  const used = new Set(tasks.map((t) => t.id).filter(Boolean));
+export function ensureTaskIds(tasks, reservedIds = []) {
+  const used = new Set([...reservedIds, ...tasks.map((t) => t.id).filter(Boolean)]);
   let next = 1;
   for (const t of tasks) {
     if (t.id) continue;
@@ -21,9 +21,11 @@ export function ensureTaskIds(tasks) {
     t.id = 't' + next;
     used.add(t.id);
   }
+  const currentIds = new Set(tasks.map(t=>t.id));
   for (const t of tasks) {
-    t.depends = (Array.isArray(t.depends) ? t.depends : []).filter((id) => id !== t.id && used.has(id));
+    t.depends = (Array.isArray(t.depends) ? t.depends : (t.dependsOn||[])).filter((id) => id !== t.id && currentIds.has(id));
   }
+  for(const t of tasks)delete t.dependsOn;
   return tasks;
 }
 
@@ -102,4 +104,24 @@ export function schedule(tasks) {
   }
   const rows = order.map((t) => ({id: t.id, title: t.title, milestone: !!t.milestone, ...info.get(t.id), critical: info.get(t.id).slack === 0}));
   return {tasks: rows, start: projectStart, end: projectEnd, critical: rows.filter((r) => r.critical).map((r) => r.id), conflicts, cycle: null};
+}
+
+// Costs are rounded per task in cents before aggregation. All amounts use BRL.
+export function projectBudget(tasks) {
+  const totals = {plannedHours: 0, actualHours: 0, plannedCents: 0, actualCents: 0};
+  const resources = new Map();
+  for (const task of tasks) {
+    const plannedHours = task.plannedHours ?? 0, actualHours = task.actualHours ?? 0;
+    const rate = task.hourlyRate ?? 0, fixed = task.fixedCost ?? 0;
+    const row = {plannedHours, actualHours,
+      plannedCents: Math.round((plannedHours * rate + fixed) * 100),
+      actualCents: Math.round((actualHours * rate + fixed) * 100)};
+    const name = task.assignee?.trim() || 'Sem responsável';
+    if (!resources.has(name)) resources.set(name, {name, plannedHours: 0, actualHours: 0, plannedCents: 0, actualCents: 0});
+    for (const key of Object.keys(totals)) {
+      totals[key] += row[key];
+      resources.get(name)[key] += row[key];
+    }
+  }
+  return {...totals, varianceCents: totals.actualCents - totals.plannedCents, resources: [...resources.values()]};
 }

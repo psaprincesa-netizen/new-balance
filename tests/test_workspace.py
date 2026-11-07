@@ -59,6 +59,20 @@ class WorkspaceTest(unittest.TestCase):
         self.assertEqual(results.count('conflict'), 1)
         self.assertEqual(len(self.workspace.history(self.a, self.item['id'])), 2)
 
+    def test_project_costs_persist_with_permissions_and_validation(self):
+        task = {'title': 'Design', 'due': '', 'status': 'A fazer',
+                'plannedHours': 10, 'actualHours': 12.5, 'hourlyRate': 50, 'fixedCost': 100}
+        item = self.workspace.create(self.a, {'kind': 'board', 'title': 'Custos', 'content': {'tasks': [task]}})
+        self.assertEqual(Workspace(self.store).get(self.a, item['id'])['content']['tasks'][0], task)
+        self.workspace.share(self.a, item['id'], 'b@example.org', 'read')
+        with self.assertRaises(PermissionError):
+            self.workspace.update(self.b, item['id'], {'title': 'Custos', 'version': 1, 'content': {'tasks': [task]}})
+        for key in ('plannedHours', 'actualHours', 'hourlyRate', 'fixedCost'):
+            for bad in (-1, True, '10', 1000001):
+                with self.subTest(key=key, bad=bad), self.assertRaises(InvalidInput):
+                    self.workspace.update(self.a, item['id'], {'title': 'Custos', 'version': 1,
+                        'content': {'tasks': [dict(task, **{key: bad})]}})
+
     def test_editor_contracts(self):
         valid = {'document':{'text':'a'},'note':{'text':'b'},'sheet':{'cells':[['1','=A1*2']]},
                  'slides':{'slides':[{'title':'a','body':'b','notes':''}]},'board':{'tasks':[]},

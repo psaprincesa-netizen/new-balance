@@ -106,6 +106,35 @@ Salvar preserva a instância do editor: célula selecionada, aba da barra, rolag
 
 O menu Colar e as variantes de colagem usam os comandos nativos registrados, mantendo permissões, valores e estilos. A leitura de intervalos para edição auxiliar, gráficos e tabelas dinâmicas usa os valores numéricos originais, mesmo quando a grade mostra moeda ou percentual. Os testes de gráficos e resumos incluem fontes formatadas como moeda.
 
+## Comparação com Google Workspace — 26/10/2026
+
+Veja o [inventário Google](google-workspace.md), com recursos existentes, adicionados e pendentes e links às fontes oficiais. Esta seção atualiza a matriz inicial: documentos agora têm estrutura navegável, estatísticas, listas numeradas, citação/código/linha horizontal e configuração global de página/fonte/espaçamento; planilhas têm seis transformações para um destino vazio e estatísticas; apresentações têm alinhamento/distribuição, fundos, ocultação, transições simples e controles do apresentador. As opções suportadas de página chegam ao DOCX; fundo, cor, ocultação e transições chegam ao PPTX. A edição de texto permanece contínua; coautoria e paginação profissional, animação de objetos, serviços Google e IA continuam pendentes.
+
+## Botão auxiliar ＋ Inserir
+
+Disponível na barra de todos os editores. **Documento** insere o conteúdo de DOCX/TXT/Markdown em documentos/notas, preservando o texto existente e remapeando imagens para evitar colisões. TXT exige UTF-8 e trata a marcação como texto literal. DOCX passa pelo importador validado e informa perdas de layout. **Arquivo / outros** anexa qualquer formato como bytes para download (PDF, Office, ZIP, áudio etc.); não executa nem pré-visualiza conteúdo ativo. **Da biblioteca** adiciona vínculo ou copia o conteúdo de documento/nota autorizado. **Link**, **Imagem** e **Tabela** completam o menu conforme o editor.
+
+Anexos: até 1 MB por arquivo, 20 anexos/vínculos e limite total do documento. A seleção múltipla é validada antes de aplicar alterações. Persistem em `content.attachments`, no histórico, nos rascunhos e no JSON. Compartilhar o arquivo disponibiliza seus anexos; vincular outro arquivo não concede acesso ao original. Leitores podem baixar/abrir itens autorizados, mas não inserir/remover. Exportações Office não incluem a lista de anexos/vínculos, e a interface informa essa diferença. A inserção de DOCX analisa o documento sem criar um arquivo adicional na biblioteca.
+
+Verificação: `tests/browser_insert.py` percorre os controles reais com DOCX/imagem, TXT literal, PDF, links, biblioteca, limites, download byte a byte, reabertura, permissões/revogação, celular e planilha. `tests/test_attachments.py` cobre validação, histórico, acesso e parsing autenticado sem criação de itens. `tests/insert-menu.test.js` cobre isolamento das imagens e limites de conteúdo.
+
+## Instalação no computador e celular
+
+O botão **Instalar e criar atalho** solicita a instalação como aplicativo web quando o navegador oferece essa função. A confirmação é obrigatória; depois dela, o sistema disponibiliza o ícone. `/install` contém orientações por sistema, detecção do aparelho, link copiável/compartilhável e ajuda para Safari/iPhone/iPad. Windows, macOS, Linux/ChromeOS e Android dependem de navegador compatível; não há garantia para todos os modelos ou instaladores nativos EXE/DMG/APK. O ZIP continua disponível como código-fonte para desenvolvimento.
+
+Login, abertura e salvamento exigem internet. A página offline não exibe dados privados; o cache do service worker contém apenas esse aviso. A instalação e as atualizações não recarregam editores abertos. Os testes verificam manifesto/ícones, critérios reais de instalação no Chromium, fluxo de confirmação simulado, preservação da edição, tamanhos de tela e ausência de dados privados no cache. A validação não substitui instalação manual em dispositivos Windows/macOS/Android/iOS reais.
+
+## Desempenho da biblioteca
+
+A entrada consulta sessão e lista leve de arquivos em uma chamada. A lista não transfere o conteúdo dos documentos: ele é buscado ao abrir um arquivo. Busca por conteúdo e indicadores são consultados sob demanda com as mesmas permissões; exportar o espaço continua incluindo o conteúdo completo. Criar e salvar atualiza o catálogo local pela resposta do servidor. O JavaScript inicial é empacotado e não inclui o parser de fórmulas; documentos e planilhas carregam seus editores quando usados.
+
+## Ampliação dos editores — 28/10/2026
+
+Documentos armazenam uma árvore de texto rico junto ao Markdown de compatibilidade. Fonte, cor, tamanho e marcas por trecho, abas, notas, sumário atualizável, cabeçalho/rodapé, modelos, mesclagem e HTML. A edição manual de Markdown converte a aba para formatação básica e avisa essa perda. DOCX exporta todas as abas em seções de conteúdo separadas por quebras; reimportação não reconstrói as abas.
+
+Planilhas têm cinco tipos adicionais de gráficos e proteção de intervalos aplicada pelo servidor. A proteção controla gravações compartilhadas no DRAP, não é senha de XLSX. Slides têm grupos, rotação, estilo para novos slides, layout de duas colunas e janela separada do apresentador.
+
+Projetos têm dependências e cronograma; agenda tem visão mensal; formulários têm quizzes, texto longo e avaliação. A integração externa Google foi retirada em 02/11/2026 por solicitação do proprietário; a agenda interna continua disponível.
 ## App instalável e modo offline (PWA)
 
 O DRAP office pode ser instalado pelo navegador (Chrome/Edge: ícone de instalar na barra de endereço; Android: "Adicionar à tela inicial"; iPhone: Compartilhar → "Adicionar à Tela de Início"). `web/manifest.webmanifest` define nome, cor #4B5320 e ícones; `web/sw.js` guarda a interface do aplicativo (HTML, CSS e scripts) para abrir sem internet.
@@ -136,6 +165,69 @@ Limites: perguntas secretas são mais fracas que confirmação por e-mail ou MFA
 
 O botão **＋ Inserir** da planilha coloca numa célula um vínculo para outro arquivo do DRAP office (documento, apresentação, formulário, tabela etc.) ou para um site `https://`. A célula recebe o texto escolhido (ou o nome do arquivo); ao selecionar a célula, uma barra acima da grade mostra o vínculo com **Abrir** e **Remover vínculo**. A lista **Arquivos e links vinculados**, abaixo da grade, reúne todos os vínculos da pasta com atalhos para abrir e ir até a célula. Os vínculos ficam em `content.links` (até 200), são validados no servidor (somente `https://`) e respeitam as permissões: abrir um arquivo vinculado exige acesso a ele. Limites: o vínculo usa o endereço fixo da célula (inserir/excluir linhas não o move, como nos gráficos) e o XLSX leva apenas o texto da célula. Teste: `tests/browser_sheet_links.py`.
 
+## Etapa 1: recursos e custos de Projetos
+
+Implementação local: tarefas aceitam horas planejadas/realizadas, custo por hora e
+custos adicionais em reais. O painel **Recursos e custos** soma horas e custos por
+responsável e no projeto. Valores validados no servidor e preservados pelo salvamento,
+versões e exportação JSON. Custos adicionais entram no planejado e no realizado;
+não há lançamentos separados. Linha de base, capacidade e conflitos de recursos
+continuam pendentes. Plano de conclusão e limites em [etapas.md](etapas.md).
+
+## Linha de base e capacidade de Projetos; Gemini
+
+Projetos: snapshot do orçamento e cronograma efetivo, diferenças por tarefa e total,
+tarefas adicionadas/removidas, capacidade diária por responsável e intervalos de
+sobrecarga. Distribuição por dias corridos, sem nivelamento automático ou feriados.
+A referência anterior permanece no histórico de versões após salvar.
+
+Gemini: geração, resumo e análise de texto sob demanda, com seleção explícita de
+arquivo salvo autorizado, confirmação do envio e resultado revisável. Pode salvar
+novo documento privado. A disponibilidade depende da autenticação e dos créditos
+no AI Gateway; sem ferramentas, envio automático ou análise de anexos/imagens.
+Detalhes em [gemini.md](gemini.md). Demais módulos e integrações continuam sujeitos
+às pendências registradas; esta entrega não representa paridade integral com Office.
+
+## Abertura direta dos módulos na home
+
+Os dez atalhos de ferramentas abrem um editor novo imediatamente, sem pedir nome
+ou criar um arquivo no servidor. O primeiro **Salvar** solicita o nome do projeto
+se ele ainda não foi informado; cancelar mantém a edição. Após salvar, os próximos
+salvamentos atualizam o mesmo arquivo. Rascunhos locais não salvos são recuperados
+ao reabrir o mesmo módulo neste navegador e conta. Há um rascunho local por módulo.
+Histórico, comentários e compartilhamento ficam disponíveis depois de salvar.
+DOCX/XLSX/PPTX/ICS podem ser exportados sem salvar o arquivo no servidor.
+
+## Exclusão individual na biblioteca
+
+Arquivos recentes e biblioteca mostram **Excluir** em cada arquivo editável.
+A confirmação identifica o arquivo; a operação move apenas esse arquivo para a
+lixeira, preservando conteúdo e histórico. Na lixeira, **Restaurar** devolve esse
+arquivo à biblioteca. Leitores não recebem ações de alteração. A gravação usa a
+versão atual e o controle de concorrência existente; conflitos não são sobrescritos.
+
+## Relacionamentos entre tabelas
+
+Cada tabela pode manter até dez vínculos nomeados com outras tabelas da biblioteca.
+Escolha o campo de origem e o campo de destino. Em cada vínculo, selecione um
+registro de origem e clique em **Consultar** para ver registros do destino com
+valor exatamente igual (diferenciando maiúsculas, espaços e representação numérica).
+Valores vazios não correspondem. Resultados são paginados de 50 em 50.
+
+É necessário salvar antes de configurar ou consultar. A definição é preservada
+no JSON e no histórico; a consulta sempre verifica acesso às duas tabelas. Um leitor
+da origem não ganha acesso ao destino pelo vínculo. Revogação e lixeira são
+respeitadas. Alterações de versão da origem ou de campo do destino impedem uma
+consulta com correspondência incorreta. Excluir um campo de origem remove seus
+vínculos; renomeá-lo na interface atualiza a referência local.
+
+Não há integridade referencial obrigatória, exclusão em cascata, linguagem SQL,
+edição do destino pela consulta ou garantia de unicidade de chave. CSV/XLSX
+exportam os dados da tabela; use JSON para preservar as definições dos vínculos.
+
+Os campos usados nos vínculos precisam ter nomes únicos nas respectivas tabelas.
+A importação JSON preserva os IDs de destino originais; não remapeia automaticamente
+os vínculos para outras cópias importadas. As permissões continuam sendo verificadas.
 ## Etapa 2 da revisão de módulos — documentos e planilhas
 
 **Documentos e notas.** **Sumário** gera, na posição do cursor, uma lista aninhada com os títulos (`#`, `##`, `###`) do documento; é estático — ao mudar os títulos, insira um novo. **Quebra de página** insere `---` (aparece como divisória rotulada na tela, quebra a página na impressão/PDF e vira quebra real no DOCX). **Cabeçalho e rodapé** guardam `header`, `footer` e `pageNumbers` no conteúdo: na impressão/PDF usam as margens da página do navegador (Chrome/Edge recentes) e, no DOCX, cabeçalho, rodapé e campos `PAGE`/`NUMPAGES` (“Página X de Y”). Testes: `tests/test_document_io.py`, `tests/browser_stage2.py`.
@@ -143,3 +235,25 @@ O botão **＋ Inserir** da planilha coloca numa célula um vínculo para outro 
 **Gráficos.** Tipos: colunas, colunas empilhadas, barras horizontais, linhas, área, pizza, rosca e dispersão. O intervalo tem uma coluna de rótulos (na dispersão, X numérico) e de 1 a 6 colunas de séries com cabeçalho; pizza e rosca usam uma série. Legenda automática com várias séries. A exportação XLSX cria o gráfico nativo correspondente (BarChart empilhado/horizontal, AreaChart, DoughnutChart, ScatterChart). Testes: `tests/chart.test.js`, `tests/test_spreadsheet.py`, `tests/browser_stage2.py`.
 
 **Tabelas dinâmicas.** Campo opcional **Subgrupo de linhas**: cada grupo lista seus subgrupos seguidos de uma linha “Total <grupo>” e, no fim, o “Total geral”. A ordenação pelo total ordena os grupos; os subgrupos mantêm a ordem da fonte. Clicar em subgrupo, subtotal ou total abre os registros correspondentes. Os motores JS e Python usam os mesmos casos de teste (`tests/pivot-cases.json`); o XLSX recebe a aba “Resumo N” com os dois níveis.
+
+## Perguntas condicionais em formulários
+
+Em **Exibição da pergunta**, escolha uma pergunta anterior de escolha única e a
+resposta que deve mostrar a pergunta atual. As condições podem formar cadeias,
+mas não apontam para perguntas posteriores nem para si mesmas. Perguntas ocultas
+ficam desabilitadas e suas respostas são limpas quando a condição deixa de valer.
+Não são obrigatórias e não entram na pontuação do quiz.
+
+O servidor recalcula a visibilidade: respostas forjadas para perguntas ocultas
+são descartadas e não alteram a nota. A configuração entra no identificador do
+formulário; mudanças exigem reabertura antes de responder. O formulário público
+recebe as condições, mas não recebe gabaritos ou pontos. Exportações mantêm as
+colunas das perguntas e usam vazio nas perguntas que não foram exibidas.
+
+Remover uma pergunta, mudar seu tipo ou remover uma opção usada por uma condição
+remove as condições que dependiam dessa referência. Revise as regras após alterar
+a estrutura. Esta entrega não inclui saltos de página, condições numéricas ou
+expressões compostas com múltiplas regras.
+
+A exibição condicional orienta o preenchimento, mas não restringe o acesso ao texto
+das perguntas: a definição de todas as perguntas faz parte do formulário público.

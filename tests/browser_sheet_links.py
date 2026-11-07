@@ -31,7 +31,7 @@ def exercise(page, base):
     expect(page.locator('#spreadsheet')).to_have_attribute('data-ready', 'true', timeout=30000)
 
     # Link a DRAP file to B2.
-    page.get_by_role('button', name='＋ Inserir').click()
+    page.locator('#aux-insert').click();page.locator('#insert-cell-link').click()
     page.get_by_label('Arquivo a vincular').select_option(label='Contrato de serviço — Documento')
     page.get_by_label('Célula de destino').fill('B2')
     page.get_by_role('button', name='Inserir', exact=True).click()
@@ -40,7 +40,7 @@ def exercise(page, base):
 
     # Link an external site to C2 with custom text; http is refused.
     page.get_by_label('Intervalo da planilha').fill('C2')
-    page.get_by_role('button', name='＋ Inserir').click()
+    page.get_by_role('button', name='Vincular célula',exact=True).click()
     page.get_by_label('Link externo (site)').check()
     page.get_by_label('Endereço (https)').fill('http://exemplo.com')
     page.get_by_label('Texto exibido na célula').fill('Portal do cliente')

@@ -120,13 +120,13 @@ def export_workbook(snapshot, output, charts=(), pivots=None):
         if x or y:ws.freeze_panes=ws.cell(y+1,x+1)
         ws.sheet_view.showGridLines=data.get('showGridlines',1)!=0
         export_rules(ws,sid,snapshot)
-    from openpyxl.chart import AreaChart,BarChart,DoughnutChart,LineChart,PieChart,Reference,ScatterChart,Series
+    from openpyxl.chart import AreaChart,BarChart,DoughnutChart,LineChart,PieChart,Reference,ScatterChart,Series,RadarChart
     from openpyxl.utils.cell import range_boundaries
     for i,definition in enumerate(charts):
         sheet=snapshot['sheets'].get(definition['sheetId'])
         if not sheet:continue
         ws=book[sheet['name']];x1,y1,x2,y2=range_boundaries(definition['range'])
-        kind=definition['type']
+        kind=definition['type'];kind='hbar' if kind=='horizontal' else kind
         if kind=='scatter':
             chart=ScatterChart();chart.style=13
             xvalues=Reference(ws,min_col=x1,min_row=y1+1,max_row=y2)
@@ -135,7 +135,7 @@ def export_workbook(snapshot, output, charts=(), pivots=None):
                 series.marker.symbol='circle';series.graphicalProperties.line.noFill=True
                 chart.series.append(series)
         else:
-            chart={'bar':BarChart,'stacked':BarChart,'hbar':BarChart,'line':LineChart,'area':AreaChart,'pie':PieChart,'doughnut':DoughnutChart}[kind]()
+            chart={'bar':BarChart,'stacked':BarChart,'hbar':BarChart,'line':LineChart,'area':AreaChart,'pie':PieChart,'doughnut':DoughnutChart,'radar':RadarChart}[kind]()
             if kind=='hbar':chart.type='bar'
             if kind=='stacked':chart.grouping='stacked';chart.overlap=100
             chart.add_data(Reference(ws,min_col=x1+1,max_col=x2,min_row=y1,max_row=y2),titles_from_data=True)

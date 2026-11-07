@@ -39,7 +39,7 @@ def exercise(page,base,title='Receitas dinâmicas'):
     expect(pivot.get_by_role('button',name='Registros de B, Total geral',exact=True)).to_have_text('20')
     page.locator('#sheet-address').fill('C5');page.locator('#sheet-value').fill('=20*2');page.locator('#sheet-apply').click()
     expect(pivot.get_by_role('button',name='Registros de B, Total geral',exact=True)).to_have_text('40')
-    save();page.reload();page.get_by_role('button',name=title,exact=False).click();ready()
+    save();page.reload();page.locator('[data-open]').filter(has_text=title).click();ready()
     expect(pivot.get_by_role('button',name='Registros de B, Total geral',exact=True)).to_have_text('40')
     item=next(x for x in page.request.get(base+'/api/items').json()['items'] if x['title']==title)
     assert item['content']['pivots'][0]['filterValue']=='B'
@@ -50,14 +50,14 @@ def exercise(page,base,title='Receitas dinâmicas'):
     data=json.loads(Path(backup.value.path()).read_text());data['items'][0]['title']='Cópia '+title
     with page.expect_file_chooser() as chooser:page.get_by_role('button',name='Importar JSON',exact=True).click()
     chooser.value.set_files({'name':'copia.json','mimeType':'application/json','buffer':json.dumps(data).encode()});expect(page.get_by_role('status')).to_contain_text('1 arquivos importados')
-    page.get_by_role('button',name='Todos os arquivos',exact=False).click();page.get_by_role('button',name='Cópia '+title,exact=False).click();ready();expect(pivot.get_by_role('button',name='Registros de B, Total geral',exact=True)).to_have_text('40')
+    page.get_by_role('button',name='Todos os arquivos',exact=False).click();page.locator('[data-open]').filter(has_text='Cópia '+title).click();ready();expect(pivot.get_by_role('button',name='Registros de B, Total geral',exact=True)).to_have_text('40')
     copied=next(x for x in page.request.get(base+'/api/items').json()['items'] if x['title']=='Cópia '+title)
     assert page.request.post(base+'/api/items/'+copied['id'],headers={'Origin':base},data={'title':copied['title'],'content':copied['content'],'version':copied['version'],'deleted':True}).ok
     ctx=page.context.browser.new_context();reader=ctx.new_page();credentials={'email':uuid.uuid4().hex+'@example.org','password':uuid.uuid4().hex+'-Reader12'};headers={'Origin':base}
     assert reader.request.post(base+'/api/register',headers=headers,data={**credentials,'question':'pet','answer':'resposta de teste','name':'Leitor'}).ok
     assert reader.request.post(base+'/api/login',headers=headers,data=credentials).ok
     assert page.request.post(base+'/api/items/'+item['id']+'/share',headers=headers,data={'email':credentials['email'],'role':'read'}).ok
-    reader.goto(base);reader.get_by_role('button',name=title,exact=False).click();expect(reader.locator('#spreadsheet')).to_have_attribute('data-ready','true',timeout=30000)
+    reader.goto(base);reader.locator('[data-open]').filter(has_text=title).click();expect(reader.locator('#spreadsheet')).to_have_attribute('data-ready','true',timeout=30000)
     expect(reader.locator('#sheet-pivot-add')).to_be_disabled();expect(reader.locator('[data-pivot-edit]')).to_have_count(0);expect(reader.locator('#sheet-pivots').get_by_role('button',name='Registros de B, Total geral',exact=True)).to_have_text('40')
     assert page.request.post(base+'/api/items/'+item['id']+'/share',headers=headers,data={'email':credentials['email'],'role':'remove'}).ok
     reader.request.post(base+'/api/logout',headers=headers,data={});ctx.close()
