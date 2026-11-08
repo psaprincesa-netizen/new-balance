@@ -329,3 +329,28 @@ corrigir o destino, o proprietário pode reprocessar. Editores compartilhados n�
 podem decidir nem consultar as respostas originais pelo painel. Desativar a regra
 não cancela pendências já registradas. Não há delegação, múltiplos aprovadores,
 e-mail, expiração automática, agendas ou designer genérico de fluxos nesta etapa.
+
+## Colaboração: menções e notificações internas
+
+Ao comentar um arquivo salvo, o autor pode informar até dez e-mails de pessoas
+que já têm acesso ao arquivo. A menção é explícita no campo dedicado; escrever um
+e-mail apenas no texto não notifica ninguém. Endereços repetidos geram uma única
+menção e mencionar a própria conta não cria uma notificação. O sistema valida todos
+os destinatários antes de confirmar comentário, menções e notificações na mesma
+transação. Uma menção não compartilha o arquivo. Os comentários mostram nomes,
+sem transformar o painel em diretório de e-mails dos participantes.
+
+A opção **Notificações** mostra menções recebidas com autor, arquivo, prévia e data.
+Há leitura/não leitura, marcar todas como lidas, exclusão individual e atalho para o
+comentário específico, destacado no editor. Excluir uma notificação não exclui o
+comentário. A lista é paginada em 50 registros. O contador do menu é consultado ao
+abrir telas; a central possui atualização manual. Não há push, e-mail ou atualização
+em tempo real nesta etapa.
+
+Lista e contador revalidam permissões e lixeira no servidor. Ao revogar acesso ou
+excluir o arquivo, suas notificações ficam ocultas na próxima consulta; restaurar o
+acesso pode torná-las visíveis novamente, preservando a leitura. Cada conta administra
+apenas suas notificações. A regra original permanece: leitores podem ler comentários,
+mas precisam de permissão de edição para publicar. Os registros adicionais fazem
+parte do backup integral do banco, não do JSON individual dos arquivos. Não há
+coautoria simultânea, chat, canais ou menções em qualquer posição do documento.

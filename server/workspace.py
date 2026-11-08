@@ -43,6 +43,15 @@ class Workspace:
                     id TEXT PRIMARY KEY, item_id TEXT NOT NULL REFERENCES items(id),
                     author TEXT NOT NULL REFERENCES users(id), body TEXT NOT NULL, created INTEGER NOT NULL);
                 CREATE INDEX IF NOT EXISTS comments_item ON comments(item_id, created);
+                CREATE TABLE IF NOT EXISTS comment_mentions (
+                    comment_id TEXT NOT NULL REFERENCES comments(id), user_id TEXT NOT NULL REFERENCES users(id),
+                    PRIMARY KEY(comment_id,user_id));
+                CREATE TABLE IF NOT EXISTS notifications (
+                    id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), item_id TEXT NOT NULL REFERENCES items(id),
+                    comment_id TEXT NOT NULL REFERENCES comments(id), actor_id TEXT NOT NULL REFERENCES users(id),
+                    created INTEGER NOT NULL, read_at INTEGER NOT NULL DEFAULT 0, UNIQUE(user_id,comment_id));
+                CREATE INDEX IF NOT EXISTS notifications_user ON notifications(user_id,created);
+                CREATE INDEX IF NOT EXISTS notifications_unread ON notifications(user_id,read_at);
                 CREATE TABLE IF NOT EXISTS google_connections (
                     user_id TEXT PRIMARY KEY REFERENCES users(id), encrypted TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS google_oauth_states (
@@ -189,6 +198,7 @@ class Workspace:
 
     def share(self, user, item_id, email, role):
         with self.store.connect() as db:
+            self.store.begin_write(db,item_id)
             row = self.accessible(db, user, item_id)
             if not row:
                 raise LookupError('Arquivo não encontrado.')
@@ -222,24 +232,29 @@ class Workspace:
         with self.store.connect() as db:
             if not self.accessible(db, user, item_id):
                 raise LookupError('Arquivo não encontrado.')
-            return [dict(r) for r in db.execute('''SELECT c.id, c.body, c.created, u.name AS author
+            rows=[dict(r) for r in db.execute('''SELECT c.id, c.body, c.created, u.name AS author
                 FROM comments c JOIN users u ON c.author=u.id WHERE c.item_id=?
                 ORDER BY c.created, c.id LIMIT 50 OFFSET ?''', (item_id, offset))]
+            for comment in rows:
+                comment['mentions']=[r['name'] for r in db.execute('SELECT u.name FROM comment_mentions m JOIN users u ON u.id=m.user_id WHERE m.comment_id=? ORDER BY u.name,u.id',(comment['id'],))]
+            return rows
 
-    def comment(self, user, item_id, body):
+    def comment(self, user, item_id, body, mentions=None):
         if not isinstance(body, str) or not 1 <= len(body.strip()) <= 4000:
             raise InvalidInput('O comentário deve ter de 1 a 4000 caracteres.')
         with self.store.connect() as db:
             self.store.begin_write(db, item_id)
             row = self.accessible(db, user, item_id)
-            if not row:
+            if not row or row['deleted']:
                 raise LookupError('Arquivo não encontrado.')
             if row['role'] not in ('owner', 'edit'):
                 raise PermissionError('É necessário acesso de edição para comentar.')
             if db.execute('SELECT COUNT(*) AS n FROM comments WHERE item_id=?', (item_id,)).fetchone()['n'] >= 1000:
                 raise InvalidInput('Limite de 1000 comentários por arquivo.')
-            db.execute('INSERT INTO comments VALUES (?, ?, ?, ?, ?)',
-                       (secrets.token_hex(16), item_id, user, body.strip(), time.time_ns() // 1000000))
+            ident=secrets.token_hex(16);created=time.time_ns()//1000000
+            db.execute('INSERT INTO comments VALUES (?, ?, ?, ?, ?)',(ident,item_id,user,body.strip(),created))
+            from server.notifications import add_mentions
+            add_mentions(self,db,user,item_id,ident,[] if mentions is None else mentions,created)
         return {'ok': True}
 
     def publication(self, user, item_id, enabled=None):
