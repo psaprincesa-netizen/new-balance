@@ -1,3 +1,4 @@
+import {mountNotifications} from './notifications.js';
 import {mountDashboard} from './dashboard.js';
 import {mountFormAutomation} from './automations.js';
 import {visibleQuestions,canonicalAnswers,cleanConditions,bindConditionalAnswers,mountFormConditions} from './form-conditions.js';
@@ -433,6 +434,7 @@ function shell(body) {
     ["home", "⌂", "Visão geral"],
     ["files", "▤", "Todos os arquivos"],
     ["shared", "♧", "Compartilhados"],
+    ["notifications", "♧", "Notificações"],
     ["analytics", "▥", "Indicadores"],
     ["automation", "⌘", "Conexões"],
     ["assistant", "✦", "Gemini"],
@@ -441,7 +443,7 @@ function shell(body) {
   ]
     .map(
       ([id, i, n]) =>
-        `<button data-nav="${id}" class="${view === id ? "active" : ""}"><span>${i}</span>${n}</button>`,
+        `<button data-nav="${id}" class="${view === id ? "active" : ""}"><span>${i}</span>${n}${id==='notifications'?'<span class="badge" data-notification-count hidden></span>':''}</button>`,
     )
     .join(
       "",
@@ -449,6 +451,8 @@ function shell(body) {
   document
     .querySelectorAll("[data-nav]")
     .forEach((n) => (n.onclick = () => navigate(n.dataset.nav)));
+  const notificationBadge=document.querySelector('[data-notification-count]'),notificationAccount=user.id;
+  if(view!=='notifications')api('/api/notifications/count').then(data=>{if(user?.id===notificationAccount&&notificationBadge?.isConnected)updateNotificationBadge(data.unread);}).catch(()=>{});
   bind("import-office", importOffice);
   bind("recovery-settings", () => recoveryDialog(false));
   bind("security-settings", securityDialog);
@@ -513,7 +517,7 @@ async function navigate(next) {
   // Leave the editor immediately so its controls cannot mutate a file while
   // navigation is awaiting the network. Show known metadata, then revalidate.
   render();
-  if(['analytics','automation','coverage','google'].includes(next))return;
+  if(['analytics','automation','coverage','google','notifications'].includes(next))return;
   const list=document.querySelector('#file-list');list?.setAttribute('aria-busy','true');
   try {
     await refresh(sequence);
@@ -573,6 +577,7 @@ function wireFiles() {
 }
 function render() {
   if (current) return editor();
+  if (view === "notifications") return notificationsPage();
   if (view === "analytics") return analytics();
   if (view === "automation") return automation();
   if (view === "assistant") return assistantPage();
@@ -1635,6 +1640,11 @@ function importBackup() {
     }
   },64_000_000);
 }
+function updateNotificationBadge(count){const badge=document.querySelector('[data-notification-count]');if(badge){badge.textContent=String(count);badge.hidden=!count;}}
+function notificationsPage(){
+  shell('<p class="eyebrow">COLABORAÇÃO</p><h1>Suas notificações.</h1><section id="notification-center" class="editor"></section>');
+  mountNotifications(document.querySelector('#notification-center'),{api,esc,notify,onUnread:updateNotificationBadge,openComment:async(itemId,commentId)=>{await openItem(itemId);if(current?.id===itemId)await commentsDialog(commentId);}});
+}
 async function analytics() {
   const sequence=navigationSequence;
   shell('<p class="loading-files" role="status">Carregando indicadores…</p>');
@@ -1866,13 +1876,15 @@ function stashDraft() {
   try { localStorage.setItem(draftKey(),JSON.stringify({title:current.title,content:current.content,version:current.version,deleted:current.deleted,kind:current.kind,unsaved:!!current.unsaved})); }
   catch { if(!stashDraft.warned) { notify('Não foi possível guardar o rascunho neste navegador. Salve ou exporte seu arquivo.'); stashDraft.warned=true; } }
 }
-async function commentsDialog() {
-  const itemId=current.id;
+async function commentsDialog(focusComment=null) {
+  const itemId=current.id,account=user.id;
   try {
     const comments=await allPages('/api/items/'+itemId+'/comments');
-    showDialog(`<h2>Comentários</h2><div class="stack">${comments.map(c=>`<article class="card"><strong>${esc(c.author)}</strong><small> · ${date(c.created)}</small><p class="comment-text">${esc(c.body)}</p></article>`).join('') || '<p>Nenhum comentário ainda.</p>'}</div>${current.role!=='read'?'<form id="comment-form"><label class="field">Seu comentário<textarea name="body" maxlength="4000" required></textarea></label><p id="comment-error" class="error" role="alert"></p><button class="primary">Enviar comentário</button></form>':''}<button id="close-comments">Fechar</button>`,()=>{
+    if(user?.id!==account||current?.id!==itemId)return;
+    showDialog(`<h2>Comentários</h2><div class="stack">${comments.map(c=>`<article class="card ${c.id===focusComment?'comment-highlight':''}" data-comment-id="${esc(c.id)}" tabindex="-1"><strong>${esc(c.author)}</strong><small> · ${date(c.created)}</small><p class="comment-text">${esc(c.body)}</p>${c.mentions?.length?`<p class="muted">Mencionados: ${c.mentions.map(esc).join(', ')}</p>`:''}</article>`).join('') || '<p>Nenhum comentário ainda.</p>'}</div>${current.role!=='read'?'<form id="comment-form"><label class="field">Seu comentário<textarea name="body" maxlength="4000" required></textarea></label><label class="field">Mencionar pessoas por e-mail<input name="mentions" maxlength="2540" placeholder="participante@exemplo.com" autocomplete="off"></label><p>Separe os e-mails por vírgula. As pessoas precisam ter acesso ao arquivo e receberão uma notificação dentro da plataforma.</p><p id="comment-error" class="error" role="alert"></p><button class="primary">Enviar comentário</button></form>':''}<button id="close-comments">Fechar</button>`,()=>{
       bind('close-comments',closeDialog);
-      bind('comment-form',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{await api('/api/items/'+itemId+'/comments',{body:new FormData(e.target).get('body')});closeDialog();await commentsDialog();}catch(err){document.querySelector('#comment-error').textContent=err.message;button.disabled=false;}},'submit');
+      if(focusComment){const target=[...document.querySelectorAll('[data-comment-id]')].find(node=>node.dataset.commentId===focusComment);target?.scrollIntoView({block:'center'});target?.focus();}
+      bind('comment-form',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{await api('/api/items/'+itemId+'/comments',{body:new FormData(e.target).get('body'),mentions:String(new FormData(e.target).get('mentions')||'').split(/[,;\n]+/).map(e=>e.trim()).filter(Boolean)});if(user?.id===account&&current?.id===itemId){closeDialog();await commentsDialog();}}catch(err){const error=e.target.querySelector('#comment-error');if(error)error.textContent=err.message;if(button.isConnected)button.disabled=false;}},'submit');
     });
   } catch(e) {notify(e.message);}
 }

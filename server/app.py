@@ -70,6 +70,7 @@ def handler_for(store):
                     '/project-planning.js': ('project-planning.js', 'text/javascript; charset=utf-8'),
                     '/project-planning-ui.js': ('project-planning-ui.js', 'text/javascript; charset=utf-8'),
                     '/dashboard.js': ('dashboard.js', 'text/javascript; charset=utf-8'),
+                    '/notifications.js': ('notifications.js', 'text/javascript; charset=utf-8'),
                     '/automations.js': ('automations.js', 'text/javascript; charset=utf-8'),
                     '/form-conditions.js': ('form-conditions.js', 'text/javascript; charset=utf-8'),
                     '/table-relations.js': ('table-relations.js', 'text/javascript; charset=utf-8'),
@@ -140,6 +141,10 @@ def handler_for(store):
                     return self.respond(200, {'items': store.events(user['id'])})
                 if path == '/api/me':
                     return self.respond(200 if user else 401, user or {'error': 'Entre na sua conta.'})
+                if path in ('/api/notifications','/api/notifications/count'):
+                    if not user:return self.respond(401, {'error':'Entre na sua conta.'})
+                    from server.notifications import listing,count
+                    return self.respond(200,count(workspace(),user['id']) if path.endswith('/count') else listing(workspace(),user['id'],offset))
                 if path in ('/api/dashboard','/api/dashboard/sources'):
                     if not user:return self.respond(401, {'error':'Entre na sua conta.'})
                     from server.dashboards import get, sources
@@ -303,6 +308,9 @@ def handler_for(store):
                 from server.office import import_file
                 item, warnings = import_file(data.get('name'), data.get('data'))
                 return self.respond(201, {'item': workspace().create(user['id'], item), 'warnings': warnings})
+            if path in ('/api/notifications/read','/api/notifications/dismiss'):
+                from server.notifications import update
+                return self.respond(200,update(workspace(),user['id'],data,dismiss=path.endswith('/dismiss')))
             if path == '/api/dashboard':
                 from server.dashboards import save
                 return self.respond(200,save(workspace(),user['id'],data))
@@ -325,7 +333,7 @@ def handler_for(store):
             if len(parts) == 4 and parts[:2] == ['api', 'items'] and parts[3] == 'comments':
                 if not store.auth_allowed('comment:' + user['id'], limit=30):
                     return self.respond(429, {'error': 'Aguarde um minuto antes de comentar novamente.'})
-                return self.respond(201, workspace().comment(user['id'], parts[2], data.get('body')))
+                return self.respond(201, workspace().comment(user['id'], parts[2], data.get('body'),data.get('mentions')))
             if len(parts) == 4 and parts[:2] == ['api', 'items'] and parts[3] == 'share':
                 shared = workspace().share(user['id'], parts[2], data.get('email'), data.get('role'))
                 store.log_event('share', user_id=user['id'], detail=f"{data.get('email', '')} ({data.get('role', '')})")

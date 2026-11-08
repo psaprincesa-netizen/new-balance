@@ -145,3 +145,11 @@ A regra pode guardar solicitações pendentes até uma decisão do proprietário
 Inclui consulta privada da resposta original, aprovar/rejeitar, registro da decisão,
 idempotência concorrente e reprocessamento de uma tarefa aprovada que falhou.
 Estados e snapshots adicionais usam as tabelas transacionais existentes.
+
+## Colaboração — menções e central de notificações
+
+Comentários aceitam destinatários explícitos com acesso existente. Notificações
+privadas, contador, paginação, estados de leitura, exclusão individual e navegação
+ao comentário revalidam permissões/lixeira. Novas tabelas aditivas guardam menções
+e notificações. O compartilhamento usa o mesmo bloqueio transacional por arquivo
+que a escrita de comentários, evitando alterações concorrentes de permissão.
