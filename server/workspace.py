@@ -59,6 +59,8 @@ class Workspace:
                 CREATE TABLE IF NOT EXISTS form_submissions (
                     form_id TEXT NOT NULL REFERENCES items(id), request_key TEXT NOT NULL, digest TEXT NOT NULL,
                     result TEXT NOT NULL, PRIMARY KEY(form_id,request_key));
+                CREATE TABLE IF NOT EXISTS dashboards (
+                    user_id TEXT PRIMARY KEY REFERENCES users(id), config TEXT NOT NULL, version INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS ai_daily (
                     key TEXT NOT NULL, day INTEGER NOT NULL, attempts INTEGER NOT NULL, PRIMARY KEY(key, day));
                 CREATE TABLE IF NOT EXISTS form_publications (

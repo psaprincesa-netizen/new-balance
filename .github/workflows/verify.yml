@@ -54,3 +54,4 @@ jobs:
           python -m tests.browser_ai
           python -m tests.browser_form_conditions
           python -m tests.browser_automations
+          python -m tests.browser_dashboards
