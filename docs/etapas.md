@@ -138,3 +138,10 @@ Painel pessoal com até 12 indicadores de tabelas/projetos, agregação, agrupam
 filtro exato, exportação CSV, edição/exclusão individual e controle de conflitos.
 Cada leitura revalida a autorização das fontes; fonte alterada, removida ou sem
 acesso gera erro localizado. Configuração persistida em tabela aditiva `dashboards`.
+
+## Aprovações de tarefas de formulários
+
+A regra pode guardar solicitações pendentes até uma decisão do proprietário.
+Inclui consulta privada da resposta original, aprovar/rejeitar, registro da decisão,
+idempotência concorrente e reprocessamento de uma tarefa aprovada que falhou.
+Estados e snapshots adicionais usam as tabelas transacionais existentes.

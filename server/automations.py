@@ -20,11 +20,13 @@ def settings(workspace,user,form_id,offset=0):
         row=db.execute('SELECT config FROM form_automations WHERE form_id=?',(form_id,)).fetchone()
         runs=[dict(r) for r in db.execute('''SELECT id, status, detail, created, updated, target_id, task_id, title, payload
             FROM automation_runs WHERE form_id=? ORDER BY created DESC,id DESC LIMIT 50 OFFSET ?''',(form_id,offset))]
-        for run in runs:run['retryable']=bool(json.loads(run.pop('payload')).get('retryable'))
+        for run in runs:
+            payload=json.loads(run.pop('payload'));run['retryable']=bool(payload.get('retryable'));run['approval']=payload.get('approval');run['priority']=payload.get('priority','Normal')
         return {'config':json.loads(row['config']) if row else None,'runs':runs,'next_offset':offset+50 if len(runs)==50 else None}
 
 
 def configure(workspace,user,form_id,data):
+    if type(data.get('requireApproval',False)) is not bool:raise InvalidInput('Estado de aprovação inválido.')
     if type(data.get('enabled')) is not bool:raise InvalidInput('Estado da automação inválido.')
     with workspace.store.connect() as db:
         workspace.store.begin_write(db,form_id)
@@ -41,7 +43,7 @@ def configure(workspace,user,form_id,data):
             target=db.execute('SELECT owner, kind, deleted FROM items WHERE id=?',(target_id,)).fetchone()
             if not target or target['owner']!=user or target['kind']!='board' or target['deleted']:raise InvalidInput('O destino precisa ser um projeto ativo do mesmo proprietário.')
             content=json.loads(row['content']);fields=content.get('fields') or [{'type':'text'} for _ in content['questions']]
-            config={'enabled':True,'targetId':target_id}
+            config={'enabled':True,'targetId':target_id,'requireApproval':data.get('requireApproval',False)}
             for key in ('titleQuestion','whenQuestion'):
                 index=data.get(key)
                 if index is not None and (type(index) is not int or not 0<=index<len(content['questions'])):raise InvalidInput('Pergunta de origem inválida.')
@@ -59,7 +61,7 @@ def configure(workspace,user,form_id,data):
 
 
 def execute_run(workspace,db,source,run):
-    if run['status'] in ('completed','skipped'):return
+    if run['status'] in ('completed','skipped','awaiting_approval','rejected'):return
     payload=json.loads(run['payload']);target_id=run['target_id'];now=time.time_ns()//1000000
     workspace.store.begin_write(db,target_id)
     target=db.execute('SELECT * FROM items WHERE id=?',(target_id,)).fetchone()
@@ -107,6 +109,10 @@ def on_public_response(workspace,db,source,content,response):
     if status=='pending' and config.get('whenQuestion') is not None and response['answers'][config['whenQuestion']]!=config['whenValue']:
         status='skipped';detail='Condição não atendida.'
     payload={'priority':config.get('priority','Normal'),'retryable':status=='pending'}
+    if status=='pending' and config.get('requireApproval'):
+        status='awaiting_approval';detail='Aguardando decisão do proprietário antes de criar a tarefa.'
+        payload['approval']={'decision':None}
+        payload['review']={'questions':response['questions'],'answers':response['answers'],'at':response['at']}
     db.execute('''INSERT INTO automation_runs (id, form_id, response_id, target_id, task_id, title, payload, status, detail, created, updated)
         VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(form_id,response_id) DO NOTHING''',
         (ident,source['id'],response['id'],config['targetId'],'form-'+response['id'],title,json.dumps(payload),status,detail,now,now))
@@ -120,6 +126,44 @@ def retry(workspace,user,form_id,run_id):
         workspace.store.begin_write(db,form_id);source=owner_form(workspace,db,user,form_id)
         run=db.execute('SELECT * FROM automation_runs WHERE id=? AND form_id=?',(run_id,form_id)).fetchone()
         if not run:raise LookupError('Execução não encontrada.')
+        if run['status'] in ('awaiting_approval','rejected'):raise InvalidInput('Esta execução precisa de uma aprovação pendente; uma rejeição é definitiva.')
         if run['status']=='failed' and not json.loads(run['payload']).get('retryable'):raise InvalidInput('Esta execução tem uma configuração antiga inválida. Revise a regra para os próximos envios.')
         execute_run(workspace,db,source,run)
         return {'ok':True}
+
+
+def decide(workspace,user,form_id,run_id,decision):
+    """One immutable owner decision and its task effect commit atomically."""
+    from server.workspace import Conflict
+    if not isinstance(run_id,str) or not 1<=len(run_id)<=100 or decision not in ('approve','reject'):
+        raise InvalidInput('Decisão ou execução inválida.')
+    with workspace.store.connect() as db:
+        workspace.store.begin_write(db,form_id)
+        source=owner_form(workspace,db,user,form_id)
+        run=db.execute('SELECT * FROM automation_runs WHERE id=? AND form_id=?',(run_id,form_id)).fetchone()
+        if not run:raise LookupError('Execução não encontrada.')
+        payload=json.loads(run['payload']);approval=payload.get('approval')
+        if run['status']!='awaiting_approval':
+            if approval and approval.get('decision')==decision:return {'ok':True}
+            raise Conflict('Esta execução não aguarda essa decisão. Atualize o painel.')
+        now=time.time_ns()//1000000
+        payload['approval']={'decision':decision,'actor':user,'at':now}
+        rejected=decision=='reject'
+        if rejected:payload['retryable']=False
+        db.execute('UPDATE automation_runs SET payload=?,status=?,detail=?,updated=? WHERE id=?',
+            (json.dumps(payload),'rejected' if rejected else 'pending',
+             'Solicitação rejeitada pelo proprietário.' if rejected else 'Solicitação aprovada pelo proprietário.',now,run_id))
+        if not rejected:
+            run=db.execute('SELECT * FROM automation_runs WHERE id=? AND form_id=?',(run_id,form_id)).fetchone()
+            execute_run(workspace,db,source,run)
+    return {'ok':True}
+
+
+def review(workspace,user,form_id,run_id):
+    if not isinstance(run_id,str) or not 1<=len(run_id)<=100:raise InvalidInput('Identificador de execução inválido.')
+    with workspace.store.connect() as db:
+        owner_form(workspace,db,user,form_id)
+        row=db.execute('SELECT payload FROM automation_runs WHERE id=? AND form_id=?',(run_id,form_id)).fetchone()
+        snapshot=json.loads(row['payload']).get('review') if row else None
+        if not snapshot:raise LookupError('Resposta original indisponível para esta execução.')
+        return snapshot
