@@ -15,6 +15,7 @@ def exercise(owner,reader,base,a,b,item_id):
   owner.get_by_label('Seu comentário',exact=True).fill(text)
   owner.get_by_label('Mencionar pessoas por e-mail',exact=True).fill(b['email'])
   owner.get_by_role('button',name='Enviar comentário',exact=True).click()
+  expect(owner.locator('#modal .comment-text').filter(has_text=text)).to_have_count(1)
   expect(owner.locator('#modal')).to_contain_text('Mencionados: Nina')
   owner.get_by_role('button',name='Fechar',exact=True).click()
  mention('Primeira revisão pendente')
