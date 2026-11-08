@@ -163,6 +163,9 @@ def handler_for(store):
                     rows = workspace().list(user['id'], limit=4, offset=offset)
                     return self.page_response(rows, offset, 4)
                 parts = path.strip('/').split('/')
+                if len(parts)==5 and parts[3:]==['automation','review']:
+                    from server.automations import review
+                    return self.respond(200,review(workspace(),user['id'],parts[2],query.get('run_id',[''])[0]))
                 if len(parts)==4 and parts[3]=='automation':
                     from server.automations import settings
                     return self.respond(200,settings(workspace(),user['id'],parts[2],offset))
@@ -306,6 +309,9 @@ def handler_for(store):
             if path == '/api/items':
                 return self.respond(201, workspace().create(user['id'], data))
             parts = path.strip('/').split('/')
+            if len(parts)==5 and parts[:2]==['api','items'] and parts[3:]==['automation','decision']:
+                from server.automations import decide
+                return self.respond(200,decide(workspace(),user['id'],parts[2],data.get('run_id'),data.get('decision')))
             if len(parts)==5 and parts[:2]==['api','items'] and parts[3:]==['automation','retry']:
                 from server.automations import retry
                 return self.respond(200,retry(workspace(),user['id'],parts[2],data.get('run_id')))

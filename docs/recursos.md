@@ -312,3 +312,20 @@ sem publicação ou compartilhamento de painel. Edições simultâneas são recu
 por versão. Até 500 fontes são listadas no seletor. Dados permanecem nas fontes;
 a configuração do painel reside no banco e depende do backup integral, não do JSON
 de arquivos. Não há DAX, cruzamento entre fontes, cubos, mapas ou conectores externos.
+
+## Aprovação manual de solicitações de tarefa
+
+A regra de formulário → tarefa pode exigir aprovação do proprietário. O envio
+público registra a resposta normalmente e aguarda a decisão no painel de execuções;
+nenhuma tarefa existe antes da aprovação. O proprietário consulta a resposta
+original do envio, destino, título e prioridade e escolhe aprovar ou rejeitar.
+A cópia original é privada e permanece disponível mesmo se a resposta no editor
+for alterada. Respostas ocultas por condição continuam vazias nessa cópia.
+
+Decisão, autor e horário ficam registrados. Aprovar e gravar a tarefa usam a mesma
+transação; reenvios concorrentes da decisão não duplicam tarefas. Rejeições são
+definitivas. Uma aprovação com destino indisponível gera falha recuperável; após
+corrigir o destino, o proprietário pode reprocessar. Editores compartilhados não
+podem decidir nem consultar as respostas originais pelo painel. Desativar a regra
+não cancela pendências já registradas. Não há delegação, múltiplos aprovadores,
+e-mail, expiração automática, agendas ou designer genérico de fluxos nesta etapa.

@@ -18,6 +18,68 @@ class AutomationTest(unittest.TestCase):
         configure(self.ws,self.a,self.form['id'],self.config)
     def send(self,answers=None,key='synthetic-request-001'):
         return self.ws.submit_form(self.token,answers or ['Sim','Entrega'],self.schema,key)
+    def enable_approval(self):
+        configure(self.ws,self.a,self.form['id'],dict(self.config,requireApproval=True))
+    def test_approval_waits_and_concurrent_decisions_do_not_duplicate_tasks(self):
+        from server.automations import decide
+        self.enable_approval();self.send()
+        run=settings(self.ws,self.a,self.form['id'])['runs'][0]
+        self.assertEqual(run['status'],'awaiting_approval');self.assertFalse(self.ws.get(self.a,self.board['id'])['content']['tasks'])
+        with self.assertRaises(InvalidInput):retry(self.ws,self.a,self.form['id'],run['id'])
+        with ThreadPoolExecutor(max_workers=4) as executor:list(executor.map(lambda _:decide(self.ws,self.a,self.form['id'],run['id'],'approve'),range(4)))
+        run=settings(self.ws,self.a,self.form['id'])['runs'][0]
+        self.assertEqual(run['status'],'completed');self.assertEqual(run['approval']['actor'],self.a)
+        self.assertEqual(run['approval']['decision'],'approve');self.assertGreater(run['approval']['at'],0)
+        self.assertEqual(len(self.ws.get(self.a,self.board['id'])['content']['tasks']),1)
+        with self.assertRaises(Conflict):decide(self.ws,self.a,self.form['id'],run['id'],'reject')
+    def test_rejection_is_final_and_shared_editor_cannot_decide(self):
+        from server.automations import decide
+        self.enable_approval();self.send();run=settings(self.ws,self.a,self.form['id'])['runs'][0]
+        self.ws.share(self.a,self.form['id'],'b@example.org','edit')
+        with self.assertRaises(PermissionError):decide(self.ws,self.b,self.form['id'],run['id'],'approve')
+        decide(self.ws,self.a,self.form['id'],run['id'],'reject');decide(self.ws,self.a,self.form['id'],run['id'],'reject')
+        self.assertFalse(self.ws.get(self.a,self.board['id'])['content']['tasks'])
+        self.assertEqual(settings(self.ws,self.a,self.form['id'])['runs'][0]['status'],'rejected')
+        with self.assertRaises(Conflict):decide(self.ws,self.a,self.form['id'],run['id'],'approve')
+        with self.assertRaises(InvalidInput):retry(self.ws,self.a,self.form['id'],run['id'])
+    def test_original_response_snapshot_is_private_and_survives_source_edits(self):
+        from server.automations import review
+        self.enable_approval();self.send();run=settings(self.ws,self.a,self.form['id'])['runs'][0]
+        self.assertNotIn('review',run)
+        snapshot=review(self.ws,self.a,self.form['id'],run['id']);self.assertEqual(snapshot['answers'],['Sim','Entrega'])
+        current=self.ws.get(self.a,self.form['id']);current['content']['responses']=[];self.ws.update(self.a,self.form['id'],current)
+        self.assertEqual(review(self.ws,self.a,self.form['id'],run['id']),snapshot)
+        self.ws.share(self.a,self.form['id'],'b@example.org','edit')
+        with self.assertRaises(PermissionError):review(self.ws,self.b,self.form['id'],run['id'])
+
+    def test_approval_failure_can_retry_after_destination_restored(self):
+        from server.automations import decide
+        self.enable_approval();self.send();run=settings(self.ws,self.a,self.form['id'])['runs'][0]
+        deleted=self.ws.update(self.a,self.board['id'],dict(self.board,deleted=True))
+        decide(self.ws,self.a,self.form['id'],run['id'],'approve')
+        failed=settings(self.ws,self.a,self.form['id'])['runs'][0];self.assertEqual(failed['status'],'failed');self.assertEqual(failed['approval']['decision'],'approve')
+        self.ws.update(self.a,self.board['id'],dict(deleted,deleted=False));retry(self.ws,self.a,self.form['id'],run['id'])
+        self.assertEqual(len(self.ws.get(self.a,self.board['id'])['content']['tasks']),1)
+    def test_interrupted_approval_rolls_back_decision_and_effect_together(self):
+        from server.automations import decide,execute_run
+        self.enable_approval();self.send();run=settings(self.ws,self.a,self.form['id'])['runs'][0]
+        def crash(*args):execute_run(*args);raise RuntimeError('interrupted approval')
+        with patch('server.automations.execute_run',side_effect=crash):
+            with self.assertRaises(RuntimeError):decide(self.ws,self.a,self.form['id'],run['id'],'approve')
+        current=settings(self.ws,self.a,self.form['id'])['runs'][0]
+        self.assertEqual(current['status'],'awaiting_approval');self.assertIsNone(current['approval']['decision'])
+        self.assertFalse(self.ws.get(self.a,self.board['id'])['content']['tasks'])
+        decide(self.ws,self.a,self.form['id'],run['id'],'approve')
+        self.assertEqual(len(self.ws.get(self.a,self.board['id'])['content']['tasks']),1)
+    def test_disabled_rule_keeps_pending_approval_and_skips_unmatched_conditions(self):
+        from server.automations import decide
+        self.enable_approval();self.send(['Não','Ignorada']);self.send(key='synthetic-request-002')
+        runs=settings(self.ws,self.a,self.form['id'])['runs'];self.assertEqual(sorted(r['status'] for r in runs),['awaiting_approval','skipped'])
+        pending=next(r for r in runs if r['status']=='awaiting_approval')
+        current=self.ws.get(self.a,self.form['id']);configure(self.ws,self.a,self.form['id'],{'enabled':False,'version':current['version']})
+        decide(self.ws,self.a,self.form['id'],pending['id'],'approve')
+        self.assertEqual(len(self.ws.get(self.a,self.board['id'])['content']['tasks']),1)
+
     def test_rule_and_response_retries_are_atomic_and_idempotent(self):
         first=self.send();self.assertEqual(self.send(),first)
         source=self.ws.get(self.a,self.form['id']);target=self.ws.get(self.a,self.board['id'])
