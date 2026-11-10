@@ -60,6 +60,16 @@ class SchedulesTest(unittest.TestCase):
   self.assertEqual(history(self.ws,self.a,ident)['items'],[]);self.assertFalse(self.ws.get(self.a,self.board['id'])['content']['tasks'])
   self.assertEqual(listing(self.ws,self.a)['items'][0]['next_due'],'2026-01-31')
   process_rule(self.ws,ident,self.a,self.now);self.assertEqual(len(history(self.ws,self.a,ident)['items']),1)
+ def test_pause_unavailable_destination_without_granting_an_invalid_activation(self):
+  ident=self.create(cadence='daily');row=listing(self.ws,self.a)['items'][0]
+  deleted=self.ws.update(self.a,self.board['id'],dict(self.board,deleted=True))
+  save(self.ws,self.a,{'version':row['version'],'active':False,'config':row['config']},ident,self.now)
+  self.assertEqual(process_rule(self.ws,ident,self.a,self.now)['processed'],0)
+  row=listing(self.ws,self.a)['items'][0]
+  with self.assertRaises(InvalidInput):save(self.ws,self.a,{'version':row['version'],'active':True,'config':row['config']},ident,self.now)
+  self.ws.update(self.a,self.board['id'],dict(deleted,deleted=False))
+  save(self.ws,self.a,{'version':row['version'],'active':True,'config':row['config']},ident,self.now)
+  self.assertEqual(process_rule(self.ws,ident,self.a,self.now)['processed'],1)
  def test_configuration_changes_preserve_existing_occurrence_snapshot(self):
   ident=self.create();process_rule(self.ws,ident,self.a,self.now);row=listing(self.ws,self.a)['items'][0]
   new=dict(self.config,taskTitle='Novo título');save(self.ws,self.a,{'version':row['version'],'active':True,'config':new},ident,self.now)

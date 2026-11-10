@@ -27,7 +27,7 @@ def owned(db,user,ident):
     if not row:raise LookupError('Agendamento não encontrado.')
     return row
 
-def validate(workspace,db,user,config,now=None):
+def validate(workspace,db,user,config,now=None,check_target=True):
     if not isinstance(config,dict) or set(config)!={'name','targetId','taskTitle','priority','cadence','firstDate','timezone','dueOffset'}:raise InvalidInput('Configuração de agendamento inválida.')
     for key,limit in [('name',100),('taskTitle',200),('targetId',100),('timezone',100)]:
         if not isinstance(config[key],str) or not config[key].strip() or len(config[key])>limit:raise InvalidInput('Preencha nome, título, projeto e fuso.')
@@ -38,7 +38,7 @@ def validate(workspace,db,user,config,now=None):
     first=parse_day(config['firstDate'])
     if not 2020<=first.year<=2098:raise InvalidInput('A data deve estar entre 2020 e 2098.')
     target=db.execute('SELECT owner,kind,deleted FROM items WHERE id=?',(config['targetId'],)).fetchone()
-    if not target or target['owner']!=user or target['kind']!='board' or target['deleted']:raise InvalidInput('Escolha um projeto ativo do mesmo proprietário.')
+    if check_target and (not target or target['owner']!=user or target['kind']!='board' or target['deleted']):raise InvalidInput('Escolha um projeto ativo do mesmo proprietário.')
     return config
 
 def listing(workspace,user,deleted=False,offset=0):
@@ -56,8 +56,9 @@ def save(workspace,user,data,ident=None,now=None):
         previous=owned(db,user,ident) if ident else None
         if previous and previous['deleted']:raise InvalidInput('Restaure o agendamento antes de editá-lo.')
         if data['version']!=(previous['version'] if previous else 0):raise Conflict('O agendamento mudou. Atualize antes de salvar.')
-        validate(workspace,db,user,config,now)
         old=json.loads(previous['config']) if previous else None
+        unchanged_target=bool(old and isinstance(config,dict) and config.get('targetId')==old.get('targetId'))
+        validate(workspace,db,user,config,now,check_target=data['active'] or not unchanged_target)
         structural=not old or any(config[k]!=old[k] for k in ('firstDate','cadence','timezone'))
         if structural and parse_day(config['firstDate'])<today(config['timezone'],now):raise InvalidInput('Uma nova agenda precisa começar hoje ou em uma data futura.')
         due=config['firstDate'] if structural else previous['next_due']
