@@ -153,3 +153,10 @@ privadas, contador, paginação, estados de leitura, exclusão individual e nave
 ao comentário revalidam permissões/lixeira. Novas tabelas aditivas guardam menções
 e notificações. O compartilhamento usa o mesmo bloqueio transacional por arquivo
 que a escrita de comentários, evitando alterações concorrentes de permissão.
+
+## Continuação — execução agendada
+
+Cron diário nativo autenticado e agendas persistentes para criar tarefas únicas,
+diárias, semanais ou mensais, avaliadas em fuso configurável. Inclui histórico,
+limites de rodada, idempotência por ocorrência, prazo, pausa, lixeira/restauração e
+reprocessamento privado de falhas. Schema aditivo `schedules`/`schedule_runs`.

@@ -1,3 +1,4 @@
+import {mountSchedules} from './schedules.js';
 import {mountNotifications} from './notifications.js';
 import {mountDashboard} from './dashboard.js';
 import {mountFormAutomation} from './automations.js';
@@ -1713,8 +1714,9 @@ function automation() {
       )
       .join(
         "",
-      )}</div><section class="editor"><h2>Automações de formulários</h2><label class="field">Formulário de origem<select id="automation-form" aria-label="Formulário de origem"><option value="">Escolha um formulário próprio…</option>${items.filter(i=>i.kind==='form'&&i.owner===user.id&&!i.deleted).map(i=>`<option value="${esc(i.id)}">${esc(i.title)}</option>`).join('')}</select></label><div id="automation-panel"></div></section><h2 class="section-head">Serviços externos</h2><div class="card"><h3>Serviços externos e Gemini</h3><p class="muted">Use Gemini no menu lateral para gerar, resumir ou analisar. A disponibilidade depende da autenticação e dos créditos configurados no servidor. Correio, reuniões e armazenamento externo continuam sem conexão.</p></div>`,
+      )}</div><section class="editor"><h2>Automações de formulários</h2><label class="field">Formulário de origem<select id="automation-form" aria-label="Formulário de origem"><option value="">Escolha um formulário próprio…</option>${items.filter(i=>i.kind==='form'&&i.owner===user.id&&!i.deleted).map(i=>`<option value="${esc(i.id)}">${esc(i.title)}</option>`).join('')}</select></label><div id="automation-panel"></div></section><section id="scheduled-tasks" class="editor"></section><h2 class="section-head">Serviços externos</h2><div class="card"><h3>Serviços externos e Gemini</h3><p class="muted">Use Gemini no menu lateral para gerar, resumir ou analisar. A disponibilidade depende da autenticação e dos créditos configurados no servidor. Correio, reuniões e armazenamento externo continuam sem conexão.</p></div>`,
   );
+  mountSchedules(document.querySelector('#scheduled-tasks'),{api,esc,notify,boards:items.filter(i=>i.kind==='board'&&i.owner===user.id&&!i.deleted),openItem});
   bind('automation-form',event=>{const root=document.querySelector('#automation-panel');if(!event.target.value){root.innerHTML='';root.automationToken={};return;}mountFormAutomation(root,event.target.value,{api,esc,notify,boards:items.filter(i=>i.kind==='board'),openItem});},'change');
 }
 function coverage() {

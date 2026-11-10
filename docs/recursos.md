@@ -354,3 +354,36 @@ apenas suas notificações. A regra original permanece: leitores podem ler comen
 mas precisam de permissão de edição para publicar. Os registros adicionais fazem
 parte do backup integral do banco, não do JSON individual dos arquivos. Não há
 coautoria simultânea, chat, canais ou menções em qualquer posição do documento.
+
+## Automações agendadas: tarefas por data
+
+Em **Conexões → Tarefas agendadas**, cada conta pode manter até 50 agendas fora da
+lixeira, com projeto próprio, nome, título da tarefa, prioridade, primeira data,
+fuso IANA e prazo de 0 a 365 dias depois da ocorrência. Há execução única, diária,
+semanal e mensal. Meses curtos usam o último dia, retomando o dia original nos
+meses seguintes (31/jan → 28/fev → 31/mar). Não é agendamento com precisão de minuto.
+
+O Cron Job nativo da Vercel está configurado para uma verificação diária às 03:00 UTC.
+A data de cada regra é avaliada em seu próprio fuso. O cron exige `CRON_SECRET` via
+Authorization, sem autenticação por cookie ou confiança apenas no User-Agent.
+Uma consulta autenticada com `?probe=1` verifica configuração sem executar regras.
+A interface informa quando a execução automática não está configurada no ambiente.
+
+A rodada automática é limitada a 200 ocorrências, cinco por agenda, com orçamento
+de tempo; as demais permanecem pendentes. Processamento manual consulta apenas
+agendas do usuário, até 20 ocorrências por rodada ou cinco por agenda individual.
+Volumes superiores à capacidade diária precisam de rodadas manuais ou ampliação
+operacional da frequência/capacidade. Atrasos não antecipam ocorrências futuras.
+
+Cada ocorrência e sua tarefa/histórico/avanço de agenda usam a mesma transação.
+Chamadas concorrentes e repetidas não duplicam uma ocorrência da mesma agenda e
+data. Interrupções retomam pendências. Falhas de destino são registradas e a agenda
+avança; o proprietário pode restaurar/corrigir o projeto e reprocessar a ocorrência.
+A execução preserva o título, prioridade, destino e prazo originais, mesmo após
+editar a agenda. Agendas e histórico são privados ao proprietário.
+
+Pausar impede futuras rodadas; excluir move a agenda para sua própria lixeira e
+restaurar a mantém pausada. Nenhuma dessas ações remove tarefas já criadas. Há
+controle de versão e paginação de 50 registros em listas/histórico. Configurações,
+execuções e deduplicação dependem do backup integral do banco. Não há scripts
+arbitrários, conectores externos, disparos a cada minuto ou designer geral de fluxos.
