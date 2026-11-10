@@ -70,6 +70,7 @@ def handler_for(store):
                     '/project-planning.js': ('project-planning.js', 'text/javascript; charset=utf-8'),
                     '/project-planning-ui.js': ('project-planning-ui.js', 'text/javascript; charset=utf-8'),
                     '/dashboard.js': ('dashboard.js', 'text/javascript; charset=utf-8'),
+                    '/schedules.js': ('schedules.js', 'text/javascript; charset=utf-8'),
                     '/notifications.js': ('notifications.js', 'text/javascript; charset=utf-8'),
                     '/automations.js': ('automations.js', 'text/javascript; charset=utf-8'),
                     '/form-conditions.js': ('form-conditions.js', 'text/javascript; charset=utf-8'),
@@ -119,6 +120,14 @@ def handler_for(store):
                 if path in assets:
                     file, mime = assets[path]
                     return self.respond(200, (WEB / file).read_bytes(), mime=mime)
+                if path == '/api/cron/schedules':
+                    import hmac
+                    secret=os.environ.get('CRON_SECRET','')
+                    if not secret or not hmac.compare_digest(self.headers.get('Authorization',''),'Bearer '+secret):
+                        return self.respond(401, {'error':'Acesso de agendador inválido.'})
+                    if query.get('probe',['0'])[0]=='1':return self.respond(200, {'ok':True,'schedule':'0 3 * * *','max_per_run':200})
+                    from server.schedules import process_due
+                    return self.respond(200,process_due(workspace(),limit=200,max_seconds=180))
                 if path == '/api/health':
                     workspace()
                     with store.connect() as db:
@@ -141,6 +150,13 @@ def handler_for(store):
                     return self.respond(200, {'items': store.events(user['id'])})
                 if path == '/api/me':
                     return self.respond(200 if user else 401, user or {'error': 'Entre na sua conta.'})
+                if path == '/api/schedules' or path.startswith('/api/schedules/'):
+                    if not user:return self.respond(401, {'error':'Entre na sua conta.'})
+                    from server.schedules import listing,history
+                    parts=path.strip('/').split('/')
+                    if len(parts)==2:return self.respond(200,listing(workspace(),user['id'],query.get('deleted',['0'])[0]=='1',offset))
+                    if len(parts)==4 and parts[3]=='history':return self.respond(200,history(workspace(),user['id'],parts[2],offset))
+                    return self.respond(404, {'error':'Rota não encontrada.'})
                 if path in ('/api/notifications','/api/notifications/count'):
                     if not user:return self.respond(401, {'error':'Entre na sua conta.'})
                     from server.notifications import listing,count
@@ -308,6 +324,17 @@ def handler_for(store):
                 from server.office import import_file
                 item, warnings = import_file(data.get('name'), data.get('data'))
                 return self.respond(201, {'item': workspace().create(user['id'], item), 'warnings': warnings})
+            if path == '/api/schedules' or path.startswith('/api/schedules/'):
+                if not store.auth_allowed('schedule-settings:'+user['id'],limit=30):return self.respond(429, {'error':'Aguarde um minuto antes de alterar outros agendamentos.'})
+                from server.schedules import save,trash,process_rule,process_due,retry
+                parts=path.strip('/').split('/')
+                if len(parts)==2:return self.respond(201,save(workspace(),user['id'],data))
+                if len(parts)==3 and parts[2]=='process':return self.respond(200,process_due(workspace(),user['id']))
+                if len(parts)==3:return self.respond(200,save(workspace(),user['id'],data,parts[2]))
+                if len(parts)==4 and parts[3]=='trash':return self.respond(200,trash(workspace(),user['id'],parts[2],data.get('deleted'),data.get('version')))
+                if len(parts)==4 and parts[3]=='run':return self.respond(200,process_rule(workspace(),parts[2],user['id']))
+                if len(parts)==4 and parts[3]=='retry':return self.respond(200,retry(workspace(),user['id'],parts[2],data.get('run_id')))
+                return self.respond(404, {'error':'Rota não encontrada.'})
             if path in ('/api/notifications/read','/api/notifications/dismiss'):
                 from server.notifications import update
                 return self.respond(200,update(workspace(),user['id'],data,dismiss=path.endswith('/dismiss')))

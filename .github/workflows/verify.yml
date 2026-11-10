@@ -57,3 +57,4 @@ jobs:
           python -m tests.browser_dashboards
           python -m tests.browser_approvals
           python -m tests.browser_notifications
+          python -m tests.browser_schedules

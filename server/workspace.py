@@ -57,6 +57,16 @@ class Workspace:
                 CREATE TABLE IF NOT EXISTS google_oauth_states (
                     digest TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
                     verifier TEXT NOT NULL, expires INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS schedules (
+                    id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),config TEXT NOT NULL,
+                    active INTEGER NOT NULL,deleted INTEGER NOT NULL DEFAULT 0,next_due TEXT,
+                    version INTEGER NOT NULL,updated INTEGER NOT NULL);
+                CREATE INDEX IF NOT EXISTS schedules_due ON schedules(active,deleted,next_due);
+                CREATE INDEX IF NOT EXISTS schedules_user ON schedules(user_id,deleted);
+                CREATE TABLE IF NOT EXISTS schedule_runs (
+                    id TEXT PRIMARY KEY,schedule_id TEXT NOT NULL REFERENCES schedules(id),due_date TEXT NOT NULL,
+                    payload TEXT NOT NULL,status TEXT NOT NULL,detail TEXT NOT NULL,created INTEGER NOT NULL,updated INTEGER NOT NULL,
+                    UNIQUE(schedule_id,due_date));
                 CREATE TABLE IF NOT EXISTS form_automations (
                     form_id TEXT PRIMARY KEY REFERENCES items(id), config TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS automation_runs (
